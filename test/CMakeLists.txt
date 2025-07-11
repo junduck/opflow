@@ -5,6 +5,11 @@ target_link_libraries(test_main GTest::gtest_main private_headers opflow::header
 add_executable(test_graph graph_test.cpp)
 target_link_libraries(test_graph GTest::gtest_main opflow::headers)
 
+# Engine tests
+add_executable(test_engine engine_test.cpp)
+target_link_libraries(test_engine GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_graph)
+gtest_discover_tests(test_engine)
