@@ -16,14 +16,14 @@ template <typename T>
 using time_delta_t = decltype(std::declval<T>() - std::declval<T>());
 
 template <typename T>
-concept scala_time = std::regular<T> && std::totally_ordered<T> && std::numeric_limits<T>::is_specialized &&
-                     requires(T a, time_delta_t<T> b) {
-                       { a - b } -> std::convertible_to<T>;
-                       { a + b } -> std::convertible_to<T>;
-                       { T{} } -> std::same_as<T>; // Ensure default construction
-                     };
+concept scalar_time = std::regular<T> && std::totally_ordered<T> && std::numeric_limits<T>::is_specialized &&
+                      requires(T a, time_delta_t<T> b) {
+                        { a - b } -> std::convertible_to<T>;
+                        { a + b } -> std::convertible_to<T>;
+                        { T{} } -> std::same_as<T>; // Ensure default construction
+                      };
 
-template <scala_time T>
+template <scalar_time T>
 struct op_base {
 
   // Accessing dependent data double *in[parent_id], double *rm[parent_id]
@@ -39,13 +39,17 @@ struct op_base {
     return T{}; // Returning T{} means no watermark i.e. this is a cumulative op, no inverse is called upon it
   }
 
-  virtual constexpr size_t num_depends() const noexcept = 0;
-  virtual constexpr size_t num_outputs() const noexcept = 0;
+  // Number of dependencies
+  virtual size_t num_depends() const noexcept = 0;
+  // Output size
+  virtual size_t num_outputs() const noexcept = 0;
+  // Arity of the denpending op, i.e. number of inputs it uses
+  virtual size_t arity(size_t) const noexcept = 0;
 
   virtual ~op_base() = default;
 };
 
-template <scala_time T>
+template <scalar_time T>
 struct root_input : public op_base<T> {
   std::vector<double> mem;
 
@@ -64,11 +68,12 @@ struct root_input : public op_base<T> {
     }
   }
 
-  constexpr size_t num_depends() const noexcept override { return 0; } // Root input has no dependencies
+  size_t num_depends() const noexcept override { return 0; } // Root input has no dependencies
   size_t num_outputs() const noexcept override { return mem.size(); }
+  size_t arity(size_t) const noexcept override { return 0; } // No inputs
 };
 
-template <scala_time T>
+template <scalar_time T>
 struct rollsum : public op_base<T> {
   double sum;
   T last_tick;
@@ -90,7 +95,7 @@ struct rollsum : public op_base<T> {
     if (last_tick == T{}) {
       last_tick = tick;
     } else if (tick <= last_tick) {
-      // TODO: this is a bug of engine, we should not handle any late/out-of-order ticks
+      assert(false && "Received non-monotonic tick in rollsum operator");
       return;
     } else {
       last_tick = tick;
@@ -125,11 +130,18 @@ struct rollsum : public op_base<T> {
       return T{}; // Invalid or infinite window
     // Proper watermark calculation: last_tick - window, but handle underflow
     auto delta = static_cast<time_delta_t<T>>(window);
-    return last_tick >= delta ? last_tick - delta : T{};
+    return last_tick >= delta ? last_tick - window : T{};
   }
 
-  constexpr size_t num_depends() const noexcept override { return 1; }
-  constexpr size_t num_outputs() const noexcept override { return 1; }
+  size_t num_depends() const noexcept override { return 1; }
+  size_t num_outputs() const noexcept override { return 1; }
+  size_t arity(size_t pid) const noexcept override {
+    if (pid == 0) {
+      return sum_idx.size(); // Number of inputs contributing to the sum
+    }
+    assert(false && "This is a bug in engine. Invalid pid for rollsum arity");
+    return 0; // Invalid pid
+  }
 };
 
 template <typename T>
