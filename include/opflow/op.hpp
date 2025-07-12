@@ -8,6 +8,7 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 namespace opflow {
@@ -16,7 +17,7 @@ template <typename T>
 using time_delta_t = decltype(std::declval<T>() - std::declval<T>());
 
 template <typename T>
-concept scalar_time = std::regular<T> && std::totally_ordered<T> && std::numeric_limits<T>::is_specialized &&
+concept scalar_time = std::regular<T> && std::totally_ordered<T> && std::is_default_constructible_v<T> &&
                       requires(T a, time_delta_t<T> b) {
                         { a - b } -> std::convertible_to<T>;
                         { a + b } -> std::convertible_to<T>;
@@ -25,26 +26,72 @@ concept scalar_time = std::regular<T> && std::totally_ordered<T> && std::numeric
 
 template <scalar_time T>
 struct op_base {
-
-  // Accessing dependent data double *in[parent_id], double *rm[parent_id]
+  /**
+   * @brief Update operator state with new data
+   *
+   * @param tick Current tick
+   * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
+   */
   virtual void step(T tick, double const *const *in) noexcept = 0;
+
+  /**
+   * @brief Update operator state by removing expired data
+   *
+   * @param tick Expired tick
+   * @param rm Pointer to removal data, where rm[parent_id] points to the data from parent operator
+   */
   virtual void inverse(T tick, double const *const *rm) noexcept = 0;
 
   // Output directly written to buf, value should not change state of the op so engine can query it at any time
+
+  /**
+   * @brief Write operator's output value to the provided buffer
+   *
+   * @param out Pointer to output buffer where the operator's value will be written
+   * @note The output buffer is allocated as reported num_ouputs()
+   */
   virtual void value(double *out) const noexcept = 0;
 
-  // Returns oldest tick this op needs to keep track of (i.e. engine will call inverse on expired data
-  // boundary condition tick <= watermark
-  virtual T watermark() const noexcept {
-    return T{}; // Returning T{} means no watermark i.e. this is a cumulative op, no inverse is called upon it
-  }
+  /**
+   * @brief Get the watermark (expiry) for this operator
+   *
+   * @details Data older than watermark is considered expired and will be removed by calls to inverse.
+   * The first return value uses default-constructed T{} as a sentinel to indicate no watermark is set. At a later
+   * point, the operator can return a valid watermark if needed. invserse() will be called to remove expired data
+   * accordingly. However, it is undefined behavior (UB) to return a watermark older than the previous one. The second
+   * return value defines watermark boundary condition: if true, data at watermark is removed, if false, data at
+   * watermark is kept.
+   *
+   * @note watermark does not imply that out-of-order / late-arrival data is allowed. Currently it is UB if data arrives
+   * out of order.
+   *
+   * @return std::tuple<T, bool>
+   */
+  virtual std::tuple<T, bool> watermark() const noexcept { return std::make_tuple(T{}, false); }
 
-  // Number of dependencies
+  /**
+   * @brief Returns number of dependencies/parents.
+   *
+   * @return size_t
+   */
   virtual size_t num_depends() const noexcept = 0;
-  // Output size
+
+  /**
+   * @brief Returns number of outputs this operator produces.
+   *
+   * @return size_t
+   */
   virtual size_t num_outputs() const noexcept = 0;
-  // Arity of the denpending op, i.e. number of inputs it uses
-  virtual size_t arity(size_t) const noexcept = 0;
+
+  /**
+   * @brief Query arity required for parent operator.
+   *
+   * @details Arity is the number of inputs this operator expects from the parent with given id.
+   *
+   * @param pid Parent id
+   * @return size_t
+   */
+  virtual size_t arity(size_t pid) const noexcept = 0;
 
   virtual ~op_base() = default;
 };
@@ -123,14 +170,14 @@ struct rollsum : public op_base<T> {
 
   void value(double *out) const noexcept override { *out = sum; }
 
-  T watermark() const noexcept override {
+  std::tuple<T, bool> watermark() const noexcept override {
     if (last_tick == T{})
-      return T{}; // No data processed yet
+      return std::make_tuple(T{}, false); // No data processed yet
     if (window <= time_delta_t<T>{0})
-      return T{}; // Invalid or infinite window
+      return std::make_tuple(T{}, true); // Invalid or infinite window
     // Proper watermark calculation: last_tick - window, but handle underflow
     auto delta = static_cast<time_delta_t<T>>(window);
-    return last_tick >= delta ? last_tick - window : T{};
+    return last_tick >= delta ? std::make_tuple(last_tick - window, true) : std::make_tuple(T{}, true);
   }
 
   size_t num_depends() const noexcept override { return 1; }
@@ -156,8 +203,8 @@ struct engine {
   };
 
   std::deque<slice> steps{};
-  std::vector<size_t> v_idx{}; // Indexes into steps.data for each node output
-  size_t v_size{};             // Total size of all outputs
+  std::vector<size_t> output_offset{}; // Indexes into steps.data for each node output
+  size_t output_size{};                // Total size of all outputs
 
   std::vector<T> watermarks{}; // Last tick for each node that was cleaned up to
 
@@ -195,8 +242,8 @@ struct engine {
     watermarks.push_back(T{}); // Initialize watermark for new node
 
     auto n = nodes.back()->num_outputs();
-    v_size += n;
-    v_idx.push_back(v_size - n);
+    output_size += n;
+    output_offset.push_back(output_size - n);
     return id;
   }
 
@@ -216,7 +263,7 @@ struct engine {
     steps.emplace_back();
     auto &current_step = steps.back();
     current_step.tick = tick;
-    current_step.data.resize(v_size, 0.0); // Initialize with zeros
+    current_step.data.resize(output_size, 0.0); // Initialize with zeros
 
     // Process each node in topological order
     for (size_t node_id = 0; node_id < nodes.size(); ++node_id) {
@@ -232,26 +279,28 @@ struct engine {
       } else {
         // Construct input from dependencies
         for (auto dep_id : depends[node_id]) {
-          input_ptrs.push_back(current_step.data.data() + v_idx[dep_id]);
+          input_ptrs.push_back(current_step.data.data() + output_offset[dep_id]);
         }
       }
 
       // 2. Call step on the node
       node->step(tick, input_ptrs.data());
 
-      // Logic of calling inverse:
-      // Operator reports its watermark X, which means its state should only contain data from (X, current_step.tick]
-      // e.g. A rolling sum of 4 bars: on bar 6, its state should only contain data from bar 3 to bar 6, and op reports
-      // watermark 2 because 6 (tick) - 4 (window) = 2 (watermark), engine calls inverse on all steps with last < ticks
-      // <= 2
+      // TODO: in case all nodes returns T{} watermark, history will grow indefinitely.
+      // Potential solution:
+      // - disallow cumulative nodes returning valid watermarks.
+      // - hard limit on history size. (this lead to incorrect values)
+      // - soft limit on history size, store and query history to/from db.
 
       // 3. Check expired data and call inverse if needed
-      auto wm = node->watermark();
+      // For incl == true: remove (last_wm, wm]
+      // For incl == false: remove [last_wm, wm)
+      auto [wm, incl] = node->watermark();
       if (wm != T{} && node_id > 0) { // Skip watermark processing for root node
-        auto last = watermarks[node_id];
-        // Only assert if last is not default-initialized (T{})
-        if (last != T{}) {
-          assert(last <= wm); // Watermark should not decrease
+        auto last_wm = watermarks[node_id];
+        // Only assert if last_wm is not default-initialized (T{})
+        if (last_wm != T{}) {
+          assert(last_wm <= wm); // Watermark should not decrease
         }
 
         // Use pre-allocated vector for removal pointers
@@ -259,25 +308,34 @@ struct engine {
         rm_ptrs.reserve(depends[node_id].size());
         // Iterate through historical steps and clean up expired data
         for (auto const &history : steps) {
-          if (history.tick > wm)
-            break; // cleanup finished
-          if (history.tick <= last)
-            continue; // already cleaned up this tick
+          if (incl) {
+            // data at watermark is removed
+            if (history.tick > wm)
+              break; // cleanup finished
+            if (history.tick <= last_wm)
+              continue; // already cleaned up this tick
+          } else {
+            // data at watermark is kept
+            if (history.tick >= wm)
+              break; // cleanup finished
+            if (history.tick < last_wm)
+              continue; // already cleaned up this tick
+          }
 
           // Prepare removal data pointers
           rm_ptrs.clear();
           for (auto dep_id : depends[node_id]) {
-            rm_ptrs.push_back(history.data.data() + v_idx[dep_id]);
+            rm_ptrs.push_back(history.data.data() + output_offset[dep_id]);
           }
           node->inverse(history.tick, rm_ptrs.data());
         }
 
-        // Update cleanup watermark for this node - use wm instead of last
+        // Update cleanup watermark for this node - use wm instead of last_wm
         watermarks[node_id] = wm;
       }
 
       // 4. Get node's output and write to current step data AFTER watermark cleanup
-      double *output_ptr = current_step.data.data() + v_idx[node_id];
+      double *output_ptr = current_step.data.data() + output_offset[node_id];
       node->value(output_ptr);
     }
 
@@ -318,7 +376,7 @@ struct engine {
     }
 
     const auto &latest_data = steps.back().data;
-    size_t start_idx = v_idx[node_id];
+    size_t start_idx = output_offset[node_id];
     size_t num_outputs = nodes[node_id]->num_outputs();
 
     return std::vector<double>(latest_data.begin() + static_cast<std::ptrdiff_t>(start_idx),
@@ -331,7 +389,7 @@ struct engine {
       return false;
     }
 
-    if (nodes.size() != v_idx.size()) {
+    if (nodes.size() != output_offset.size()) {
       return false;
     }
 
@@ -361,7 +419,7 @@ struct engine {
   // Get memory usage estimation in bytes
   size_t estimated_memory_usage() const {
     size_t total = 0;
-    total += steps.size() * (sizeof(slice) + v_size * sizeof(double));
+    total += steps.size() * (sizeof(slice) + output_size * sizeof(double));
     total += nodes.size() * sizeof(node_type);
     total += depends.size() * sizeof(std::vector<size_t>);
     for (const auto &dep_list : depends) {
@@ -373,7 +431,7 @@ struct engine {
   // Utility methods
   size_t num_nodes() const { return nodes.size(); }
 
-  size_t total_output_size() const { return v_size; }
+  size_t total_output_size() const { return output_size; }
 
   bool has_steps() const { return !steps.empty(); }
 
