@@ -42,8 +42,6 @@ struct op_base {
    */
   virtual void inverse(T tick, double const *const *rm) noexcept = 0;
 
-  // Output directly written to buf, value should not change state of the op so engine can query it at any time
-
   /**
    * @brief Write operator's output value to the provided buffer
    *
