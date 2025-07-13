@@ -6,7 +6,6 @@
 #include <limits>
 #include <memory>
 #include <ranges>
-#include <span>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -27,7 +26,7 @@ enum class retention_policy {
   cumulative,          // Cumulative
   remove_at_watermark, // Data at watermark is removed
   keep_at_watermark    // Data at watermark is kept
-                      };
+};
 
 template <scalar_time T>
 struct op_base {
@@ -45,7 +44,10 @@ struct op_base {
    * @param tick Expired tick
    * @param rm Pointer to removal data, where rm[parent_id] points to the data from parent operator
    */
-  virtual void inverse(T tick, double const *const *rm) noexcept = 0;
+  virtual void inverse(T tick, double const *const *rm) noexcept {
+    std::ignore = tick; // Unused in base class
+    std::ignore = rm;   // Unused in base class
+  };
 
   /**
    * @brief Write operator's output value to the provided buffer
@@ -120,8 +122,7 @@ struct root_input : public op_base<T> {
       std::copy(in[0], in[0] + mem.size(), mem.data());
     }
   }
-  void inverse(T, double const *const *) noexcept override {} // noop
-  void value(double *out) const noexcept override {
+  void value(double *out) noexcept override {
     if (out) { // Add null pointer check
       std::copy(mem.begin(), mem.end(), out);
     }
@@ -134,72 +135,64 @@ struct root_input : public op_base<T> {
 
 template <scalar_time T>
 struct rollsum : public op_base<T> {
-  double sum;
-  T last_tick;
-  time_delta_t<T> window;
-  std::vector<size_t> sum_idx; // Indices of inputs contributing to the sum
+  double sum{};
+  T current{};
+  time_delta_t<T> window_size;
+  std::vector<size_t> sum_idx{};
 
   template <std::ranges::input_range R>
-  rollsum(time_delta_t<T> window, R &&idx) : sum(0.0), last_tick(T{}), window(window) {
+  rollsum(R &&idx, time_delta_t<T> window = {}) : window_size(window) {
     if (std::ranges::empty(idx))
-      sum_idx = {0};
+      sum_idx.push_back(0);
     else
-      sum_idx = std::vector<size_t>(std::ranges::begin(idx), std::ranges::end(idx));
+      sum_idx.assign(std::ranges::begin(idx), std::ranges::end(idx));
   }
 
-  explicit rollsum(time_delta_t<T> window) : rollsum(window, std::span<size_t>{}) {}
+  bool cumulative() const noexcept { return window_size == time_delta_t<T>{}; }
 
   void step(T tick, double const *const *in) noexcept override {
-    // Handle initialization case
-    if (last_tick == T{}) {
-      last_tick = tick;
-    } else if (tick <= last_tick) {
-      assert(false && "Received non-monotonic tick in rollsum operator");
-      return;
-    } else {
-      last_tick = tick;
-    }
+    assert(tick != T{} && "default-constructed tick.");
+    assert(tick > current && "non-monotonic tick.");
+
+    current = tick;
 
     auto const *data = in[0];
-    for (auto idx : sum_idx) {
-      // Add bounds checking to prevent buffer overflow
-      if (idx < static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max())) {
-        sum += data[idx];
-      }
-    }
+    for (auto i : sum_idx)
+      sum += data[i];
   }
 
   void inverse(T tick, double const *const *rm) noexcept override {
+    assert(!cumulative() && "Inverse called on cumulative rollsum");
+
     std::ignore = tick; // Unused in reverse
     auto const *data = rm[0];
-    for (auto idx : sum_idx) {
-      // Add bounds checking to prevent buffer underflow
-      if (idx < static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max())) {
-        sum -= data[idx];
-      }
+    for (auto i : sum_idx) {
+      sum -= data[i];
     }
   }
 
-  void value(double *out) const noexcept override { *out = sum; }
+  void value(double *out) noexcept override { *out = sum; }
 
-  std::tuple<T, bool> watermark() const noexcept override {
-    if (last_tick == T{})
-      return std::make_tuple(T{}, false); // No data processed yet
-    if (window <= time_delta_t<T>{0})
-      return std::make_tuple(T{}, true); // Invalid or infinite window
-    // Proper watermark calculation: last_tick - window, but handle underflow
-    auto delta = static_cast<time_delta_t<T>>(window);
-    return last_tick >= delta ? std::make_tuple(last_tick - window, true) : std::make_tuple(T{}, true);
+  retention_policy retention() const noexcept override {
+    return cumulative() ? retention_policy::cumulative : retention_policy::remove_at_watermark;
+  }
+
+  T watermark() const noexcept override {
+    assert(!cumulative() && "Watermark called on cumulative rollsum");
+
+    T cumulative_stage = T{} + window_size;
+    if (current < cumulative_stage) {
+      return T{};
+    }
+    return current - window_size;
   }
 
   size_t num_depends() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
   size_t arity(size_t pid) const noexcept override {
-    if (pid == 0) {
-      return sum_idx.size(); // Number of inputs contributing to the sum
-    }
-    assert(false && "This is a bug in engine. Invalid pid for rollsum arity");
-    return 0; // Invalid pid
+    assert(pid == 0 && "rollsum expects input from parent with id 0");
+
+    return sum_idx.size();
   }
 };
 
@@ -208,6 +201,10 @@ struct engine {
   using node_type = std::shared_ptr<op_base<T>>;
   std::vector<node_type> nodes{};
   std::vector<std::vector<size_t>> depends{};
+  std::vector<size_t> nodes_rolling{};
+
+  std::vector<T> history_tick{};
+  std::vector<std::vector<double>> history_value{};
 
   struct slice {
     T tick;
@@ -234,6 +231,7 @@ struct engine {
   template <std::ranges::input_range R>
   size_t add_op(node_type op, R &&dependencies) {
     size_t id = nodes.size();
+    auto retention = op->retention();
 
     // Validate dependencies first
     for (auto dep : dependencies) {
@@ -251,6 +249,9 @@ struct engine {
     // All validations passed, now modify state
     nodes.push_back(std::move(op));
     depends.emplace_back(std::ranges::begin(dependencies), std::ranges::end(dependencies));
+    if (retention != retention_policy::cumulative) {
+      nodes_rolling.push_back(id); // Track non-cumulative nodes for potential cleanup
+    }
     watermarks.push_back(T{}); // Initialize watermark for new node
 
     auto n = nodes.back()->num_outputs();
@@ -305,45 +306,47 @@ struct engine {
       // - soft limit on history size, store and query history to/from db.
 
       // 3. Check expired data and call inverse if needed
-      // For incl == true: remove (last_wm, wm]
-      // For incl == false: remove [last_wm, wm)
-      auto [wm, incl] = node->watermark();
-      if (wm != T{} && node_id > 0) { // Skip watermark processing for root node
-        auto last_wm = watermarks[node_id];
-        // Only assert if last_wm is not default-initialized (T{})
-        if (last_wm != T{}) {
-          assert(last_wm <= wm); // Watermark should not decrease
-        }
-
-        // Use pre-allocated vector for removal pointers
-        std::vector<const double *> rm_ptrs;
-        rm_ptrs.reserve(depends[node_id].size());
-        // Iterate through historical steps and clean up expired data
-        for (auto const &history : steps) {
-          if (incl) {
-            // data at watermark is removed
-            if (history.tick > wm)
-              break; // cleanup finished
-            if (history.tick <= last_wm)
-              continue; // already cleaned up this tick
-          } else {
-            // data at watermark is kept
-            if (history.tick >= wm)
-              break; // cleanup finished
-            if (history.tick < last_wm)
-              continue; // already cleaned up this tick
+      auto retention = node->retention();
+      if (retention != retention_policy::cumulative && node_id > 0) { // Skip watermark processing for root node
+        auto wm = node->watermark();
+        if (wm != T{}) {
+          auto last_wm = watermarks[node_id];
+          // Only assert if last_wm is not default-initialized (T{})
+          if (last_wm != T{}) {
+            assert(last_wm <= wm); // Watermark should not decrease
           }
 
-          // Prepare removal data pointers
-          rm_ptrs.clear();
-          for (auto dep_id : depends[node_id]) {
-            rm_ptrs.push_back(history.data.data() + output_offset[dep_id]);
-          }
-          node->inverse(history.tick, rm_ptrs.data());
-        }
+          // Use pre-allocated vector for removal pointers
+          std::vector<const double *> rm_ptrs;
+          rm_ptrs.reserve(depends[node_id].size());
 
-        // Update cleanup watermark for this node - use wm instead of last_wm
-        watermarks[node_id] = wm;
+          // Iterate through historical steps and clean up expired data
+          for (auto const &history : steps) {
+            bool should_remove = false;
+
+            if (retention == retention_policy::remove_at_watermark) {
+              // Data at watermark is removed: remove (last_wm, wm]
+              should_remove = (history.tick > last_wm && history.tick <= wm);
+            } else if (retention == retention_policy::keep_at_watermark) {
+              // Data at watermark is kept: remove [last_wm, wm)
+              should_remove = (history.tick >= last_wm && history.tick < wm);
+            }
+
+            if (!should_remove) {
+              continue;
+            }
+
+            // Prepare removal data pointers
+            rm_ptrs.clear();
+            for (auto dep_id : depends[node_id]) {
+              rm_ptrs.push_back(history.data.data() + output_offset[dep_id]);
+            }
+            node->inverse(history.tick, rm_ptrs.data());
+          }
+
+          // Update cleanup watermark for this node
+          watermarks[node_id] = wm;
+        }
       }
 
       // 4. Get node's output and write to current step data AFTER watermark cleanup
@@ -351,15 +354,18 @@ struct engine {
       node->value(output_ptr);
     }
 
-    // 5. Clean up expired data based on minimum watermark across all nodes
+    // 5. Clean up expired data based on minimum watermark across all non-cumulative nodes
     T min_watermark = tick; // Start with current tick as maximum possible
     bool has_watermark = false;
     for (size_t i = 1; i < watermarks.size(); ++i) { // Skip root node (index 0)
-      auto const &wm = watermarks[i];
-      if (wm != T{}) {
-        has_watermark = true;
-        if (wm < min_watermark) {
-          min_watermark = wm;
+      // Only consider nodes with non-cumulative retention policies
+      if (nodes[i]->retention() != retention_policy::cumulative) {
+        auto const &wm = watermarks[i];
+        if (wm != T{}) {
+          has_watermark = true;
+          if (wm < min_watermark) {
+            min_watermark = wm;
+          }
         }
       }
     }

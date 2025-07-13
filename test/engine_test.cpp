@@ -35,8 +35,9 @@ TEST_F(EngineTest, BasicRootInput) {
 TEST_F(EngineTest, RollingSumOperator) {
   engine_int eng(2); // Create engine with 2 input values
 
-  // Add a rolling sum operator with window of 3 ticks
-  auto rollsum_op = std::make_shared<rollsum<int>>(3);
+  // Add a rolling sum operator with window of 3 ticks, summing indices 0 and 1
+  std::vector<size_t> indices = {0, 1};
+  auto rollsum_op = std::make_shared<rollsum<int>>(indices, 3);
   auto rollsum_id = eng.add_op(rollsum_op, std::vector<size_t>{0});
 
   EXPECT_NE(rollsum_id, std::numeric_limits<size_t>::max());
@@ -60,12 +61,13 @@ TEST_F(EngineTest, RollingSumOperator) {
 TEST_F(EngineTest, InvalidDependency) {
   engine_int eng(1);
 
-  auto op1 = std::make_shared<rollsum<int>>(2);
+  std::vector<size_t> indices = {0};
+  auto op1 = std::make_shared<rollsum<int>>(indices, 2);
   auto id1 = eng.add_op(op1, std::vector<size_t>{0});
   EXPECT_NE(id1, std::numeric_limits<size_t>::max());
 
   // Try to add op2 that depends on a non-existent node
-  auto op2 = std::make_shared<rollsum<int>>(2);
+  auto op2 = std::make_shared<rollsum<int>>(indices, 2);
   auto id2 = eng.add_op(op2, std::vector<size_t>{5}); // Invalid dependency
   EXPECT_EQ(id2, std::numeric_limits<size_t>::max()); // Should fail
 
@@ -75,7 +77,8 @@ TEST_F(EngineTest, InvalidDependency) {
 TEST_F(EngineTest, MemoryManagement) {
   engine_int eng(1);
 
-  auto rollsum_op = std::make_shared<rollsum<int>>(2); // Window of 2
+  std::vector<size_t> indices = {0};
+  auto rollsum_op = std::make_shared<rollsum<int>>(indices, 2); // Window of 2
   eng.add_op(rollsum_op, std::vector<size_t>{0});
 
   // Add several steps to test memory cleanup
