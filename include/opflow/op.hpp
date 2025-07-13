@@ -21,7 +21,12 @@ concept scalar_time = std::regular<T> && std::totally_ordered<T> && std::is_defa
                       requires(T a, time_delta_t<T> b) {
                         { a - b } -> std::convertible_to<T>;
                         { a + b } -> std::convertible_to<T>;
-                        { T{} } -> std::same_as<T>; // Ensure default construction
+                      };
+
+enum class retention_policy {
+  cumulative,          // Cumulative
+  remove_at_watermark, // Data at watermark is removed
+  keep_at_watermark    // Data at watermark is kept
                       };
 
 template <scalar_time T>
@@ -48,24 +53,33 @@ struct op_base {
    * @param out Pointer to output buffer where the operator's value will be written
    * @note The output buffer is allocated as reported num_ouputs()
    */
-  virtual void value(double *out) const noexcept = 0;
+  virtual void value(double *out) noexcept = 0;
+
+  /**
+   * @brief Get data retention policy for this operator
+   *
+   * @details retention() is called when an instance of this operator is added to the DAG.
+   *
+   * @return retention_policy
+   */
+  virtual retention_policy retention() const noexcept { return retention_policy::cumulative; }
 
   /**
    * @brief Get the watermark (expiry) for this operator
    *
-   * @details Data older than watermark is considered expired and will be removed by calls to inverse.
-   * The first return value uses default-constructed T{} as a sentinel to indicate no watermark is set. At a later
-   * point, the operator can return a valid watermark if needed. invserse() will be called to remove expired data
-   * accordingly. However, it is undefined behavior (UB) to return a watermark older than the previous one. The second
-   * return value defines watermark boundary condition: if true, data at watermark is removed, if false, data at
-   * watermark is kept.
+   * @details Data older than watermark is considered expired and will be removed by calls to inverse.  An operator can
+   * return a default-constructed T{} to indicate an initial cumulative state, thus no invserse will be called at this
+   * stage and at a later point returns a valid watermark to remove expired data. It is undefined behavior to return a
+   * watermark older than previous one.
+   *
+   * If retention() returns retention_policy::cumulative, it is gaurenteed that watermark()/inverse() are never called.
    *
    * @note watermark does not imply that out-of-order / late-arrival data is allowed. Currently it is UB if data arrives
    * out of order.
    *
-   * @return std::tuple<T, bool>
+   * @return T
    */
-  virtual std::tuple<T, bool> watermark() const noexcept { return std::make_tuple(T{}, false); }
+  virtual T watermark() const noexcept { return T{}; }
 
   /**
    * @brief Returns number of dependencies/parents.
