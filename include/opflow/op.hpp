@@ -10,6 +10,8 @@
 #include <tuple>
 #include <vector>
 
+#include "dependency_map.hpp"
+
 namespace opflow {
 
 template <typename T>
@@ -200,7 +202,7 @@ template <typename T>
 struct engine {
   using node_type = std::shared_ptr<op_base<T>>;
   std::vector<node_type> nodes{};
-  std::vector<std::vector<size_t>> depends{};
+  dependency_map dependency_graph{};
   std::vector<size_t> nodes_rolling{};
 
   std::vector<T> history_tick{};
@@ -248,7 +250,13 @@ struct engine {
 
     // All validations passed, now modify state
     nodes.push_back(std::move(op));
-    depends.emplace_back(std::ranges::begin(dependencies), std::ranges::end(dependencies));
+    auto dep_id = dependency_graph.add(dependencies);
+    if (dep_id == static_cast<size_t>(-1)) {
+      // Dependency map failed to add - should not happen after our validation
+      nodes.pop_back();
+      return std::numeric_limits<size_t>::max();
+    }
+
     if (retention != retention_policy::cumulative) {
       nodes_rolling.push_back(id); // Track non-cumulative nodes for potential cleanup
     }
@@ -284,14 +292,15 @@ struct engine {
 
       // 1. Prepare input pointers for this node
       std::vector<const double *> input_ptrs;
-      input_ptrs.reserve(depends[node_id].size() + 1); // +1 for potential root input
+      auto node_deps = dependency_graph.get_dependencies(node_id);
+      input_ptrs.reserve(dependency_graph.get_degree(node_id) + 1); // +1 for potential root input
 
       if (node_id == 0) {
         // Root input node gets external input
         input_ptrs.push_back(input_data.data());
       } else {
         // Construct input from dependencies
-        for (auto dep_id : depends[node_id]) {
+        for (auto dep_id : node_deps) {
           input_ptrs.push_back(current_step.data.data() + output_offset[dep_id]);
         }
       }
@@ -318,7 +327,8 @@ struct engine {
 
           // Use pre-allocated vector for removal pointers
           std::vector<const double *> rm_ptrs;
-          rm_ptrs.reserve(depends[node_id].size());
+          auto rm_node_deps = dependency_graph.get_dependencies(node_id);
+          rm_ptrs.reserve(dependency_graph.get_degree(node_id));
 
           // Iterate through historical steps and clean up expired data
           for (auto const &history : steps) {
@@ -338,7 +348,7 @@ struct engine {
 
             // Prepare removal data pointers
             rm_ptrs.clear();
-            for (auto dep_id : depends[node_id]) {
+            for (auto dep_id : rm_node_deps) {
               rm_ptrs.push_back(history.data.data() + output_offset[dep_id]);
             }
             node->inverse(history.tick, rm_ptrs.data());
@@ -403,7 +413,7 @@ struct engine {
 
   // Validate engine state for debugging
   bool validate_state() const {
-    if (nodes.size() != depends.size() || nodes.size() != watermarks.size()) {
+    if (nodes.size() != dependency_graph.size() || nodes.size() != watermarks.size()) {
       return false;
     }
 
@@ -411,16 +421,9 @@ struct engine {
       return false;
     }
 
-    // Check that dependencies are valid
-    for (size_t i = 0; i < depends.size(); ++i) {
-      for (auto dep : depends[i]) {
-        if (dep >= i) { // Dependency should come before current node
-          return false;
-        }
-      }
-
-      // Check dependency count matches node expectation
-      if (depends[i].size() != nodes[i]->num_depends()) {
+    // Check dependency count matches node expectation
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      if (dependency_graph.get_degree(i) != nodes[i]->num_depends()) {
         return false;
       }
     }
@@ -432,18 +435,7 @@ struct engine {
   void clear_history() {
     steps.clear();
     std::fill(watermarks.begin(), watermarks.end(), T{});
-  }
-
-  // Get memory usage estimation in bytes
-  size_t estimated_memory_usage() const {
-    size_t total = 0;
-    total += steps.size() * (sizeof(slice) + output_size * sizeof(double));
-    total += nodes.size() * sizeof(node_type);
-    total += depends.size() * sizeof(std::vector<size_t>);
-    for (const auto &dep_list : depends) {
-      total += dep_list.size() * sizeof(size_t);
-    }
-    return total;
+    // Note: We don't clear dependency_graph as it represents the structure, not historical data
   }
 
   // Utility methods

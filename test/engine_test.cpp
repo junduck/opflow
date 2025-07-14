@@ -88,9 +88,6 @@ TEST_F(EngineTest, MemoryManagement) {
 
   // Should have cleaned up old data due to watermark
   EXPECT_LE(eng.num_steps(), 5); // Should not accumulate too much history
-
-  auto memory_usage = eng.estimated_memory_usage();
-  EXPECT_GT(memory_usage, 0);
 }
 
 TEST_F(EngineTest, ClearHistory) {
