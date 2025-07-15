@@ -14,12 +14,20 @@ add_executable(test_dependency_map dependency_map_test.cpp)
 target_link_libraries(test_dependency_map GTest::gtest_main opflow::headers)
 
 # History tests
-add_executable(test_history history_test.cpp)
-target_link_libraries(test_history GTest::gtest_main opflow::headers)
+add_executable(test_history_deque history_deque_test.cpp)
+target_link_libraries(test_history_deque GTest::gtest_main opflow::headers)
+
+add_executable(test_history_ringbuf history_ringbuf_test.cpp)
+target_link_libraries(test_history_ringbuf GTest::gtest_main opflow::headers)
+
+add_executable(test_history_comparison history_comparison_test.cpp)
+target_link_libraries(test_history_comparison GTest::gtest_main opflow::headers)
 
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_graph)
 gtest_discover_tests(test_engine)
 gtest_discover_tests(test_dependency_map)
-gtest_discover_tests(test_history)
+gtest_discover_tests(test_history_deque)
+gtest_discover_tests(test_history_ringbuf)
+gtest_discover_tests(test_history_comparison)

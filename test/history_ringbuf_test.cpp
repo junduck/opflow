@@ -1,4 +1,4 @@
-#include "opflow/history.hpp"
+#include "opflow/history_ringbuf.hpp"
 #include "gtest/gtest.h"
 #include <array>
 #include <chrono>
@@ -7,7 +7,7 @@
 
 using namespace opflow;
 
-class HistoryTest : public ::testing::Test {
+class HistoryRingbufTest : public ::testing::Test {
 protected:
   void SetUp() override {}
   void TearDown() override {}
@@ -21,28 +21,28 @@ protected:
 };
 
 // Test basic construction and initial state
-TEST_F(HistoryTest, DefaultConstruction) {
-  history<int, double> h(3);
+TEST_F(HistoryRingbufTest, DefaultConstruction) {
+  history_ringbuf<int, double> h(3);
   EXPECT_TRUE(h.empty());
   EXPECT_EQ(h.size(), 0);
 }
 
-TEST_F(HistoryTest, ConstructionWithCustomCapacity) {
-  history<int, double> h(2, 8);
+TEST_F(HistoryRingbufTest, ConstructionWithCustomCapacity) {
+  history_ringbuf<int, double> h(2, 8);
   EXPECT_TRUE(h.empty());
   EXPECT_EQ(h.size(), 0);
 }
 
-TEST_F(HistoryTest, ConstructionWithZeroValueSize) {
+TEST_F(HistoryRingbufTest, ConstructionWithZeroValueSize) {
   // This should be allowed but may not be very useful
-  history<int, double> h(0);
+  history_ringbuf<int, double> h(0);
   EXPECT_TRUE(h.empty());
   EXPECT_EQ(h.size(), 0);
 }
 
 // Test basic push and access operations
-TEST_F(HistoryTest, SinglePushAndAccess) {
-  history<int, int> h(3);
+TEST_F(HistoryRingbufTest, SinglePushAndAccess) {
+  history_ringbuf<int, int> h(3);
   auto data = make_test_data(3, 10);
 
   h.push(100, data);
@@ -57,8 +57,8 @@ TEST_F(HistoryTest, SinglePushAndAccess) {
   EXPECT_EQ(step.data[2], 12);
 }
 
-TEST_F(HistoryTest, MultiplePushesWithinCapacity) {
-  history<int, int> h(2, 4); // value_size=2, capacity=4
+TEST_F(HistoryRingbufTest, MultiplePushesWithinCapacity) {
+  history_ringbuf<int, int> h(2, 4); // value_size=2, capacity=4
 
   std::array<int, 2> data1{10, 20};
   std::array<int, 2> data2{30, 40};
@@ -87,8 +87,8 @@ TEST_F(HistoryTest, MultiplePushesWithinCapacity) {
 }
 
 // Test buffer growth when capacity is exceeded
-TEST_F(HistoryTest, BufferGrowth) {
-  history<int, int> h(1, 2); // Start with small capacity
+TEST_F(HistoryRingbufTest, BufferGrowth) {
+  history_ringbuf<int, int> h(1, 2); // Start with small capacity
 
   std::array<int, 1> data1{10};
   std::array<int, 1> data2{20};
@@ -113,8 +113,8 @@ TEST_F(HistoryTest, BufferGrowth) {
 }
 
 // Test pop operations
-TEST_F(HistoryTest, PopFront) {
-  history<int, int> h(1);
+TEST_F(HistoryRingbufTest, PopFront) {
+  history_ringbuf<int, int> h(1);
 
   std::array<int, 1> data1{10};
   std::array<int, 1> data2{20};
@@ -140,8 +140,8 @@ TEST_F(HistoryTest, PopFront) {
   EXPECT_TRUE(h.empty());
 }
 
-TEST_F(HistoryTest, PopOnEmptyBuffer) {
-  history<int, int> h(1);
+TEST_F(HistoryRingbufTest, PopOnEmptyBuffer) {
+  history_ringbuf<int, int> h(1);
   EXPECT_TRUE(h.empty());
 
   // Should not crash
@@ -150,8 +150,8 @@ TEST_F(HistoryTest, PopOnEmptyBuffer) {
 }
 
 // Test front() and back() methods
-TEST_F(HistoryTest, FrontAndBack) {
-  history<int, int> h(2);
+TEST_F(HistoryRingbufTest, FrontAndBack) {
+  history_ringbuf<int, int> h(2);
 
   std::array<int, 2> data1{10, 11};
   std::array<int, 2> data2{20, 21};
@@ -178,8 +178,8 @@ TEST_F(HistoryTest, FrontAndBack) {
 
 // Test front() on empty buffer (should be caught by assert in debug)
 #ifndef NDEBUG
-TEST_F(HistoryTest, BackOnEmptyBufferAssert) {
-  history<int, int> h(1);
+TEST_F(HistoryRingbufTest, BackOnEmptyBufferAssert) {
+  history_ringbuf<int, int> h(1);
   EXPECT_TRUE(h.empty());
 
   // In debug mode, this should trigger an assertion
@@ -189,8 +189,8 @@ TEST_F(HistoryTest, BackOnEmptyBufferAssert) {
 #endif
 
 // Test wrap-around behavior in circular buffer
-TEST_F(HistoryTest, CircularBufferWrapAround) {
-  history<int, int> h(1, 4); // Small capacity to force wrap-around
+TEST_F(HistoryRingbufTest, CircularBufferWrapAround) {
+  history_ringbuf<int, int> h(1, 4); // Small capacity to force wrap-around
 
   std::array<int, 1> data1{10};
   std::array<int, 1> data2{20};
@@ -224,8 +224,8 @@ TEST_F(HistoryTest, CircularBufferWrapAround) {
 }
 
 // Test growth with wrap-around data
-TEST_F(HistoryTest, GrowthWithWrapAroundData) {
-  history<int, int> h(1, 4);
+TEST_F(HistoryRingbufTest, GrowthWithWrapAroundData) {
+  history_ringbuf<int, int> h(1, 4);
 
   std::array<int, 1> data1{10};
   std::array<int, 1> data2{20};
@@ -259,8 +259,8 @@ TEST_F(HistoryTest, GrowthWithWrapAroundData) {
 }
 
 // Test clear operation
-TEST_F(HistoryTest, Clear) {
-  history<int, int> h(2);
+TEST_F(HistoryRingbufTest, Clear) {
+  history_ringbuf<int, int> h(2);
 
   std::array<int, 2> data1{10, 11};
   std::array<int, 2> data2{20, 21};
@@ -281,8 +281,8 @@ TEST_F(HistoryTest, Clear) {
 }
 
 // Test reserve operation
-TEST_F(HistoryTest, Reserve) {
-  history<int, int> h(1, 2);
+TEST_F(HistoryRingbufTest, Reserve) {
+  history_ringbuf<int, int> h(1, 2);
 
   // Reserve more space
   h.reserve(8);
@@ -304,8 +304,8 @@ TEST_F(HistoryTest, Reserve) {
   }
 }
 
-TEST_F(HistoryTest, ReserveNoEffect) {
-  history<int, int> h(1, 16);
+TEST_F(HistoryRingbufTest, ReserveNoEffect) {
+  history_ringbuf<int, int> h(1, 16);
 
   // Reserve smaller capacity should have no effect
   h.reserve(8);
@@ -316,8 +316,8 @@ TEST_F(HistoryTest, ReserveNoEffect) {
 }
 
 // Test iterator functionality
-TEST_F(HistoryTest, Iterator) {
-  history<int, int> h(2);
+TEST_F(HistoryRingbufTest, Iterator) {
+  history_ringbuf<int, int> h(2);
 
   std::array<int, 2> data1{10, 11};
   std::array<int, 2> data2{20, 21};
@@ -347,8 +347,8 @@ TEST_F(HistoryTest, Iterator) {
   EXPECT_EQ(it, h.end());
 }
 
-TEST_F(HistoryTest, EmptyIterator) {
-  history<int, int> h(1);
+TEST_F(HistoryRingbufTest, EmptyIterator) {
+  history_ringbuf<int, int> h(1);
 
   // Empty history should have begin() == end()
   EXPECT_EQ(h.begin(), h.end());
@@ -363,8 +363,8 @@ TEST_F(HistoryTest, EmptyIterator) {
 }
 
 // Test with different types
-TEST_F(HistoryTest, DifferentTypes) {
-  history<std::string, double> h(3);
+TEST_F(HistoryRingbufTest, DifferentTypes) {
+  history_ringbuf<std::string, double> h(3);
 
   std::array<double, 3> data1{1.1, 2.2, 3.3};
   std::array<double, 3> data2{4.4, 5.5, 6.6};
@@ -383,9 +383,9 @@ TEST_F(HistoryTest, DifferentTypes) {
 }
 
 // Test large value_size
-TEST_F(HistoryTest, LargeValueSize) {
+TEST_F(HistoryRingbufTest, LargeValueSize) {
   constexpr size_t large_size = 1000;
-  history<int, int> h(large_size);
+  history_ringbuf<int, int> h(large_size);
 
   auto data = make_test_data(large_size, 42);
   h.push(1, data);
@@ -401,8 +401,8 @@ TEST_F(HistoryTest, LargeValueSize) {
 }
 
 // Test stress scenario with many operations
-TEST_F(HistoryTest, StressTest) {
-  history<int, int> h(3, 2); // Start small to force multiple growth operations
+TEST_F(HistoryRingbufTest, StressTest) {
+  history_ringbuf<int, int> h(3, 2); // Start small to force multiple growth operations
 
   // Add many elements
   for (int i = 0; i < 100; ++i) {
@@ -436,8 +436,8 @@ TEST_F(HistoryTest, StressTest) {
 }
 
 // Test edge cases
-TEST_F(HistoryTest, IndexOutOfBounds) {
-  history<int, int> h(1);
+TEST_F(HistoryRingbufTest, IndexOutOfBounds) {
+  history_ringbuf<int, int> h(1);
   std::array<int, 1> data{10};
   h.push(1, data);
 
@@ -448,12 +448,12 @@ TEST_F(HistoryTest, IndexOutOfBounds) {
   // We can't easily test this without causing test failure
 }
 
-TEST_F(HistoryTest, PowerOfTwoCapacities) {
+TEST_F(HistoryRingbufTest, PowerOfTwoCapacities) {
   // Test that capacities are always powers of 2
-  history<int, int> h1(1, 1);  // Should become 1
-  history<int, int> h2(1, 3);  // Should become 4
-  history<int, int> h3(1, 7);  // Should become 8
-  history<int, int> h4(1, 15); // Should become 16
+  history_ringbuf<int, int> h1(1, 1);  // Should become 1
+  history_ringbuf<int, int> h2(1, 3);  // Should become 4
+  history_ringbuf<int, int> h3(1, 7);  // Should become 8
+  history_ringbuf<int, int> h4(1, 15); // Should become 16
 
   // We can't directly test the internal capacity, but we can test
   // that the behavior is correct by filling up to expected capacity
@@ -477,8 +477,8 @@ TEST_F(HistoryTest, PowerOfTwoCapacities) {
 }
 
 // Performance characteristic test
-TEST_F(HistoryTest, PerformanceCharacteristics) {
-  history<int, int> h(1, 1024);
+TEST_F(HistoryRingbufTest, PerformanceCharacteristics) {
+  history_ringbuf<int, int> h(1, 1024);
 
   // Fill with many elements - should be fast due to amortized O(1) push
   auto start = std::chrono::high_resolution_clock::now();
@@ -501,8 +501,8 @@ TEST_F(HistoryTest, PerformanceCharacteristics) {
 }
 
 // Additional edge case tests
-TEST_F(HistoryTest, ZeroValueSizeOperations) {
-  history<int, int> h(0); // Zero value size
+TEST_F(HistoryRingbufTest, ZeroValueSizeOperations) {
+  history_ringbuf<int, int> h(0); // Zero value size
 
   std::vector<int> empty_data;
   h.push(1, empty_data);
@@ -519,14 +519,14 @@ TEST_F(HistoryTest, ZeroValueSizeOperations) {
   EXPECT_EQ(step2.data.size(), 0);
 }
 
-TEST_F(HistoryTest, MoveSemantics) {
-  history<std::string, int> h1(2);
+TEST_F(HistoryRingbufTest, MoveSemantics) {
+  history_ringbuf<std::string, int> h1(2);
 
   std::array<int, 2> data{1, 2};
   h1.push("test", data);
 
   // Test move constructor
-  history<std::string, int> h2 = std::move(h1);
+  history_ringbuf<std::string, int> h2 = std::move(h1);
   EXPECT_EQ(h2.size(), 1);
   EXPECT_EQ(h2[0].tick, "test");
   EXPECT_EQ(h2[0].data[0], 1);
@@ -536,13 +536,13 @@ TEST_F(HistoryTest, MoveSemantics) {
   // We can't make assumptions about its state after move
 }
 
-TEST_F(HistoryTest, CopyConstruction) {
-  history<int, double> h1(3);
+TEST_F(HistoryRingbufTest, CopyConstruction) {
+  history_ringbuf<int, double> h1(3);
 
   std::array<double, 3> data{1.1, 2.2, 3.3};
   h1.push(42, data);
 
-  history<int, double> h2 = h1;
+  history_ringbuf<int, double> h2 = h1;
   EXPECT_EQ(h2.size(), 1);
   EXPECT_EQ(h2[0].tick, 42);
 
@@ -550,8 +550,8 @@ TEST_F(HistoryTest, CopyConstruction) {
   EXPECT_EQ(h1[0].tick, 42);
 }
 
-TEST_F(HistoryTest, ConstCorrectness) {
-  history<int, int> h(2);
+TEST_F(HistoryRingbufTest, ConstCorrectness) {
+  history_ringbuf<int, int> h(2);
 
   std::array<int, 2> data1{10, 20};
   std::array<int, 2> data2{30, 40};
@@ -583,13 +583,13 @@ TEST_F(HistoryTest, ConstCorrectness) {
   EXPECT_EQ(count, 2);
 }
 
-TEST_F(HistoryTest, ExceptionSafety) {
+TEST_F(HistoryRingbufTest, ExceptionSafety) {
   // Test that the class handles exceptions gracefully
 
   // Test overflow protection in constructor
   try {
     // This should not throw on reasonable systems
-    history<int, int> h(1000, 1024);
+    history_ringbuf<int, int> h(1000, 1024);
     EXPECT_TRUE(true); // If we get here, no exception was thrown
   } catch (const std::bad_alloc &) {
     // This is acceptable if memory is truly exhausted
@@ -600,7 +600,7 @@ TEST_F(HistoryTest, ExceptionSafety) {
   try {
     // Try to create a history with a huge value size that would overflow
     size_t huge_size = std::numeric_limits<size_t>::max() / 2 + 1;
-    history<int, int> h(huge_size, 2);
+    history_ringbuf<int, int> h(huge_size, 2);
     // If we get here, either the system handled it or our overflow check didn't trigger
     EXPECT_TRUE(true);
   } catch (const std::bad_alloc &) {
@@ -609,8 +609,8 @@ TEST_F(HistoryTest, ExceptionSafety) {
   }
 }
 
-TEST_F(HistoryTest, IteratorIncrement) {
-  history<int, int> h(1);
+TEST_F(HistoryRingbufTest, IteratorIncrement) {
+  history_ringbuf<int, int> h(1);
 
   std::array<int, 1> data1{10};
   std::array<int, 1> data2{20};
@@ -636,8 +636,8 @@ TEST_F(HistoryTest, IteratorIncrement) {
   EXPECT_EQ(it, h.end());
 }
 
-TEST_F(HistoryTest, LargeCapacityReserve) {
-  history<int, int> h(1, 2);
+TEST_F(HistoryRingbufTest, LargeCapacityReserve) {
+  history_ringbuf<int, int> h(1, 2);
 
   // Reserve a large capacity
   h.reserve(1024);
@@ -657,8 +657,8 @@ TEST_F(HistoryTest, LargeCapacityReserve) {
   }
 }
 
-TEST_F(HistoryTest, MixedPushPopOperations) {
-  history<int, int> h(1, 4);
+TEST_F(HistoryRingbufTest, MixedPushPopOperations) {
+  history_ringbuf<int, int> h(1, 4);
 
   // Complex sequence of operations
   std::array<int, 1> data1{1};
@@ -697,4 +697,85 @@ TEST_F(HistoryTest, MixedPushPopOperations) {
   EXPECT_EQ(h[0].tick, 4);
   EXPECT_EQ(h[1].tick, 5);
   EXPECT_EQ(h[2].tick, 6);
+}
+
+TEST_F(HistoryRingbufTest, PushEmptyDirectWrite) {
+  history_ringbuf<int, int> h(3);
+  EXPECT_TRUE(h.empty());
+
+  // Test push functionality
+  auto span_view = h.push(100);
+  EXPECT_EQ(span_view.tick, 100);
+  EXPECT_EQ(span_view.data.size(), 3);
+  EXPECT_FALSE(h.empty());
+  EXPECT_EQ(h.size(), 1);
+
+  // Write directly to the span
+  span_view.data[0] = 10;
+  span_view.data[1] = 20;
+  span_view.data[2] = 30;
+
+  // Verify the data was written correctly
+  auto const_view = h[0];
+  EXPECT_EQ(const_view.tick, 100);
+  EXPECT_EQ(const_view.data[0], 10);
+  EXPECT_EQ(const_view.data[1], 20);
+  EXPECT_EQ(const_view.data[2], 30);
+
+  // Test with multiple push calls
+  auto span_view2 = h.push(200);
+  span_view2.data[0] = 40;
+  span_view2.data[1] = 50;
+  span_view2.data[2] = 60;
+
+  EXPECT_EQ(h.size(), 2);
+
+  // Verify both entries
+  auto first = h[0];
+  auto second = h[1];
+
+  EXPECT_EQ(first.tick, 100);
+  EXPECT_EQ(first.data[0], 10);
+  EXPECT_EQ(first.data[1], 20);
+  EXPECT_EQ(first.data[2], 30);
+
+  EXPECT_EQ(second.tick, 200);
+  EXPECT_EQ(second.data[0], 40);
+  EXPECT_EQ(second.data[1], 50);
+  EXPECT_EQ(second.data[2], 60);
+}
+
+TEST_F(HistoryRingbufTest, PushEmptyWithGrowth) {
+  history_ringbuf<int, int> h(2, 2); // Small initial capacity to test growth
+
+  // Fill to capacity using push
+  auto span1 = h.push(1);
+  span1.data[0] = 1;
+  span1.data[1] = 2;
+
+  auto span2 = h.push(2);
+  span2.data[0] = 3;
+  span2.data[1] = 4;
+
+  EXPECT_EQ(h.size(), 2);
+
+  // This should trigger growth
+  auto span3 = h.push(3);
+  span3.data[0] = 5;
+  span3.data[1] = 6;
+
+  EXPECT_EQ(h.size(), 3);
+
+  // Verify all data is preserved
+  EXPECT_EQ(h[0].tick, 1);
+  EXPECT_EQ(h[0].data[0], 1);
+  EXPECT_EQ(h[0].data[1], 2);
+
+  EXPECT_EQ(h[1].tick, 2);
+  EXPECT_EQ(h[1].data[0], 3);
+  EXPECT_EQ(h[1].data[1], 4);
+
+  EXPECT_EQ(h[2].tick, 3);
+  EXPECT_EQ(h[2].data[0], 5);
+  EXPECT_EQ(h[2].data[1], 6);
 }

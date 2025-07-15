@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "dependency_map.hpp"
-#include "history.hpp"
+#include "history_ringbuf.hpp"
 
 namespace opflow {
 
@@ -284,8 +284,8 @@ struct engine {
   std::vector<size_t> output_offset{}; // Starting index in step data for each node output
   size_t output_size{};                // Total size of all outputs per step
 
-  history<T, double> step_history; // High-performance circular buffer for step data
-  std::vector<T> watermarks{};     // Last tick for each node that was cleaned up to
+  history_ringbuf<T, double> step_history; // High-performance circular buffer for step data
+  std::vector<T> watermarks{};             // Last tick for each node that was cleaned up to
 
   // Private constructor for engine_builder
   explicit engine(engine_builder<T> &&builder, size_t initial_history_capacity)
@@ -351,7 +351,7 @@ struct engine {
       output_offset.push_back(output_size - n);
 
       // Create new history with updated size
-      history<T, double> new_history(output_size, step_history.size() > 0 ? step_history.size() : 64);
+      history_ringbuf<T, double> new_history(output_size, step_history.size() > 0 ? step_history.size() : 64);
 
       // Copy existing data if any
       for (const auto &step : step_history) {
@@ -382,8 +382,8 @@ struct engine {
 
     // TODO: instead of using a copy of output buffer, we push history and use it in-place
 
-    // Prepare output buffer for this step
-    std::vector<double> step_data(output_size, 0.0);
+    // Push empty entry to history and get mutable span for direct writing
+    auto [_unused, step_data] = step_history.push(tick);
 
     // Process each node in topological order
     for (size_t node_id = 0; node_id < nodes.size(); ++node_id) {
@@ -422,8 +422,9 @@ struct engine {
           auto rm_node_deps = dependency_graph.get_dependencies(node_id);
           rm_ptrs.reserve(rm_node_deps.size());
 
-          // Iterate through historical steps
-          for (const auto &history_step : step_history) {
+          // Iterate through historical steps (excluding the current one we just added)
+          for (size_t hist_idx = 0; hist_idx < step_history.size() - 1; ++hist_idx) {
+            const auto history_step = step_history[hist_idx];
             bool should_remove = false;
 
             if (retention == retention_policy::remove_at_watermark) {
@@ -448,13 +449,12 @@ struct engine {
         }
       }
 
-      // 4. Get node's output and write to step data
+      // 4. Get node's output and write directly to step data
       double *output_ptr = step_data.data() + output_offset[node_id];
       node->value(output_ptr);
     }
 
-    // 5. Store the completed step in history
-    step_history.push(tick, step_data);
+    // 5. History entry is already stored with direct writes above
 
     // 6. Clean up expired history based on minimum watermark
     T min_watermark = tick;
@@ -473,7 +473,7 @@ struct engine {
 
     // Remove expired steps from history
     if (has_watermark) {
-      while (step_history.size() > 1 && step_history.front().tick <= min_watermark) {
+      while (step_history.size() && step_history.front().tick <= min_watermark) {
         step_history.pop();
       }
     }
@@ -481,7 +481,7 @@ struct engine {
 
   // Get the latest output data
   const std::vector<double> get_latest_output() const {
-    if (step_history.empty()) {
+    if (!step_history.size()) {
       return {};
     }
 
