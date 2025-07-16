@@ -176,7 +176,7 @@ public:
    * @brief Get all leaf nodes (nodes with no incoming dependencies from other nodes)
    * @return Vector of leaf node IDs
    */
-  std::vector<size_t> get_leafs() const {
+  std::vector<size_t> get_leaves() const {
     std::vector<bool> has_dependents(meta.size(), false);
 
     // Mark nodes that have dependents
@@ -286,7 +286,7 @@ public:
             .max_degree = max_deg,
             .avg_degree = static_cast<double>(total_dependencies()) / size(),
             .root_count = root_cnt,
-            .leaf_count = get_leafs().size()};
+            .leaf_count = get_leaves().size()};
   }
 };
 

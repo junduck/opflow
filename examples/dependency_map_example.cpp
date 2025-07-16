@@ -56,7 +56,7 @@ int main() {
   std::cout << "]\n";
 
   std::cout << "Leaf nodes: [";
-  auto leafs = graph.get_leafs();
+  auto leafs = graph.get_leaves();
   for (size_t i = 0; i < leafs.size(); ++i) {
     if (i > 0)
       std::cout << ", ";
