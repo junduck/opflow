@@ -10,6 +10,10 @@
 
 namespace opflow {
 
+// Forward declaration
+template <typename T, typename Hash, typename Equal>
+class sorted_graph;
+
 /**
  * @brief A generic topological sorter for directed acyclic graphs (DAGs)
  *
@@ -74,20 +78,20 @@ public:
   void add_vertex(T const &node, R &&deps) {
     // Ensure the node exists in both graphs
     if (graph.find(node) == graph.end()) {
-      graph[node] = NodeSet{};
+      graph.emplace(node, NodeSet{});
     }
     if (reverse_graph.find(node) == reverse_graph.end()) {
-      reverse_graph[node] = NodeSet{};
+      reverse_graph.emplace(node, NodeSet{});
     }
 
     // Add dependencies
     for (auto const &dep : deps) {
       // Ensure dependency exists in both graphs
       if (graph.find(dep) == graph.end()) {
-        graph[dep] = NodeSet{};
+        graph.emplace(dep, NodeSet{});
       }
       if (reverse_graph.find(dep) == reverse_graph.end()) {
-        reverse_graph[dep] = NodeSet{};
+        reverse_graph.emplace(dep, NodeSet{});
       }
 
       // Add the dependency relationship
@@ -278,6 +282,22 @@ public:
   }
 
   /**
+   * @brief Convert the topological sorter to a sorted graph
+   *
+   * This method performs the topological sort and returns a sorted_graph object
+   * that provides a container-compatible interface for accessing nodes in topological order.
+   *
+   * @return A sorted_graph containing nodes in topological order
+   */
+  auto make_sorted_graph() const -> sorted_graph<T, Hash, Equal> {
+    auto sorted_nodes = sort();
+    if (sorted_nodes.empty()) {
+      return sorted_graph<T, Hash, Equal>{};
+    }
+    return sorted_graph<T, Hash, Equal>(*this, std::move(sorted_nodes));
+  }
+
+  /**
    * @brief Get the number of nodes in the graph
    *
    * @return The total number of nodes currently in the graph
@@ -365,6 +385,243 @@ public:
    * @endcode
    */
   auto nodes() const { return std::views::keys(graph); }
+
+  /**
+   * @brief Get all root nodes in the graph
+   *
+   * Returns a vector of nodes that have no dependencies (i.e., they are not
+   * dependent on any other nodes). These nodes can be considered as starting
+   * points in the topological order.
+   *
+   * @return A vector containing all root nodes in the graph
+   *
+   * @note The returned vector is a copy and remains valid until the graph is modified
+   */
+  auto get_roots() const {
+    std::vector<T> roots;
+    for (auto const &[node, dependencies] : graph) {
+      if (dependencies.empty()) {
+        roots.push_back(node);
+      }
+    }
+    return roots;
+  }
+
+  /**
+   * @brief Get all leaf nodes in the graph
+   *
+   * Returns a vector of nodes that have no dependents (i.e., no other nodes
+   * depend on them). These nodes can be considered as end points in the
+   * topological order.
+   *
+   * @return A vector containing all leaf nodes in the graph
+   *
+   * @note The returned vector is a copy and remains valid until the graph is modified
+   */
+  auto get_leaves() const {
+    std::vector<T> leaves;
+    for (auto const &[node, dependents] : reverse_graph) {
+      if (dependents.empty()) {
+        leaves.push_back(node);
+      }
+    }
+    return leaves;
+  }
+};
+
+/**
+ * @brief An immutable sorted graph with container-compatible interface
+ *
+ * This class represents a topologically sorted graph that provides
+ * container-like access to nodes in topological order. It inherits from
+ * topological_sorter but hides all mutating operations to ensure immutability.
+ *
+ * @tparam T The type of nodes in the graph
+ * @tparam Hash Hash function for type T
+ * @tparam Equal Equality comparison for type T
+ */
+template <typename T, typename Hash = std::hash<T>, typename Equal = std::equal_to<T>>
+class sorted_graph : public topological_sorter<T, Hash, Equal> {
+public:
+  using base_type = topological_sorter<T, Hash, Equal>;
+  using typename base_type::NodeMap;
+  using typename base_type::NodeSet;
+
+  /// @brief Value type for iterator - pair of node and its dependencies
+  using value_type = std::pair<T const &, NodeSet const &>;
+  /// @brief Size type for container interface
+  using size_type = std::size_t;
+  /// @brief Difference type for iterator arithmetic
+  using difference_type = std::ptrdiff_t;
+
+private:
+  std::vector<T> sorted; ///< Nodes in topological order
+
+  /// Hide all mutating methods from base class
+  using base_type::add_edge;
+  using base_type::add_vertex;
+  using base_type::clear;
+  using base_type::rm_edge;
+  using base_type::rm_vertex;
+  /// Already sorted, don't allow re-sorting
+  using base_type::sort;
+
+public:
+  /**
+   * @brief Iterator for sorted graph
+   *
+   * Random access const iterator that provides access to nodes in topological order.
+   * Dereferences to a pair of (node, dependencies).
+   */
+  class const_iterator {
+  private:
+    sorted_graph const *graph;
+    size_type index;
+
+  public:
+    using iterator_category = std::random_access_iterator_tag;
+    using value_type = sorted_graph::value_type;
+    using difference_type = sorted_graph::difference_type;
+    using pointer = value_type *;
+    using reference = value_type;
+
+    const_iterator() : graph(nullptr), index(0) {}
+    const_iterator(sorted_graph const *graph, size_type index) : graph(graph), index(index) {}
+
+    reference operator*() const {
+      T const &node = graph->sorted[index];
+      return std::make_pair(std::cref(node), std::cref(graph->dependencies(node)));
+    }
+
+    const_iterator &operator++() {
+      ++index;
+      return *this;
+    }
+    const_iterator operator++(int) {
+      auto tmp = *this;
+      ++index;
+      return tmp;
+    }
+    const_iterator &operator--() {
+      --index;
+      return *this;
+    }
+    const_iterator operator--(int) {
+      auto tmp = *this;
+      --index;
+      return tmp;
+    }
+
+    const_iterator &operator+=(difference_type n) {
+      index = static_cast<size_type>(static_cast<difference_type>(index) + n);
+      return *this;
+    }
+    const_iterator &operator-=(difference_type n) {
+      index = static_cast<size_type>(static_cast<difference_type>(index) - n);
+      return *this;
+    }
+    const_iterator operator+(difference_type n) const {
+      const_iterator tmp = *this;
+      tmp += n;
+      return tmp;
+    }
+    const_iterator operator-(difference_type n) const {
+      const_iterator tmp = *this;
+      tmp -= n;
+      return tmp;
+    }
+
+    difference_type operator-(const const_iterator &other) const {
+      return static_cast<difference_type>(index) - static_cast<difference_type>(other.index);
+    }
+
+    reference operator[](difference_type n) const {
+      const_iterator tmp = *this;
+      tmp += n;
+      return *tmp;
+    }
+
+    auto operator<=>(const const_iterator &other) const = default;
+  };
+
+  using iterator = const_iterator; ///< Only const iteration is allowed
+
+  /**
+   * @brief Default constructor creates empty sorted graph
+   */
+  sorted_graph() = default;
+
+  /**
+   * @brief Construct sorted graph from base class and sorted nodes
+   *
+   * @param base The base topological_sorter to copy from
+   * @param nodes Vector of nodes in topological order
+   */
+  sorted_graph(const base_type &base, std::vector<T> nodes) : base_type(base), sorted(std::move(nodes)) {}
+
+  /**
+   * @brief Get iterator to beginning of sorted nodes
+   */
+  const_iterator begin() const { return const_iterator(this, 0); }
+  const_iterator cbegin() const { return begin(); }
+
+  /**
+   * @brief Get iterator to end of sorted nodes
+   */
+  const_iterator end() const { return const_iterator(this, sorted.size()); }
+  const_iterator cend() const { return end(); }
+
+  /**
+   * @brief Access node and dependencies by sorted index
+   *
+   * @param index The index in topological order (0-based)
+   * @return Pair of (node, dependencies) at the given index
+   */
+  value_type operator[](size_type index) const {
+    const T &node = sorted[index];
+    return std::make_pair(std::cref(node), std::cref(this->dependencies(node)));
+  }
+
+  /**
+   * @brief Access node and dependencies by sorted index with bounds checking
+   *
+   * @param index The index in topological order (0-based)
+   * @return Pair of (node, dependencies) at the given index
+   * @throws std::out_of_range if index is out of bounds
+   */
+  value_type at(size_type index) const {
+    if (index >= sorted.size()) {
+      throw std::out_of_range("Index out of range");
+    }
+    return (*this)[index];
+  }
+
+  /**
+   * @brief Get the node at a specific sorted index
+   *
+   * @param index The index in topological order (0-based)
+   * @return The node at the given index
+   */
+  T const &node_at(size_type index) const { return sorted[index]; }
+
+  /**
+   * @brief Get access to the sorted nodes vector
+   *
+   * @return Const reference to the vector of sorted nodes
+   */
+  std::vector<T> const &sorted_nodes() const { return sorted; }
+
+  /**
+   * @brief Get the first node and its dependencies
+   * @throws std::runtime_error if the graph is empty
+   */
+  value_type front() const { return (*this)[0]; }
+
+  /**
+   * @brief Get the last node and its dependencies
+   * @throws std::runtime_error if the graph is empty
+   */
+  value_type back() const { return (*this)[sorted.size() - 1]; }
 };
 
 } // namespace opflow
