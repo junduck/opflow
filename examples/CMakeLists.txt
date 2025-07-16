@@ -1,6 +1,3 @@
-add_executable(graph_examples graph_examples.cpp)
-target_link_libraries(graph_examples opflow::headers)
-
 add_executable(dependency_map_example dependency_map_example.cpp)
 target_link_libraries(dependency_map_example opflow::headers)
 
