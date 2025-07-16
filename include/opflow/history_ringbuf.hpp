@@ -231,20 +231,12 @@ public:
     }
 
     iterator_t &operator+=(difference_type n) {
-      if (n < 0) {
-        index -= static_cast<size_type>(-n);
-      } else {
-        index += static_cast<size_type>(n);
-      }
+      index = static_cast<size_type>(static_cast<difference_type>(index) + n);
       return *this;
     }
 
     iterator_t &operator-=(difference_type n) {
-      if (n < 0) {
-        index += static_cast<size_type>(-n);
-      } else {
-        index -= static_cast<size_type>(n);
-      }
+      index = static_cast<size_type>(static_cast<difference_type>(index) - n);
       return *this;
     }
 

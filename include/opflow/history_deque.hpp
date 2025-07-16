@@ -170,20 +170,12 @@ public:
     }
 
     iterator_t &operator+=(difference_type n) {
-      if (n < 0) {
-        index -= static_cast<size_type>(-n);
-      } else {
-        index += static_cast<size_type>(n);
-      }
+      index = static_cast<size_type>(static_cast<difference_type>(index) + n);
       return *this;
     }
 
     iterator_t &operator-=(difference_type n) {
-      if (n < 0) {
-        index += static_cast<size_type>(-n);
-      } else {
-        index -= static_cast<size_type>(n);
-      }
+      index = static_cast<size_type>(static_cast<difference_type>(index) - n);
       return *this;
     }
 
@@ -204,9 +196,9 @@ public:
     }
 
     reference operator[](difference_type n) const {
-      iterator_t temp = *this;
-      temp += n;
-      return *temp;
+      iterator_t tmp = *this;
+      tmp += n;
+      return *tmp;
     }
 
     auto operator<=>(iterator_t const &other) const = default;
