@@ -1,6 +1,8 @@
-#include "opflow/dependency_map.hpp"
 #include <gtest/gtest.h>
 #include <vector>
+
+#include "opflow/dependency_map.hpp"
+#include "opflow/topo.hpp"
 
 using namespace opflow;
 
@@ -245,4 +247,42 @@ TEST_F(DependencyMapTest, ContainsMethods) {
   EXPECT_TRUE(graph.contains(0));
   EXPECT_FALSE(graph.contains(1));
   EXPECT_FALSE(graph.contains(100));
+}
+
+TEST_F(DependencyMapTest, TopoSort) {
+
+  using vect = std::vector<std::string>;
+  using lookup = std::unordered_map<std::string, size_t>;
+
+  topological_sorter<std::string> sorter;
+  sorter.add_vertex("A");
+  sorter.add_vertex("B", vect{"A"});
+  sorter.add_vertex("C", vect{"A"});
+  sorter.add_vertex("D", vect{"A", "B"});
+  sorter.add_vertex("E", vect{"B", "C"});
+  sorter.add_vertex("F", vect{"C"});
+  sorter.add_vertex("G", vect{"E", "F"});
+  sorter.add_vertex("H", vect{"G"});
+
+  auto sorted = sorter.make_sorted_graph();
+  lookup id_lookup{};
+  std::vector<size_t> deps_by_id;
+  size_t expected_id = 0;
+  for (auto const &[node, deps] : sorted) {
+
+    deps_by_id.clear();
+    for (auto const &dep : deps) {
+      auto it = id_lookup.find(dep);
+      if (it != id_lookup.end()) {
+        deps_by_id.push_back(it->second);
+      }
+    }
+    ASSERT_EQ(deps_by_id.size(), deps.size());
+
+    auto id = graph.add(deps_by_id);
+    ASSERT_EQ(id, expected_id);
+    ++expected_id;
+
+    id_lookup[node] = id;
+  }
 }
