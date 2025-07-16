@@ -27,6 +27,10 @@ target_link_libraries(test_history_ringbuf GTest::gtest_main opflow::headers)
 add_executable(test_history_comparison history_comparison_test.cpp)
 target_link_libraries(test_history_comparison GTest::gtest_main opflow::headers)
 
+# Iterator tests
+add_executable(test_iterator iterator_test.cpp)
+target_link_libraries(test_iterator GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_engine)
@@ -36,3 +40,4 @@ gtest_discover_tests(test_sorted_graph)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)
 gtest_discover_tests(test_history_comparison)
+gtest_discover_tests(test_iterator)

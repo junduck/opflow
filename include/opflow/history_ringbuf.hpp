@@ -2,10 +2,10 @@
 
 #include <bit>
 #include <cassert>
-#include <type_traits>
 #include <vector>
 
 #include "history.hpp"
+#include "impl/iterator.hpp"
 #include "impl/step_view.hpp"
 
 namespace opflow {
@@ -181,95 +181,8 @@ public:
                     std::numeric_limits<size_type>::max() / sizeof(U) / value_size);
   }
 
-  // Iterator support for range-based loops
-  template <bool IsConst>
-  class iterator_t {
-  public:
-    using iterator_category = std::random_access_iterator_tag;
-    using value_type = step_view_t<IsConst>;
-    using difference_type = std::ptrdiff_t;
-    using pointer = value_type *;
-    using reference = value_type;
-
-  private:
-    using history_ptr = std::conditional_t<IsConst, history_ringbuf const *, history_ringbuf *>;
-    history_ptr hist;
-    size_type index;
-
-  public:
-    iterator_t() : hist(nullptr), index(0) {}
-    iterator_t(history_ptr h, size_type idx) : hist(h), index(idx) {}
-
-    // Allow conversion from non-const to const iterator
-    template <bool OtherConst>
-    iterator_t(iterator_t<OtherConst> const &other)
-      requires(IsConst && !OtherConst)
-        : hist(other.hist), index(other.index) {}
-
-    reference operator*() const { return hist->operator[](index); }
-
-    iterator_t &operator++() {
-      ++index;
-      return *this;
-    }
-
-    iterator_t operator++(int) {
-      iterator_t tmp = *this;
-      ++index;
-      return tmp;
-    }
-
-    iterator_t &operator--() {
-      --index;
-      return *this;
-    }
-
-    iterator_t operator--(int) {
-      iterator_t tmp = *this;
-      --index;
-      return tmp;
-    }
-
-    iterator_t &operator+=(difference_type n) {
-      index = static_cast<size_type>(static_cast<difference_type>(index) + n);
-      return *this;
-    }
-
-    iterator_t &operator-=(difference_type n) {
-      index = static_cast<size_type>(static_cast<difference_type>(index) - n);
-      return *this;
-    }
-
-    iterator_t operator+(difference_type n) const {
-      iterator_t tmp = *this;
-      tmp += n;
-      return tmp;
-    }
-
-    iterator_t operator-(difference_type n) const {
-      iterator_t tmp = *this;
-      tmp -= n;
-      return tmp;
-    }
-
-    difference_type operator-(iterator_t const &other) const {
-      return static_cast<difference_type>(index) - static_cast<difference_type>(other.index);
-    }
-
-    reference operator[](difference_type n) const {
-      iterator_t tmp = *this;
-      tmp += n;
-      return *tmp;
-    }
-
-    auto operator<=>(iterator_t const &other) const = default;
-
-    template <bool OtherConst>
-    friend class iterator_t;
-  };
-
-  using iterator = iterator_t<false>;
-  using const_iterator = iterator_t<true>;
+  using iterator = impl::iterator_t<history_ringbuf, false>;
+  using const_iterator = impl::iterator_t<history_ringbuf, true>;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 

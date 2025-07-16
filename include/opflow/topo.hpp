@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "impl/iterator.hpp"
+
 namespace opflow {
 
 // Forward declaration
@@ -468,85 +470,6 @@ private:
 
 public:
   /**
-   * @brief Iterator for sorted graph
-   *
-   * Random access const iterator that provides access to nodes in topological order.
-   * Dereferences to a pair of (node, dependencies).
-   */
-  class const_iterator {
-  private:
-    sorted_graph const *graph;
-    size_type index;
-
-  public:
-    using iterator_category = std::random_access_iterator_tag;
-    using value_type = sorted_graph::value_type;
-    using difference_type = sorted_graph::difference_type;
-    using pointer = value_type *;
-    using reference = value_type;
-
-    const_iterator() : graph(nullptr), index(0) {}
-    const_iterator(sorted_graph const *graph, size_type index) : graph(graph), index(index) {}
-
-    reference operator*() const {
-      T const &node = graph->sorted[index];
-      return std::make_pair(std::cref(node), std::cref(graph->dependencies(node)));
-    }
-
-    const_iterator &operator++() {
-      ++index;
-      return *this;
-    }
-    const_iterator operator++(int) {
-      auto tmp = *this;
-      ++index;
-      return tmp;
-    }
-    const_iterator &operator--() {
-      --index;
-      return *this;
-    }
-    const_iterator operator--(int) {
-      auto tmp = *this;
-      --index;
-      return tmp;
-    }
-
-    const_iterator &operator+=(difference_type n) {
-      index = static_cast<size_type>(static_cast<difference_type>(index) + n);
-      return *this;
-    }
-    const_iterator &operator-=(difference_type n) {
-      index = static_cast<size_type>(static_cast<difference_type>(index) - n);
-      return *this;
-    }
-    const_iterator operator+(difference_type n) const {
-      const_iterator tmp = *this;
-      tmp += n;
-      return tmp;
-    }
-    const_iterator operator-(difference_type n) const {
-      const_iterator tmp = *this;
-      tmp -= n;
-      return tmp;
-    }
-
-    difference_type operator-(const const_iterator &other) const {
-      return static_cast<difference_type>(index) - static_cast<difference_type>(other.index);
-    }
-
-    reference operator[](difference_type n) const {
-      const_iterator tmp = *this;
-      tmp += n;
-      return *tmp;
-    }
-
-    auto operator<=>(const const_iterator &other) const = default;
-  };
-
-  using iterator = const_iterator; ///< Only const iteration is allowed
-
-  /**
    * @brief Default constructor creates empty sorted graph
    */
   sorted_graph() = default;
@@ -559,16 +482,19 @@ public:
    */
   sorted_graph(const base_type &base, std::vector<T> nodes) : base_type(base), sorted(std::move(nodes)) {}
 
+  using iterator = impl::iterator_t<sorted_graph, true>; ///< Only const iteration is allowed
+  using const_iterator = iterator;
+
   /**
    * @brief Get iterator to beginning of sorted nodes
    */
-  const_iterator begin() const { return const_iterator(this, 0); }
+  iterator begin() const { return const_iterator(this, 0); }
   const_iterator cbegin() const { return begin(); }
 
   /**
    * @brief Get iterator to end of sorted nodes
    */
-  const_iterator end() const { return const_iterator(this, sorted.size()); }
+  iterator end() const { return const_iterator(this, sorted.size()); }
   const_iterator cend() const { return end(); }
 
   /**
