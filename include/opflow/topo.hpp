@@ -16,6 +16,12 @@ namespace opflow {
 template <typename T, typename Hash, typename Equal>
 class sorted_graph;
 
+enum class colour {
+  white, ///< Node has not been visited
+  gray,  ///< Node is discovered but not visited yet
+  black  ///< Node has been visited
+};
+
 /**
  * @brief A generic topological sorter for directed acyclic graphs (DAGs)
  *
@@ -43,8 +49,23 @@ class topological_sorter {
 public:
   /// @brief Type alias for a set of nodes
   using NodeSet = std::unordered_set<T, Hash, Equal>;
+
   /// @brief Type alias for a map from nodes to sets of nodes
   using NodeMap = std::unordered_map<T, NodeSet, Hash, Equal>;
+
+  /// @brief Type alias for colour map used in BFS
+  using colour_map_type = std::unordered_map<T, colour, Hash, Equal>;
+
+  /// @brief Type alias for depth map used in BFS
+  using depth_map_type = std::unordered_map<T, size_t, Hash, Equal>;
+
+  /**
+   * @brief No-op visitor for BFS
+   *
+   * This is a default visitor that does nothing and always returns true.
+   * It can be used when no specific action is needed during BFS traversal.
+   */
+  constexpr static auto noop_visitor = [](T const &, NodeMap const &, size_t) noexcept { return true; };
 
 private:
   NodeMap graph;         ///< Adjacency list: node -> set of nodes it depends on (predecessors)
@@ -97,8 +118,8 @@ public:
       }
 
       // Add the dependency relationship
-      graph[node].insert(dep);
-      reverse_graph[dep].insert(node);
+      graph[node].emplace(dep);
+      reverse_graph[dep].emplace(node);
     }
   }
 
@@ -207,6 +228,103 @@ public:
         reverse_it->second.erase(node);
       }
     }
+  }
+
+  /**
+   * @brief Perform a breadth-first search (BFS)
+   *
+   * This method traverses the graph using BFS, allowing you to visit nodes
+   * and their successors in a breadth-first manner. It provides hooks for
+   * handling discovered nodes (gray) and visited nodes (black).
+   *
+   * @tparam Visitor A callable type that accepts a node, the graph, and optionally the depth
+   * @param root The root node for the BFS traversal
+   * @param visitor A callable that is invoked for each visited node
+   * @param gray_handler Optional callable for handling gray nodes (discovered but not visited)
+   * @param black_handler Optional callable for handling black nodes (visited)
+   * @return A tuple containing:
+   *         - colour_map: Maps each node to its colour state
+   *         - depth_map: Maps each node to its relative depth (distance from the start node)
+   */
+  template <typename Visitor, typename GrayHandler, typename BlackHandler>
+  auto bfs(T const &root, Visitor &&visitor, GrayHandler &&gray_handler, BlackHandler &&black_handler) const {
+    colour_map_type colour_map{};
+    depth_map_type depth_map{};
+    std::queue<T> fifo{};
+
+    // Check if start node exists in the graph
+    if (reverse_graph.find(root) == reverse_graph.end()) {
+      // Start node doesn't exist, return empty maps
+      return std::make_tuple(std::move(colour_map), std::move(depth_map));
+    }
+
+    // Initialize all nodes as unvisited
+    for (const auto &[node, _] : reverse_graph) {
+      colour_map[node] = colour::white;
+      // Only initialize depth for nodes we might visit - others remain uninitialized
+    }
+
+    colour_map[root] = colour::gray;
+    depth_map[root] = 0; // root node has depth 0
+    fifo.push(root);
+    while (!fifo.empty()) {
+      T current = std::move(fifo.front());
+      fifo.pop();
+
+      bool should_continue = true;
+
+      // Discover successors (nodes that depend on current)
+      if (auto it = reverse_graph.find(current); it != reverse_graph.end()) {
+        for (auto const &successor : it->second) {
+          switch (colour_map[successor]) {
+          case colour::white:
+            colour_map[successor] = colour::gray;          // Mark as discovered
+            depth_map[successor] = depth_map[current] + 1; // Increment depth/distance
+            fifo.push(successor);
+            break;
+          case colour::gray:
+            // a gray node is discovered
+            if constexpr (std::is_invocable_v<GrayHandler, T const &, NodeMap const &, size_t>) {
+              should_continue = gray_handler(successor, std::cref(reverse_graph), depth_map[successor]);
+            } else {
+              should_continue = gray_handler(successor, std::cref(reverse_graph));
+            }
+            break;
+          case colour::black:
+            // a black node is discovered
+            if constexpr (std::is_invocable_v<BlackHandler, T const &, NodeMap const &, size_t>) {
+              should_continue = black_handler(successor, std::cref(reverse_graph), depth_map[successor]);
+            } else {
+              should_continue = black_handler(successor, std::cref(reverse_graph));
+            }
+            break;
+          }
+        }
+      }
+
+      if (!should_continue) {
+        break; // Exit loop if handler returns false
+      }
+
+      // Visit the current node
+      if constexpr (std::is_invocable_v<Visitor, T const &, NodeMap const &, size_t>) {
+        should_continue = visitor(current, std::cref(reverse_graph), depth_map[current]);
+      } else {
+        should_continue = visitor(current, std::cref(reverse_graph));
+      }
+      colour_map[current] = colour::black; // Mark as visited
+
+      if (!should_continue) {
+        break; // if visitor returns false, stop the traversal
+      }
+    }
+
+    return std::make_tuple(std::move(colour_map), std::move(depth_map));
+  }
+
+  template <typename Visitor>
+  auto bfs(T const &root, Visitor &&visitor) const {
+    return bfs(std::move(root), std::forward<Visitor>(visitor), noop_visitor, noop_visitor);
   }
 
   /**
