@@ -24,11 +24,11 @@ private:
   size_type index;
 
 public:
-  iterator_t() : self(nullptr), index(0) {}
-  iterator_t(self_ptr p, size_type idx) : self(p), index(idx) {}
+  iterator_t() noexcept : self(nullptr), index(0) {}
+  iterator_t(self_ptr p, size_type idx) noexcept : self(p), index(idx) {}
 
   template <bool OtherConst>
-  iterator_t(iterator_t<Self, OtherConst> const &other)
+  iterator_t(iterator_t<Self, OtherConst> const &other) noexcept
     requires(IsConst && !OtherConst)
       : self(other.self), index(other.index) {}
 

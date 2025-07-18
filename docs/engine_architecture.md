@@ -4,9 +4,9 @@ This document describes the updated engine implementation that separates concern
 
 ## Key Changes
 
-### 1. Separated `dependency_map` Component
+### 1. Separated `flat_graph` Component
 
-- **Location**: `include/opflow/dependency_map.hpp`
+- **Location**: `include/opflow/flat_graph.hpp`
 - **Purpose**: Compact, topologically-sorted dependency management
 - **Benefits**:
   - O(1) dependency lookup using flat arrays

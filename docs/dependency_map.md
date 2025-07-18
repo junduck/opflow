@@ -1,6 +1,6 @@
 # Dependency Map
 
-The `dependency_map` class provides a compact, high-performance data structure for maintaining dependencies between nodes in a directed acyclic graph (DAG). It's designed specifically for scenarios where nodes must be processed in topological order.
+The `flat_graph` class provides a compact, high-performance data structure for maintaining dependencies between nodes in a directed acyclic graph (DAG). It's designed specifically for scenarios where nodes must be processed in topological order.
 
 ## Design Principles
 
@@ -31,7 +31,7 @@ The `dependency_map` class provides a compact, high-performance data structure f
 
 ```cpp
 // Construction and capacity
-dependency_map();                                    // Default constructor
+flat_graph();                                    // Default constructor
 void reserve(size_t nodes, size_t deps = 0);       // Pre-allocate capacity
 
 // Adding nodes
@@ -54,10 +54,10 @@ span<const size_t> get_dependencies(size_t id) const;
 
 // Dependency metrics
 size_t get_degree(size_t id) const;                // Number of dependencies
-size_t total_dependencies() const;                 // Total across all nodes
+size_t total_predecessors() const;                 // Total across all nodes
 
 // Graph analysis
-vector<size_t> get_dependents(size_t id) const;   // Who depends on this node
+vector<size_t> get_predecessors(size_t id) const;   // Who depends on this node
 bool depends_on(size_t a, size_t b) const;        // Does A depend on B (transitively)
 ```
 
@@ -75,7 +75,7 @@ vector<size_t> get_leafs() const;                 // All leaf nodes
 ```cpp
 struct statistics {
     size_t node_count;
-    size_t total_dependencies;
+    size_t total_predecessors;
     size_t max_degree;
     double avg_degree;
     size_t root_count;
@@ -97,7 +97,7 @@ static constexpr size_t invalid_id;                // Return value for failed op
 ### Basic Dependency Tracking
 
 ```cpp
-dependency_map graph;
+flat_graph graph;
 
 // Build a simple pipeline: input → process → output
 auto input = graph.add({});
@@ -108,7 +108,7 @@ auto output = graph.add({process});
 ### Complex DAG Construction
 
 ```cpp
-dependency_map graph;
+flat_graph graph;
 graph.reserve(1000, 5000);  // Pre-allocate for efficiency
 
 // Multiple inputs
@@ -139,7 +139,7 @@ if (graph.depends_on(output_node, input_node)) {
 }
 
 // Find all affected nodes
-auto dependents = graph.get_dependents(critical_input);
+auto dependents = graph.get_predecessors(critical_input);
 for (auto node : dependents) {
     // Mark for recomputation
 }
@@ -174,7 +174,7 @@ if (graph.validate(new_deps)) {
 | `get_degree()` | O(1) | Direct metadata access |
 | `is_root()` | O(1) | Check degree == 0 |
 | `depends_on()` | O(V + E) | DFS worst case |
-| `get_dependents()` | O(E) | Scan all dependencies |
+| `get_predecessors()` | O(E) | Scan all dependencies |
 | `get_roots()` | O(V) | Scan all nodes |
 | `get_leafs()` | O(V + E) | Mark dependents + scan |
 

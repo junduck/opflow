@@ -9,7 +9,7 @@
 #include <tuple>
 #include <vector>
 
-#include "dependency_map.hpp"
+#include "flat_graph.hpp"
 #include "history_ringbuf.hpp"
 
 namespace opflow {
@@ -32,8 +32,8 @@ struct engine_builder;
 template <typename T>
 struct engine;
 
-enum class retention_policy {
-  cumulative,          // Cumulative
+enum class retention_policy : int {
+  cumulative = 0,      // Cumulative
   remove_at_watermark, // Data at watermark is removed
   keep_at_watermark    // Data at watermark is kept
 };
@@ -108,14 +108,14 @@ struct op_base {
   virtual size_t num_outputs() const noexcept = 0;
 
   /**
-   * @brief Query arity required for parent operator.
+   * @brief Query number of inputs required from a predecessor operator.
    *
-   * @details Arity is the number of inputs this operator expects from the parent with given id.
+   * @details num_inputs returns the number of inputs this operator expects from the predecessor operator with id pid.
    *
-   * @param pid Parent id
+   * @param pid Predecessor id
    * @return size_t
    */
-  virtual size_t arity(size_t pid) const noexcept = 0;
+  virtual size_t num_inputs(size_t pid) const noexcept = 0;
 
   virtual ~op_base() = default;
 };
@@ -140,7 +140,7 @@ struct root_input : public op_base<T> {
 
   size_t num_depends() const noexcept override { return 0; } // Root input has no dependencies
   size_t num_outputs() const noexcept override { return mem.size(); }
-  size_t arity(size_t) const noexcept override { return 0; } // No inputs
+  size_t num_inputs(size_t) const noexcept override { return 0; } // No inputs
 };
 
 template <scalar_time T>
@@ -199,7 +199,7 @@ struct rollsum : public op_base<T> {
 
   size_t num_depends() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
-  size_t arity(size_t pid) const noexcept override {
+  size_t num_inputs(size_t pid) const noexcept override {
     assert(pid == 0 && "rollsum expects input from parent with id 0");
 
     return sum_idx.size();
@@ -218,7 +218,7 @@ struct engine_builder {
   };
 
   std::vector<node_info> nodes{};
-  dependency_map dependency_graph{};
+  flat_graph dependency_graph{};
   size_t total_output_size{0};
 
   explicit engine_builder(size_t input_size) {
@@ -252,7 +252,7 @@ struct engine_builder {
 
     // Add to dependency graph
     auto dep_id = dependency_graph.add(dependencies);
-    if (dep_id == dependency_map::invalid_id) {
+    if (dep_id == invalid_id) {
       return std::numeric_limits<size_t>::max();
     }
 
@@ -280,7 +280,7 @@ struct engine {
   using node_type = std::shared_ptr<op_base<T>>;
 
   std::vector<node_type> nodes{};
-  dependency_map dependency_graph{};
+  flat_graph dependency_graph{};
   std::vector<size_t> output_offset{}; // Starting index in step data for each node output
   size_t output_size{};                // Total size of all outputs per step
 
@@ -336,7 +336,7 @@ struct engine {
     // All validations passed, now modify state
     nodes.push_back(std::move(op));
     auto dep_id = dependency_graph.add(dependencies);
-    if (dep_id == dependency_map::invalid_id) {
+    if (dep_id == invalid_id) {
       nodes.pop_back();
       return std::numeric_limits<size_t>::max();
     }
@@ -354,10 +354,10 @@ struct engine {
       history_ringbuf<T, double> new_history(output_size, step_history.size() > 0 ? step_history.size() : 64);
 
       // Copy existing data if any
-      for (const auto &step : step_history) {
+      for (const auto &[step_tick, step_data] : step_history) {
         std::vector<double> new_data(output_size, 0.0);
-        std::copy(step.data.begin(), step.data.end(), new_data.begin());
-        new_history.push(step.tick, new_data);
+        std::copy(step_data.begin(), step_data.end(), new_data.begin());
+        new_history.push(step_tick, new_data);
       }
 
       step_history = std::move(new_history);
@@ -369,21 +369,21 @@ struct engine {
   }
 
   // Step function: execute one computation step with given input data
-  void step(T tick, const std::vector<double> &input_data) {
+  auto step(T tick, const std::vector<double> &input_data) {
     // Validate input
     if (nodes.empty() || input_data.size() != nodes[0]->num_outputs()) {
       return;
     }
 
     // Check for non-monotonic ticks
-    if (!step_history.empty() && tick <= step_history.back().tick) {
+    if (!step_history.empty() && tick <= step_history.back().first) {
       return;
     }
 
     // TODO: instead of using a copy of output buffer, we push history and use it in-place
 
     // Push empty entry to history and get mutable span for direct writing
-    auto [_unused, step_data] = step_history.push(tick);
+    auto [_unused, data] = step_history.push(tick);
 
     // Process each node in topological order
     for (size_t node_id = 0; node_id < nodes.size(); ++node_id) {
@@ -391,7 +391,7 @@ struct engine {
 
       // 1. Prepare input pointers for this node
       std::vector<const double *> input_ptrs;
-      auto node_deps = dependency_graph.get_dependencies(node_id);
+      auto node_deps = dependency_graph.get_predecessors(node_id);
       input_ptrs.reserve(node_deps.size());
 
       if (node_id == 0) {
@@ -400,7 +400,7 @@ struct engine {
       } else {
         // Construct input from dependencies in current step
         for (auto dep_id : node_deps) {
-          input_ptrs.push_back(step_data.data() + output_offset[dep_id]);
+          input_ptrs.push_back(data.data() + output_offset[dep_id]);
         }
       }
 
@@ -419,18 +419,18 @@ struct engine {
 
           // Process watermark cleanup using history buffer
           std::vector<const double *> rm_ptrs;
-          auto rm_node_deps = dependency_graph.get_dependencies(node_id);
+          auto rm_node_deps = dependency_graph.get_predecessors(node_id);
           rm_ptrs.reserve(rm_node_deps.size());
 
           // Iterate through historical steps (excluding the current one we just added)
           for (size_t hist_idx = 0; hist_idx < step_history.size() - 1; ++hist_idx) {
-            const auto history_step = step_history[hist_idx];
+            const auto [step_tick, step_data] = step_history[hist_idx];
             bool should_remove = false;
 
             if (retention == retention_policy::remove_at_watermark) {
-              should_remove = (history_step.tick > last_wm && history_step.tick <= wm);
+              should_remove = (step_tick > last_wm && step_tick <= wm);
             } else if (retention == retention_policy::keep_at_watermark) {
-              should_remove = (history_step.tick >= last_wm && history_step.tick < wm);
+              should_remove = (step_tick >= last_wm && step_tick < wm);
             }
 
             if (!should_remove) {
@@ -440,9 +440,9 @@ struct engine {
             // Prepare removal data pointers
             rm_ptrs.clear();
             for (auto dep_id : rm_node_deps) {
-              rm_ptrs.push_back(history_step.data.data() + output_offset[dep_id]);
+              rm_ptrs.push_back(step_data.data() + output_offset[dep_id]);
             }
-            node->inverse(history_step.tick, rm_ptrs.data());
+            node->inverse(step_tick, rm_ptrs.data());
           }
 
           watermarks[node_id] = wm;
@@ -450,7 +450,7 @@ struct engine {
       }
 
       // 4. Get node's output and write directly to step data
-      double *output_ptr = step_data.data() + output_offset[node_id];
+      double *output_ptr = data.data() + output_offset[node_id];
       node->value(output_ptr);
     }
 
@@ -473,20 +473,23 @@ struct engine {
 
     // Remove expired steps from history
     if (has_watermark) {
-      while (step_history.size() && step_history.front().tick <= min_watermark) {
+      while (step_history.size() && step_history.front().first <= min_watermark) {
         step_history.pop();
       }
     }
+
+    // TODO: history here is actually the sink
+    // step_history.notify(); // Notify any observers of side effects?
   }
 
   // Get the latest output data
-  const std::vector<double> get_latest_output() const {
+  std::vector<double> get_latest_output() const {
     if (!step_history.size()) {
       return {};
     }
 
-    auto latest_step = step_history.back();
-    return std::vector<double>(latest_step.data.begin(), latest_step.data.end());
+    auto [latest_tick, latest_data] = step_history.back();
+    return std::vector<double>(latest_data.begin(), latest_data.end());
   }
 
   // Get output for a specific node from the latest step
@@ -495,12 +498,12 @@ struct engine {
       return {};
     }
 
-    auto latest_step = step_history.back();
+    auto [latest_tick, latest_data] = step_history.back();
     size_t start_idx = output_offset[node_id];
     size_t num_outputs = nodes[node_id]->num_outputs();
 
-    return std::vector<double>(latest_step.data.begin() + static_cast<std::ptrdiff_t>(start_idx),
-                               latest_step.data.begin() + static_cast<std::ptrdiff_t>(start_idx + num_outputs));
+    return std::vector<double>(latest_data.begin() + static_cast<std::ptrdiff_t>(start_idx),
+                               latest_data.begin() + static_cast<std::ptrdiff_t>(start_idx + num_outputs));
   }
 
   // Validate engine state for debugging
@@ -515,7 +518,7 @@ struct engine {
 
     // Check dependency count matches node expectation
     for (size_t i = 0; i < nodes.size(); ++i) {
-      if (dependency_graph.get_degree(i) != nodes[i]->num_depends()) {
+      if (dependency_graph.num_predecessors(i) != nodes[i]->num_depends()) {
         return false;
       }
     }
@@ -539,8 +542,8 @@ struct engine {
   std::vector<T> get_step_ticks() const {
     std::vector<T> ticks;
     ticks.reserve(step_history.size());
-    for (const auto &step : step_history) {
-      ticks.push_back(step.tick);
+    for (const auto &[step_tick, _unused] : step_history) {
+      ticks.push_back(step_tick);
     }
     return ticks;
   }

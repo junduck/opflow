@@ -16,8 +16,8 @@ concept history_view = requires(T view) {
 
 template <typename T, typename Tick, typename Data>
 concept history_container =
-    // constructor: with value size and capacity hint
-    std::constructible_from<T, size_t, size_t> &&
+    // constructor: with value size
+    std::constructible_from<T, size_t> &&
     // size is known
     std::ranges::sized_range<T> &&
     // can iterate as history_view

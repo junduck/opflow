@@ -22,10 +22,10 @@ protected:
   // Helper to compare two step views
   template <typename StepView1, typename StepView2>
   void compare_step_views(const StepView1 &s1, const StepView2 &s2) {
-    EXPECT_EQ(s1.tick, s2.tick);
-    EXPECT_EQ(s1.data.size(), s2.data.size());
-    for (size_t i = 0; i < s1.data.size(); ++i) {
-      EXPECT_EQ(s1.data[i], s2.data[i]);
+    EXPECT_EQ(s1.first, s2.first);
+    EXPECT_EQ(s1.second.size(), s2.second.size());
+    for (size_t i = 0; i < s1.second.size(); ++i) {
+      EXPECT_EQ(s1.second[i], s2.second[i]);
     }
   }
 
@@ -138,14 +138,14 @@ TEST_F(HistoryComparisonTest, IdenticalPushEmptyBehavior) {
   auto deque_step1 = deque_hist.push(100);
   auto ringbuf_step1 = ringbuf_hist.push(100);
 
-  EXPECT_EQ(deque_step1.tick, ringbuf_step1.tick);
-  EXPECT_EQ(deque_step1.data.size(), ringbuf_step1.data.size());
+  EXPECT_EQ(deque_step1.first, ringbuf_step1.first);
+  EXPECT_EQ(deque_step1.second.size(), ringbuf_step1.second.size());
 
   // Write identical data
   for (size_t i = 0; i < value_size; ++i) {
     int value = static_cast<int>(i * 5);
-    deque_step1.data[i] = value;
-    ringbuf_step1.data[i] = value;
+    deque_step1.second[i] = value;
+    ringbuf_step1.second[i] = value;
   }
 
   // Both should have identical content
@@ -158,8 +158,8 @@ TEST_F(HistoryComparisonTest, IdenticalPushEmptyBehavior) {
   // Write different patterns to verify independence
   for (size_t i = 0; i < value_size; ++i) {
     int value = static_cast<int>(i * 7 + 1);
-    deque_step2.data[i] = value;
-    ringbuf_step2.data[i] = value;
+    deque_step2.second[i] = value;
+    ringbuf_step2.second[i] = value;
   }
 
   compare_histories(deque_hist, ringbuf_hist);

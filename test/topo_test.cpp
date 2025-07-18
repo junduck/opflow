@@ -60,7 +60,7 @@ bool is_valid_topological_order(const std::vector<T> &order, const topological_s
 
   // Validate topological constraint: dependencies come before dependents
   for (const auto &node : order) {
-    for (const auto &dep : sorter.dependencies(node)) {
+    for (const auto &dep : sorter.predecessors(node)) {
       if (position.find(dep) == position.end() || position[dep] >= position[node]) {
         return false; // Dependency missing or appears after dependent
       }
@@ -197,7 +197,7 @@ TEST_F(TopologicalSorterTest, AddVertexWithDependencies) {
   EXPECT_TRUE(int_sorter.contains(2));
   EXPECT_TRUE(int_sorter.contains(3));
 
-  const auto &node_deps = int_sorter.dependencies(1);
+  const auto &node_deps = int_sorter.predecessors(1);
   EXPECT_EQ(node_deps.size(), 2);
   EXPECT_TRUE(node_deps.count(2));
   EXPECT_TRUE(node_deps.count(3));
@@ -209,7 +209,7 @@ TEST_F(TopologicalSorterTest, AddVertexWithEmptyDependencies) {
 
   EXPECT_EQ(int_sorter.size(), 1);
   EXPECT_TRUE(int_sorter.contains(1));
-  EXPECT_TRUE(int_sorter.dependencies(1).empty());
+  EXPECT_TRUE(int_sorter.predecessors(1).empty());
 }
 
 // Edge management tests
@@ -219,23 +219,23 @@ TEST_F(TopologicalSorterTest, AddEdges) {
   int_sorter.add_vertex(3);
 
   std::vector<int> deps = {2, 3};
-  int_sorter.add_edge(1, deps);
+  int_sorter.add_vertex(1, deps);
 
-  const auto &node_deps = int_sorter.dependencies(1);
+  const auto &node_deps = int_sorter.predecessors(1);
   EXPECT_EQ(node_deps.size(), 2);
   EXPECT_TRUE(node_deps.count(2));
   EXPECT_TRUE(node_deps.count(3));
 
-  const auto &dependents_2 = int_sorter.dependents(2);
+  const auto &dependents_2 = int_sorter.successors(2);
   EXPECT_TRUE(dependents_2.count(1));
 
-  const auto &dependents_3 = int_sorter.dependents(3);
+  const auto &dependents_3 = int_sorter.successors(3);
   EXPECT_TRUE(dependents_3.count(1));
 }
 
 TEST_F(TopologicalSorterTest, AddEdgeToNonExistentNode) {
   std::vector<int> deps = {2, 3};
-  int_sorter.add_edge(1, deps); // Node 1 doesn't exist yet
+  int_sorter.add_vertex(1, deps); // Node 1 doesn't exist yet
 
   EXPECT_EQ(int_sorter.size(), 3);
   EXPECT_TRUE(int_sorter.contains(1));
@@ -250,16 +250,16 @@ TEST_F(TopologicalSorterTest, RemoveEdges) {
   std::vector<int> to_remove = {2, 3};
   int_sorter.rm_edge(1, to_remove);
 
-  const auto &node_deps = int_sorter.dependencies(1);
+  const auto &node_deps = int_sorter.predecessors(1);
   EXPECT_EQ(node_deps.size(), 1);
   EXPECT_TRUE(node_deps.count(4));
   EXPECT_FALSE(node_deps.count(2));
   EXPECT_FALSE(node_deps.count(3));
 
   // Check reverse dependencies
-  EXPECT_TRUE(int_sorter.dependents(2).empty());
-  EXPECT_TRUE(int_sorter.dependents(3).empty());
-  EXPECT_TRUE(int_sorter.dependents(4).count(1));
+  EXPECT_TRUE(int_sorter.successors(2).empty());
+  EXPECT_TRUE(int_sorter.successors(3).empty());
+  EXPECT_TRUE(int_sorter.successors(4).count(1));
 }
 
 TEST_F(TopologicalSorterTest, RemoveEdgeFromNonExistentNode) {
@@ -286,8 +286,8 @@ TEST_F(TopologicalSorterTest, RemoveVertex) {
   EXPECT_TRUE(int_sorter.contains(3));
 
   // Check that dependencies are cleaned up
-  EXPECT_TRUE(int_sorter.dependencies(1).empty());
-  EXPECT_TRUE(int_sorter.dependents(3).empty());
+  EXPECT_TRUE(int_sorter.predecessors(1).empty());
+  EXPECT_TRUE(int_sorter.successors(3).empty());
 }
 
 TEST_F(TopologicalSorterTest, RemoveNonExistentVertex) {
@@ -392,14 +392,14 @@ TEST_F(TopologicalSorterTest, Dependencies) {
   std::vector<int> deps = {2, 3, 4};
   int_sorter.add_vertex(1, deps);
 
-  const auto &dependencies = int_sorter.dependencies(1);
+  const auto &dependencies = int_sorter.predecessors(1);
   EXPECT_EQ(dependencies.size(), 3);
   EXPECT_TRUE(dependencies.count(2));
   EXPECT_TRUE(dependencies.count(3));
   EXPECT_TRUE(dependencies.count(4));
 
   // Non-existent node should return empty set
-  const auto &empty_deps = int_sorter.dependencies(999);
+  const auto &empty_deps = int_sorter.predecessors(999);
   EXPECT_TRUE(empty_deps.empty());
 }
 
@@ -408,14 +408,14 @@ TEST_F(TopologicalSorterTest, Dependents) {
   int_sorter.add_vertex(3, std::vector<int>{2});
   int_sorter.add_vertex(4, std::vector<int>{2});
 
-  const auto &dependents = int_sorter.dependents(2);
+  const auto &dependents = int_sorter.successors(2);
   EXPECT_EQ(dependents.size(), 3);
   EXPECT_TRUE(dependents.count(1));
   EXPECT_TRUE(dependents.count(3));
   EXPECT_TRUE(dependents.count(4));
 
   // Non-existent node should return empty set
-  const auto &empty_deps = int_sorter.dependents(999);
+  const auto &empty_deps = int_sorter.successors(999);
   EXPECT_TRUE(empty_deps.empty());
 }
 
@@ -493,7 +493,7 @@ TEST_F(TopologicalSorterTest, DuplicateDependencies) {
   std::vector<int> deps = {2, 2, 3, 3, 2};
   int_sorter.add_vertex(1, deps);
 
-  const auto &dependencies = int_sorter.dependencies(1);
+  const auto &dependencies = int_sorter.predecessors(1);
   EXPECT_EQ(dependencies.size(), 2); // Should only have 2 and 3
   EXPECT_TRUE(dependencies.count(2));
   EXPECT_TRUE(dependencies.count(3));
@@ -504,7 +504,7 @@ TEST_F(TopologicalSorterTest, AddExistingVertex) {
   int_sorter.add_vertex(1, std::vector<int>{2}); // Add again with dependencies
 
   // Should now have dependency
-  const auto &deps = int_sorter.dependencies(1);
+  const auto &deps = int_sorter.predecessors(1);
   EXPECT_TRUE(deps.count(2));
   EXPECT_EQ(int_sorter.size(), 2);
 }
@@ -616,7 +616,7 @@ TEST_F(TopologicalSorterTest, EdgeCase_EmptyDependencyLists) {
   // Test multiple ways of adding nodes with empty dependencies
   int_sorter.add_vertex(1, std::vector<int>{});
   int_sorter.add_vertex(2);
-  int_sorter.add_edge(3, std::vector<int>{});
+  int_sorter.add_vertex(3, std::vector<int>{});
 
   EXPECT_EQ(int_sorter.size(), 3);
   auto result = int_sorter.sort();
@@ -630,7 +630,7 @@ TEST_F(TopologicalSorterTest, EdgeCase_SelfDependencyVariations) {
 
   int_sorter.clear();
   int_sorter.add_vertex(2);
-  int_sorter.add_edge(2, std::vector<int>{2}); // Add self-dependency later
+  int_sorter.add_vertex(2, std::vector<int>{2}); // Add self-dependency later
   EXPECT_TRUE(has_cycle(int_sorter));
 }
 
@@ -670,7 +670,7 @@ TEST_F(TopologicalSorterTest, EdgeCase_DuplicateOperations) {
   int_sorter.add_vertex(1, std::vector<int>{2, 2, 2}); // Duplicate deps
 
   EXPECT_EQ(int_sorter.size(), 2);
-  const auto &deps = int_sorter.dependencies(1);
+  const auto &deps = int_sorter.predecessors(1);
   EXPECT_EQ(deps.size(), 1);
   EXPECT_TRUE(deps.count(2));
 }
@@ -683,12 +683,12 @@ TEST_F(TopologicalSorterTest, EdgeCase_RemovalPatterns) {
   // Remove middle node
   int_sorter.rm_vertex(2);
   EXPECT_FALSE(int_sorter.contains(2));
-  EXPECT_FALSE(int_sorter.dependencies(1).count(2));
-  EXPECT_FALSE(int_sorter.dependencies(5).count(2));
+  EXPECT_FALSE(int_sorter.predecessors(1).count(2));
+  EXPECT_FALSE(int_sorter.predecessors(5).count(2));
 
   // Remove node with no dependencies but has dependents
   int_sorter.rm_vertex(3);
-  EXPECT_FALSE(int_sorter.dependencies(1).count(3));
+  EXPECT_FALSE(int_sorter.predecessors(1).count(3));
 
   auto result = int_sorter.sort();
   EXPECT_TRUE(is_valid_topological_order(result, int_sorter));

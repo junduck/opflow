@@ -49,12 +49,12 @@ TEST_F(HistoryRingbufTest, SinglePushAndAccess) {
   EXPECT_FALSE(h.empty());
   EXPECT_EQ(h.size(), 1);
 
-  auto step = h[0];
-  EXPECT_EQ(step.tick, 100);
-  EXPECT_EQ(step.data.size(), 3);
-  EXPECT_EQ(step.data[0], 10);
-  EXPECT_EQ(step.data[1], 11);
-  EXPECT_EQ(step.data[2], 12);
+  auto [t, d] = h[0];
+  EXPECT_EQ(t, 100);
+  EXPECT_EQ(d.size(), 3);
+  EXPECT_EQ(d[0], 10);
+  EXPECT_EQ(d[1], 11);
+  EXPECT_EQ(d[2], 12);
 }
 
 TEST_F(HistoryRingbufTest, MultiplePushesWithinCapacity) {
@@ -70,20 +70,20 @@ TEST_F(HistoryRingbufTest, MultiplePushesWithinCapacity) {
 
   EXPECT_EQ(h.size(), 3);
 
-  auto step0 = h[0];
-  EXPECT_EQ(step0.tick, 1);
-  EXPECT_EQ(step0.data[0], 10);
-  EXPECT_EQ(step0.data[1], 20);
+  auto [t0, d0] = h[0];
+  EXPECT_EQ(t0, 1);
+  EXPECT_EQ(d0[0], 10);
+  EXPECT_EQ(d0[1], 20);
 
-  auto step1 = h[1];
-  EXPECT_EQ(step1.tick, 2);
-  EXPECT_EQ(step1.data[0], 30);
-  EXPECT_EQ(step1.data[1], 40);
+  auto [t1, d1] = h[1];
+  EXPECT_EQ(t1, 2);
+  EXPECT_EQ(d1[0], 30);
+  EXPECT_EQ(d1[1], 40);
 
-  auto step2 = h[2];
-  EXPECT_EQ(step2.tick, 3);
-  EXPECT_EQ(step2.data[0], 50);
-  EXPECT_EQ(step2.data[1], 60);
+  auto [t2, d2] = h[2];
+  EXPECT_EQ(t2, 3);
+  EXPECT_EQ(d2[0], 50);
+  EXPECT_EQ(d2[1], 60);
 }
 
 // Test buffer growth when capacity is exceeded
@@ -104,12 +104,12 @@ TEST_F(HistoryRingbufTest, BufferGrowth) {
   EXPECT_EQ(h.size(), 3);
 
   // Verify all data is still accessible
-  EXPECT_EQ(h[0].tick, 1);
-  EXPECT_EQ(h[0].data[0], 10);
-  EXPECT_EQ(h[1].tick, 2);
-  EXPECT_EQ(h[1].data[0], 20);
-  EXPECT_EQ(h[2].tick, 3);
-  EXPECT_EQ(h[2].data[0], 30);
+  EXPECT_EQ(h[0].first, 1);
+  EXPECT_EQ(h[0].second[0], 10);
+  EXPECT_EQ(h[1].first, 2);
+  EXPECT_EQ(h[1].second[0], 20);
+  EXPECT_EQ(h[2].first, 3);
+  EXPECT_EQ(h[2].second[0], 30);
 }
 
 // Test pop operations
@@ -127,13 +127,13 @@ TEST_F(HistoryRingbufTest, PopFront) {
 
   h.pop();
   EXPECT_EQ(h.size(), 2);
-  EXPECT_EQ(h[0].tick, 2);
-  EXPECT_EQ(h[0].data[0], 20);
+  EXPECT_EQ(h[0].first, 2);
+  EXPECT_EQ(h[0].second[0], 20);
 
   h.pop();
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h[0].tick, 3);
-  EXPECT_EQ(h[0].data[0], 30);
+  EXPECT_EQ(h[0].first, 3);
+  EXPECT_EQ(h[0].second[0], 30);
 
   h.pop();
   EXPECT_EQ(h.size(), 0);
@@ -160,20 +160,20 @@ TEST_F(HistoryRingbufTest, FrontAndBack) {
   h.push(1, data1);
   auto front_step = h.front();
   auto back_step = h.back();
-  EXPECT_EQ(front_step.tick, 1);
-  EXPECT_EQ(back_step.tick, 1);
-  EXPECT_EQ(front_step.data[0], 10);
-  EXPECT_EQ(back_step.data[0], 10);
+  EXPECT_EQ(front_step.first, 1);
+  EXPECT_EQ(back_step.first, 1);
+  EXPECT_EQ(front_step.second[0], 10);
+  EXPECT_EQ(back_step.second[0], 10);
 
   h.push(2, data2);
   h.push(3, data3);
 
   front_step = h.front();
   back_step = h.back();
-  EXPECT_EQ(front_step.tick, 1);
-  EXPECT_EQ(back_step.tick, 3);
-  EXPECT_EQ(front_step.data[0], 10);
-  EXPECT_EQ(back_step.data[0], 30);
+  EXPECT_EQ(front_step.first, 1);
+  EXPECT_EQ(back_step.first, 3);
+  EXPECT_EQ(front_step.second[0], 10);
+  EXPECT_EQ(back_step.second[0], 30);
 }
 
 // Test front() on empty buffer (should be caught by assert in debug)
@@ -217,10 +217,10 @@ TEST_F(HistoryRingbufTest, CircularBufferWrapAround) {
   EXPECT_EQ(h.size(), 4);
 
   // Check that all elements are correct
-  EXPECT_EQ(h[0].tick, 3);
-  EXPECT_EQ(h[1].tick, 4);
-  EXPECT_EQ(h[2].tick, 5);
-  EXPECT_EQ(h[3].tick, 6);
+  EXPECT_EQ(h[0].first, 3);
+  EXPECT_EQ(h[1].first, 4);
+  EXPECT_EQ(h[2].first, 5);
+  EXPECT_EQ(h[3].first, 6);
 }
 
 // Test growth with wrap-around data
@@ -251,11 +251,11 @@ TEST_F(HistoryRingbufTest, GrowthWithWrapAroundData) {
   h.push(7, data7); // This should trigger resize
 
   EXPECT_EQ(h.size(), 5);
-  EXPECT_EQ(h[0].tick, 3);
-  EXPECT_EQ(h[1].tick, 4);
-  EXPECT_EQ(h[2].tick, 5);
-  EXPECT_EQ(h[3].tick, 6);
-  EXPECT_EQ(h[4].tick, 7);
+  EXPECT_EQ(h[0].first, 3);
+  EXPECT_EQ(h[1].first, 4);
+  EXPECT_EQ(h[2].first, 5);
+  EXPECT_EQ(h[3].first, 6);
+  EXPECT_EQ(h[4].first, 7);
 }
 
 // Test clear operation
@@ -277,7 +277,7 @@ TEST_F(HistoryRingbufTest, Clear) {
   // Should be able to use normally after clear
   h.push(3, data3);
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h[0].tick, 3);
+  EXPECT_EQ(h[0].first, 3);
 }
 
 // Test reserve operation
@@ -299,8 +299,8 @@ TEST_F(HistoryRingbufTest, Reserve) {
 
   // Verify all data
   for (size_t i = 0; i < 8; ++i) {
-    EXPECT_EQ(h[i].tick, static_cast<int>(i));
-    EXPECT_EQ(h[i].data[0], static_cast<int>(i * 10));
+    EXPECT_EQ(h[i].first, static_cast<int>(i));
+    EXPECT_EQ(h[i].second[0], static_cast<int>(i * 10));
   }
 }
 
@@ -330,19 +330,19 @@ TEST_F(HistoryRingbufTest, Iterator) {
   // Test range-based for loop
   int expected_tick = 1;
   for (const auto &step : h) {
-    EXPECT_EQ(step.tick, expected_tick);
-    EXPECT_EQ(step.data[0], expected_tick * 10);
-    EXPECT_EQ(step.data[1], expected_tick * 10 + 1);
+    EXPECT_EQ(step.first, expected_tick);
+    EXPECT_EQ(step.second[0], expected_tick * 10);
+    EXPECT_EQ(step.second[1], expected_tick * 10 + 1);
     ++expected_tick;
   }
 
   // Test explicit iterator usage
   auto it = h.begin();
-  EXPECT_EQ((*it).tick, 1);
+  EXPECT_EQ((*it).first, 1);
   ++it;
-  EXPECT_EQ((*it).tick, 2);
+  EXPECT_EQ((*it).first, 2);
   ++it;
-  EXPECT_EQ((*it).tick, 3);
+  EXPECT_EQ((*it).first, 3);
   ++it;
   EXPECT_EQ(it, h.end());
 }
@@ -373,13 +373,13 @@ TEST_F(HistoryRingbufTest, DifferentTypes) {
   h.push("tick2", data2);
 
   EXPECT_EQ(h.size(), 2);
-  EXPECT_EQ(h[0].tick, "tick1");
-  EXPECT_DOUBLE_EQ(h[0].data[0], 1.1);
-  EXPECT_DOUBLE_EQ(h[0].data[1], 2.2);
-  EXPECT_DOUBLE_EQ(h[0].data[2], 3.3);
+  EXPECT_EQ(h[0].first, "tick1");
+  EXPECT_DOUBLE_EQ(h[0].second[0], 1.1);
+  EXPECT_DOUBLE_EQ(h[0].second[1], 2.2);
+  EXPECT_DOUBLE_EQ(h[0].second[2], 3.3);
 
-  EXPECT_EQ(h[1].tick, "tick2");
-  EXPECT_DOUBLE_EQ(h[1].data[0], 4.4);
+  EXPECT_EQ(h[1].first, "tick2");
+  EXPECT_DOUBLE_EQ(h[1].second[0], 4.4);
 }
 
 // Test large value_size
@@ -391,12 +391,12 @@ TEST_F(HistoryRingbufTest, LargeValueSize) {
   h.push(1, data);
 
   EXPECT_EQ(h.size(), 1);
-  auto step = h[0];
-  EXPECT_EQ(step.tick, 1);
-  EXPECT_EQ(step.data.size(), large_size);
+  auto [t, d] = h[0];
+  EXPECT_EQ(t, 1);
+  EXPECT_EQ(d.size(), large_size);
 
   for (size_t i = 0; i < large_size; ++i) {
-    EXPECT_EQ(step.data[i], static_cast<int>(42 + i));
+    EXPECT_EQ(d[i], static_cast<int>(42 + i));
   }
 }
 
@@ -426,11 +426,11 @@ TEST_F(HistoryRingbufTest, StressTest) {
 
   // Verify data integrity
   int expected_tick = 30;
-  for (const auto &step : h) {
-    EXPECT_EQ(step.tick, expected_tick);
-    EXPECT_EQ(step.data[0], expected_tick * 10);
-    EXPECT_EQ(step.data[1], expected_tick * 10 + 1);
-    EXPECT_EQ(step.data[2], expected_tick * 10 + 2);
+  for (const auto &[tick, data] : h) {
+    EXPECT_EQ(tick, expected_tick);
+    EXPECT_EQ(data[0], expected_tick * 10);
+    EXPECT_EQ(data[1], expected_tick * 10 + 1);
+    EXPECT_EQ(data[2], expected_tick * 10 + 2);
     ++expected_tick;
   }
 }
@@ -442,7 +442,7 @@ TEST_F(HistoryRingbufTest, IndexOutOfBounds) {
   h.push(1, data);
 
   // Valid access
-  EXPECT_EQ(h[0].tick, 1);
+  EXPECT_EQ(h[0].first, 1);
 
   // Invalid access should trigger assertion in debug mode
   // We can't easily test this without causing test failure
@@ -495,9 +495,9 @@ TEST_F(HistoryRingbufTest, PerformanceCharacteristics) {
   EXPECT_EQ(h.size(), 10000);
 
   // Random access should be O(1)
-  EXPECT_EQ(h[0].tick, 0);
-  EXPECT_EQ(h[5000].tick, 5000);
-  EXPECT_EQ(h[9999].tick, 9999);
+  EXPECT_EQ(h[0].first, 0);
+  EXPECT_EQ(h[5000].first, 5000);
+  EXPECT_EQ(h[9999].first, 9999);
 }
 
 // Additional edge case tests
@@ -510,13 +510,13 @@ TEST_F(HistoryRingbufTest, ZeroValueSizeOperations) {
 
   EXPECT_EQ(h.size(), 2);
 
-  auto step = h[0];
-  EXPECT_EQ(step.tick, 1);
-  EXPECT_EQ(step.data.size(), 0);
+  auto [t, d] = h[0];
+  EXPECT_EQ(t, 1);
+  EXPECT_EQ(d.size(), 0);
 
-  auto step2 = h[1];
-  EXPECT_EQ(step2.tick, 2);
-  EXPECT_EQ(step2.data.size(), 0);
+  auto [t2, d2] = h[1];
+  EXPECT_EQ(t2, 2);
+  EXPECT_EQ(d2.size(), 0);
 }
 
 TEST_F(HistoryRingbufTest, MoveSemantics) {
@@ -528,9 +528,9 @@ TEST_F(HistoryRingbufTest, MoveSemantics) {
   // Test move constructor
   history_ringbuf<std::string, int> h2 = std::move(h1);
   EXPECT_EQ(h2.size(), 1);
-  EXPECT_EQ(h2[0].tick, "test");
-  EXPECT_EQ(h2[0].data[0], 1);
-  EXPECT_EQ(h2[0].data[1], 2);
+  EXPECT_EQ(h2[0].first, "test");
+  EXPECT_EQ(h2[0].second[0], 1);
+  EXPECT_EQ(h2[0].second[1], 2);
 
   // h1 should be in valid but unspecified state
   // We can't make assumptions about its state after move
@@ -544,10 +544,10 @@ TEST_F(HistoryRingbufTest, CopyConstruction) {
 
   history_ringbuf<int, double> h2 = h1;
   EXPECT_EQ(h2.size(), 1);
-  EXPECT_EQ(h2[0].tick, 42);
+  EXPECT_EQ(h2[0].first, 42);
 
   EXPECT_EQ(h1.size(), 1);
-  EXPECT_EQ(h1[0].tick, 42);
+  EXPECT_EQ(h1[0].first, 42);
 }
 
 TEST_F(HistoryRingbufTest, ConstCorrectness) {
@@ -564,15 +564,15 @@ TEST_F(HistoryRingbufTest, ConstCorrectness) {
   EXPECT_EQ(const_h.size(), 2);
   EXPECT_TRUE(!const_h.empty());
 
-  auto const_step = const_h[0];
-  EXPECT_EQ(const_step.tick, 1);
-  EXPECT_EQ(const_step.data[0], 10);
+  auto [t, d] = const_h[0];
+  EXPECT_EQ(t, 1);
+  EXPECT_EQ(d[0], 10);
 
   auto const_front = const_h.front();
-  EXPECT_EQ(const_front.tick, 1);
+  EXPECT_EQ(const_front.first, 1);
 
   auto const_back = const_h.back();
-  EXPECT_EQ(const_back.tick, 2);
+  EXPECT_EQ(const_back.first, 2);
 
   // Test const iterators
   int count = 0;
@@ -622,15 +622,15 @@ TEST_F(HistoryRingbufTest, IteratorIncrement) {
 
   // Test pre-increment
   auto it = h.begin();
-  EXPECT_EQ((*it).tick, 1);
+  EXPECT_EQ((*it).first, 1);
 
   ++it;
-  EXPECT_EQ((*it).tick, 2);
+  EXPECT_EQ((*it).first, 2);
 
   // Test post-increment
   auto old_it = it++;
-  EXPECT_EQ((*old_it).tick, 2);
-  EXPECT_EQ((*it).tick, 3);
+  EXPECT_EQ((*old_it).first, 2);
+  EXPECT_EQ((*it).first, 3);
 
   ++it;
   EXPECT_EQ(it, h.end());
@@ -652,8 +652,8 @@ TEST_F(HistoryRingbufTest, LargeCapacityReserve) {
 
   // Verify data integrity
   for (int i = 0; i < 1000; ++i) {
-    EXPECT_EQ(h[static_cast<size_t>(i)].tick, i);
-    EXPECT_EQ(h[static_cast<size_t>(i)].data[0], i);
+    EXPECT_EQ(h[static_cast<size_t>(i)].first, i);
+    EXPECT_EQ(h[static_cast<size_t>(i)].second[0], i);
   }
 }
 
@@ -676,7 +676,7 @@ TEST_F(HistoryRingbufTest, MixedPushPopOperations) {
   // Pop one
   h.pop();
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h[0].tick, 2);
+  EXPECT_EQ(h[0].first, 2);
 
   // Add more
   h.push(3, data3);
@@ -694,9 +694,9 @@ TEST_F(HistoryRingbufTest, MixedPushPopOperations) {
   EXPECT_EQ(h.size(), 3);
 
   // Verify final state
-  EXPECT_EQ(h[0].tick, 4);
-  EXPECT_EQ(h[1].tick, 5);
-  EXPECT_EQ(h[2].tick, 6);
+  EXPECT_EQ(h[0].first, 4);
+  EXPECT_EQ(h[1].first, 5);
+  EXPECT_EQ(h[2].first, 6);
 }
 
 TEST_F(HistoryRingbufTest, PushEmptyDirectWrite) {
@@ -704,78 +704,82 @@ TEST_F(HistoryRingbufTest, PushEmptyDirectWrite) {
   EXPECT_TRUE(h.empty());
 
   // Test push functionality
-  auto span_view = h.push(100);
-  EXPECT_EQ(span_view.tick, 100);
-  EXPECT_EQ(span_view.data.size(), 3);
+  auto [t, d] = h.push(100);
+  EXPECT_EQ(t, 100);
+  EXPECT_EQ(d.size(), 3);
   EXPECT_FALSE(h.empty());
   EXPECT_EQ(h.size(), 1);
 
   // Write directly to the span
-  span_view.data[0] = 10;
-  span_view.data[1] = 20;
-  span_view.data[2] = 30;
+  d[0] = 10;
+  d[1] = 20;
+  d[2] = 30;
 
   // Verify the data was written correctly
-  auto const_view = h[0];
-  EXPECT_EQ(const_view.tick, 100);
-  EXPECT_EQ(const_view.data[0], 10);
-  EXPECT_EQ(const_view.data[1], 20);
-  EXPECT_EQ(const_view.data[2], 30);
+  auto [const_t, const_d] = h[0];
+  EXPECT_EQ(const_t, 100);
+  EXPECT_EQ(const_d[0], 10);
+  EXPECT_EQ(const_d[1], 20);
+  EXPECT_EQ(const_d[2], 30);
 
   // Test with multiple push calls
-  auto span_view2 = h.push(200);
-  span_view2.data[0] = 40;
-  span_view2.data[1] = 50;
-  span_view2.data[2] = 60;
+  auto [t2, d2] = h.push(200);
+  d2[0] = 40;
+  d2[1] = 50;
+  d2[2] = 60;
 
   EXPECT_EQ(h.size(), 2);
 
   // Verify both entries
-  auto first = h[0];
-  auto second = h[1];
+  auto [first_t, first_d] = h[0];
+  auto [second_t, second_d] = h[1];
 
-  EXPECT_EQ(first.tick, 100);
-  EXPECT_EQ(first.data[0], 10);
-  EXPECT_EQ(first.data[1], 20);
-  EXPECT_EQ(first.data[2], 30);
+  EXPECT_EQ(first_t, 100);
+  EXPECT_EQ(first_d[0], 10);
+  EXPECT_EQ(first_d[1], 20);
+  EXPECT_EQ(first_d[2], 30);
 
-  EXPECT_EQ(second.tick, 200);
-  EXPECT_EQ(second.data[0], 40);
-  EXPECT_EQ(second.data[1], 50);
-  EXPECT_EQ(second.data[2], 60);
+  EXPECT_EQ(second_t, 200);
+  EXPECT_EQ(second_d[0], 40);
+  EXPECT_EQ(second_d[1], 50);
+  EXPECT_EQ(second_d[2], 60);
 }
 
 TEST_F(HistoryRingbufTest, PushEmptyWithGrowth) {
   history_ringbuf<int, int> h(2, 2); // Small initial capacity to test growth
 
   // Fill to capacity using push
-  auto span1 = h.push(1);
-  span1.data[0] = 1;
-  span1.data[1] = 2;
+  auto [t1, d1] = h.push(1);
+  d1[0] = 1;
+  d1[1] = 2;
 
-  auto span2 = h.push(2);
-  span2.data[0] = 3;
-  span2.data[1] = 4;
+  auto [t2, d2] = h.push(2);
+  d2[0] = 3;
+  d2[1] = 4;
 
   EXPECT_EQ(h.size(), 2);
 
   // This should trigger growth
-  auto span3 = h.push(3);
-  span3.data[0] = 5;
-  span3.data[1] = 6;
+  auto [t3, d3] = h.push(3);
+  d3[0] = 5;
+  d3[1] = 6;
 
   EXPECT_EQ(h.size(), 3);
 
+  // d1, d2 should be invalidated by growth
+  std::tie(t1, d1) = h[0];
+  std::tie(t2, d2) = h[1];
+
   // Verify all data is preserved
-  EXPECT_EQ(h[0].tick, 1);
-  EXPECT_EQ(h[0].data[0], 1);
-  EXPECT_EQ(h[0].data[1], 2);
+  EXPECT_EQ(t1, 1);
+  EXPECT_EQ(d1[0], 1);
+  EXPECT_EQ(d1[1], 2);
 
-  EXPECT_EQ(h[1].tick, 2);
-  EXPECT_EQ(h[1].data[0], 3);
-  EXPECT_EQ(h[1].data[1], 4);
+  EXPECT_EQ(t2, 2);
+  EXPECT_EQ(d2[0], 3);
+  EXPECT_EQ(d2[1], 4);
 
-  EXPECT_EQ(h[2].tick, 3);
-  EXPECT_EQ(h[2].data[0], 5);
-  EXPECT_EQ(h[2].data[1], 6);
+  EXPECT_EQ(t3, 3);
+  EXPECT_EQ(d3[0], 5);
+  EXPECT_EQ(d3[1], 6);
 }

@@ -6,7 +6,6 @@
 
 #include "history.hpp"
 #include "impl/iterator.hpp"
-#include "impl/step_view.hpp"
 
 namespace opflow {
 /**
@@ -23,12 +22,9 @@ namespace opflow {
 template <typename T, typename U>
 class history_ringbuf {
 public:
-  template <bool IsConst>
-  using step_view_t = impl::step_view_t<T, U, IsConst>;
-  using step_view = step_view_t<false>;
-  using const_step_view = step_view_t<true>;
+  using value_type = std::pair<T, std::span<U>>;
+  using const_value_type = std::pair<T, std::span<const U>>;
 
-  using value_type = const_step_view;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
 
@@ -62,7 +58,7 @@ public:
   // Push data to back, if buffer is full, we should ALLOCATE more space
   // @pre data.size() == value_size
   template <std::ranges::sized_range R>
-  step_view push(T t, R &&data) {
+  value_type push(T t, R &&data) {
     assert(std::ranges::size(data) == value_size && "Wrong data dimension");
 
     if (count == capacity) {
@@ -87,8 +83,8 @@ public:
   }
 
   // Push empty entry to back and return mutable span for in-place writing
-  // Returns a step_view with mutable span to write data directly
-  [[nodiscard]] step_view push(T t) {
+  // Returns a pair of t and a mutable span to write data directly
+  [[nodiscard]] value_type push(T t) {
     if (count == capacity) {
       // Check for potential overflow before doubling capacity
       if (capacity > std::numeric_limits<size_type>::max() / 2) {
@@ -119,7 +115,7 @@ public:
   }
 
   // Return data at slot idx (0 = front, size()-1 = back)
-  step_view operator[](size_type idx) {
+  value_type operator[](size_type idx) {
     assert(idx < count && "Index out of bounds");
 
     size_type actual_idx = (head + idx) & (capacity - 1);
@@ -127,7 +123,7 @@ public:
     return {tick[actual_idx], {value.data() + value_start, value_size}};
   }
 
-  const_step_view operator[](size_type idx) const {
+  const_value_type operator[](size_type idx) const {
     assert(idx < count && "Index out of bounds");
 
     size_type actual_idx = (head + idx) & (capacity - 1);
@@ -135,24 +131,24 @@ public:
     return {tick[actual_idx], {value.data() + value_start, value_size}};
   }
 
-  step_view front() {
+  value_type front() {
     assert(count > 0 && "Index out of bounds");
     return {tick[head], {value.data() + head * value_size, value_size}};
   }
 
-  const_step_view front() const {
+  const_value_type front() const {
     assert(count > 0 && "Index out of bounds");
     return {tick[head], {value.data() + head * value_size, value_size}};
   }
 
-  step_view back() {
+  value_type back() {
     assert(count > 0 && "Index out of bounds");
     size_type back_idx = (head + count - 1) & (capacity - 1);
     size_type value_start = back_idx * value_size;
     return {tick[back_idx], {value.data() + value_start, value_size}};
   }
 
-  const_step_view back() const {
+  const_value_type back() const {
     assert(count > 0 && "Index out of bounds");
     size_type back_idx = (head + count - 1) & (capacity - 1);
     size_type value_start = back_idx * value_size;

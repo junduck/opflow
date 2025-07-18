@@ -27,7 +27,7 @@ TEST_F(HistoryDequeTest, DefaultConstruction) {
 }
 
 TEST_F(HistoryDequeTest, ConstructionWithCustomCapacity) {
-  history_deque<int, double> h(2, 8);
+  history_deque<int, double> h(2);
   EXPECT_TRUE(h.empty());
   EXPECT_EQ(h.size(), 0);
 }
@@ -48,12 +48,12 @@ TEST_F(HistoryDequeTest, SinglePushAndAccess) {
   EXPECT_FALSE(h.empty());
   EXPECT_EQ(h.size(), 1);
 
-  auto step = h[0];
-  EXPECT_EQ(step.tick, 100);
-  EXPECT_EQ(step.data.size(), 3);
-  EXPECT_EQ(step.data[0], 10);
-  EXPECT_EQ(step.data[1], 11);
-  EXPECT_EQ(step.data[2], 12);
+  auto [step_tick, step_data] = h[0];
+  EXPECT_EQ(step_tick, 100);
+  EXPECT_EQ(step_data.size(), 3);
+  EXPECT_EQ(step_data[0], 10);
+  EXPECT_EQ(step_data[1], 11);
+  EXPECT_EQ(step_data[2], 12);
 }
 
 TEST_F(HistoryDequeTest, MultiplePushesWithinCapacity) {
@@ -69,20 +69,20 @@ TEST_F(HistoryDequeTest, MultiplePushesWithinCapacity) {
 
   EXPECT_EQ(h.size(), 3);
 
-  auto step0 = h[0];
-  EXPECT_EQ(step0.tick, 1);
-  EXPECT_EQ(step0.data[0], 10);
-  EXPECT_EQ(step0.data[1], 20);
+  auto [t0, d0] = h[0];
+  EXPECT_EQ(t0, 1);
+  EXPECT_EQ(d0[0], 10);
+  EXPECT_EQ(d0[1], 20);
 
-  auto step1 = h[1];
-  EXPECT_EQ(step1.tick, 2);
-  EXPECT_EQ(step1.data[0], 30);
-  EXPECT_EQ(step1.data[1], 40);
+  auto [t1, d1] = h[1];
+  EXPECT_EQ(t1, 2);
+  EXPECT_EQ(d1[0], 30);
+  EXPECT_EQ(d1[1], 40);
 
-  auto step2 = h[2];
-  EXPECT_EQ(step2.tick, 3);
-  EXPECT_EQ(step2.data[0], 50);
-  EXPECT_EQ(step2.data[1], 60);
+  auto [t2, d2] = h[2];
+  EXPECT_EQ(t2, 3);
+  EXPECT_EQ(d2[0], 50);
+  EXPECT_EQ(d2[1], 60);
 }
 
 // Test pop operations
@@ -100,13 +100,13 @@ TEST_F(HistoryDequeTest, PopFront) {
 
   h.pop();
   EXPECT_EQ(h.size(), 2);
-  EXPECT_EQ(h[0].tick, 2);
-  EXPECT_EQ(h[0].data[0], 20);
+  EXPECT_EQ(h[0].first, 2);
+  EXPECT_EQ(h[0].second[0], 20);
 
   h.pop();
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h[0].tick, 3);
-  EXPECT_EQ(h[0].data[0], 30);
+  EXPECT_EQ(h[0].first, 3);
+  EXPECT_EQ(h[0].second[0], 30);
 
   h.pop();
   EXPECT_EQ(h.size(), 0);
@@ -133,20 +133,20 @@ TEST_F(HistoryDequeTest, FrontAndBack) {
   h.push(1, data1);
   auto front_step = h.front();
   auto back_step = h.back();
-  EXPECT_EQ(front_step.tick, 1);
-  EXPECT_EQ(back_step.tick, 1);
-  EXPECT_EQ(front_step.data[0], 10);
-  EXPECT_EQ(back_step.data[0], 10);
+  EXPECT_EQ(front_step.first, 1);
+  EXPECT_EQ(back_step.first, 1);
+  EXPECT_EQ(front_step.second[0], 10);
+  EXPECT_EQ(back_step.second[0], 10);
 
   h.push(2, data2);
   h.push(3, data3);
 
   front_step = h.front();
   back_step = h.back();
-  EXPECT_EQ(front_step.tick, 1);
-  EXPECT_EQ(back_step.tick, 3);
-  EXPECT_EQ(front_step.data[0], 10);
-  EXPECT_EQ(back_step.data[0], 30);
+  EXPECT_EQ(front_step.first, 1);
+  EXPECT_EQ(back_step.first, 3);
+  EXPECT_EQ(front_step.second[0], 10);
+  EXPECT_EQ(back_step.second[0], 30);
 }
 
 // Test clear operation
@@ -167,7 +167,7 @@ TEST_F(HistoryDequeTest, Clear) {
   // Should be able to use normally after clear
   h.push(3, data1);
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h[0].tick, 3);
+  EXPECT_EQ(h[0].first, 3);
 }
 
 // Test iterator functionality
@@ -185,17 +185,17 @@ TEST_F(HistoryDequeTest, Iterator) {
   // Test range-based for loop
   int expected_tick = 1;
   for (const auto &step : h) {
-    EXPECT_EQ(step.tick, expected_tick);
+    EXPECT_EQ(step.first, expected_tick);
     ++expected_tick;
   }
 
   // Test explicit iterator usage
   auto it = h.begin();
-  EXPECT_EQ((*it).tick, 1);
+  EXPECT_EQ((*it).first, 1);
   ++it;
-  EXPECT_EQ((*it).tick, 2);
+  EXPECT_EQ((*it).first, 2);
   ++it;
-  EXPECT_EQ((*it).tick, 3);
+  EXPECT_EQ((*it).first, 3);
   ++it;
   EXPECT_EQ(it, h.end());
 }
@@ -230,23 +230,23 @@ TEST_F(HistoryDequeTest, IteratorArithmetic) {
 
   // Test operator+=
   it += 2;
-  EXPECT_EQ((*it).tick, 3);
+  EXPECT_EQ((*it).first, 3);
 
   // Test operator-=
   it -= 1;
-  EXPECT_EQ((*it).tick, 2);
+  EXPECT_EQ((*it).first, 2);
 
   // Test operator+
   auto it2 = it + 1;
-  EXPECT_EQ((*it2).tick, 3);
+  EXPECT_EQ((*it2).first, 3);
 
   // Test operator-
   auto it3 = it2 - 1;
-  EXPECT_EQ((*it3).tick, 2);
+  EXPECT_EQ((*it3).first, 2);
 
   // Test operator[]
-  EXPECT_EQ(it[0].tick, 2);
-  EXPECT_EQ(it[1].tick, 3);
+  EXPECT_EQ(it[0].first, 2);
+  EXPECT_EQ(it[1].first, 3);
 
   // Test iterator difference
   EXPECT_EQ(it2 - it, 1);
@@ -267,7 +267,7 @@ TEST_F(HistoryDequeTest, ReverseIterator) {
   // Test reverse iteration
   int expected_tick = 3;
   for (auto it = h.rbegin(); it != h.rend(); ++it) {
-    EXPECT_EQ((*it).tick, expected_tick);
+    EXPECT_EQ((*it).first, expected_tick);
     --expected_tick;
   }
 }
@@ -288,24 +288,24 @@ TEST_F(HistoryDequeTest, ConstCorrectness) {
   EXPECT_EQ(const_h.size(), 2);
   EXPECT_FALSE(const_h.empty());
 
-  auto const_step = const_h[0];
-  EXPECT_EQ(const_step.tick, 1);
-  EXPECT_EQ(const_step.data[0], 10);
+  auto [const_tick, const_data] = const_h[0];
+  EXPECT_EQ(const_tick, 1);
+  EXPECT_EQ(const_data[0], 10);
 
   auto const_front = const_h.front();
-  EXPECT_EQ(const_front.tick, 1);
+  EXPECT_EQ(const_front.first, 1);
 
   auto const_back = const_h.back();
-  EXPECT_EQ(const_back.tick, 2);
+  EXPECT_EQ(const_back.first, 2);
 
   // Test const iterators
   auto const_it = const_h.cbegin();
-  EXPECT_EQ((*const_it).tick, 1);
+  EXPECT_EQ((*const_it).first, 1);
 
   // Test const iterator conversion
   auto non_const_it = h.begin();
   history_deque<int, int>::const_iterator const_converted_it = non_const_it;
-  EXPECT_EQ((*const_converted_it).tick, 1);
+  EXPECT_EQ((*const_converted_it).first, 1);
 }
 
 // Test with different types
@@ -319,13 +319,13 @@ TEST_F(HistoryDequeTest, DifferentTypes) {
   h.push("tick2", data2);
 
   EXPECT_EQ(h.size(), 2);
-  EXPECT_EQ(h[0].tick, "tick1");
-  EXPECT_DOUBLE_EQ(h[0].data[0], 1.1);
-  EXPECT_DOUBLE_EQ(h[0].data[1], 2.2);
-  EXPECT_DOUBLE_EQ(h[0].data[2], 3.3);
+  EXPECT_EQ(h[0].first, "tick1");
+  EXPECT_DOUBLE_EQ(h[0].second[0], 1.1);
+  EXPECT_DOUBLE_EQ(h[0].second[1], 2.2);
+  EXPECT_DOUBLE_EQ(h[0].second[2], 3.3);
 
-  EXPECT_EQ(h[1].tick, "tick2");
-  EXPECT_DOUBLE_EQ(h[1].data[0], 4.4);
+  EXPECT_EQ(h[1].first, "tick2");
+  EXPECT_DOUBLE_EQ(h[1].second[0], 4.4);
 }
 
 // Test large value_size
@@ -337,12 +337,12 @@ TEST_F(HistoryDequeTest, LargeValueSize) {
   h.push(1, data);
 
   EXPECT_EQ(h.size(), 1);
-  auto step = h[0];
-  EXPECT_EQ(step.tick, 1);
-  EXPECT_EQ(step.data.size(), large_size);
+  auto [t, d] = h[0];
+  EXPECT_EQ(t, 1);
+  EXPECT_EQ(d.size(), large_size);
 
   for (size_t i = 0; i < large_size; ++i) {
-    EXPECT_EQ(step.data[i], 42 + static_cast<int>(i));
+    EXPECT_EQ(d[i], 42 + static_cast<int>(i));
   }
 }
 
@@ -351,21 +351,21 @@ TEST_F(HistoryDequeTest, PushEmptyDirectWrite) {
   history_deque<int, int> h(3);
 
   // Push empty entry and write data directly
-  auto step = h.push(100);
-  EXPECT_EQ(step.tick, 100);
-  EXPECT_EQ(step.data.size(), 3);
+  auto [t, d] = h.push(100);
+  EXPECT_EQ(t, 100);
+  EXPECT_EQ(d.size(), 3);
 
   // Write data directly to the span
-  step.data[0] = 10;
-  step.data[1] = 20;
-  step.data[2] = 30;
+  d[0] = 10;
+  d[1] = 20;
+  d[2] = 30;
 
   // Verify the data was written correctly
-  auto retrieved_step = h[0];
-  EXPECT_EQ(retrieved_step.tick, 100);
-  EXPECT_EQ(retrieved_step.data[0], 10);
-  EXPECT_EQ(retrieved_step.data[1], 20);
-  EXPECT_EQ(retrieved_step.data[2], 30);
+  auto [t2, d2] = h[0];
+  EXPECT_EQ(t2, 100);
+  EXPECT_EQ(d2[0], 10);
+  EXPECT_EQ(d2[1], 20);
+  EXPECT_EQ(d2[2], 30);
 }
 
 // Test stress scenario with many operations
@@ -387,12 +387,12 @@ TEST_F(HistoryDequeTest, StressTest) {
 
   // Verify remaining data is correct
   for (size_t i = 0; i < h.size(); ++i) {
-    auto step = h[i];
+    auto [t, d] = h[i];
     int expected_tick = 30 + static_cast<int>(i);
-    EXPECT_EQ(step.tick, expected_tick);
-    EXPECT_EQ(step.data[0], expected_tick * 3);
-    EXPECT_EQ(step.data[1], expected_tick * 3 + 1);
-    EXPECT_EQ(step.data[2], expected_tick * 3 + 2);
+    EXPECT_EQ(t, expected_tick);
+    EXPECT_EQ(d[0], expected_tick * 3);
+    EXPECT_EQ(d[1], expected_tick * 3 + 1);
+    EXPECT_EQ(d[2], expected_tick * 3 + 2);
   }
 
   // Add more
@@ -426,7 +426,7 @@ TEST_F(HistoryDequeTest, MixedPushPopOperations) {
   // Pop one
   h.pop();
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h.front().tick, 2);
+  EXPECT_EQ(h.front().first, 2);
 
   // Push more
   h.push(3, data3);
@@ -442,7 +442,7 @@ TEST_F(HistoryDequeTest, MixedPushPopOperations) {
   // Push again
   h.push(5, data1);
   EXPECT_EQ(h.size(), 1);
-  EXPECT_EQ(h.front().tick, 5);
+  EXPECT_EQ(h.front().first, 5);
 }
 
 // Test zero value size operations
@@ -453,12 +453,12 @@ TEST_F(HistoryDequeTest, ZeroValueSizeOperations) {
   h.push(1, empty_data);
 
   EXPECT_EQ(h.size(), 1);
-  auto step = h[0];
-  EXPECT_EQ(step.tick, 1);
-  EXPECT_EQ(step.data.size(), 0);
+  auto [t, d] = h[0];
+  EXPECT_EQ(t, 1);
+  EXPECT_EQ(d.size(), 0);
 
   // Test push without data
-  auto step2 = h.push(2);
-  EXPECT_EQ(step2.tick, 2);
-  EXPECT_EQ(step2.data.size(), 0);
+  auto [t2, d2] = h.push(2);
+  EXPECT_EQ(t2, 2);
+  EXPECT_EQ(d2.size(), 0);
 }

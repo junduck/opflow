@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-#include "opflow/dependency_map.hpp"
+#include "opflow/flat_graph.hpp"
 #include "opflow/topo.hpp"
 
 using namespace opflow;
 
 class DependencyMapTest : public ::testing::Test {
 protected:
-  dependency_map graph;
+  flat_graph graph;
 };
 
 TEST_F(DependencyMapTest, EmptyGraph) {
@@ -21,7 +21,7 @@ TEST_F(DependencyMapTest, SingleNode) {
   EXPECT_EQ(id, 0);
   EXPECT_EQ(graph.size(), 1);
   EXPECT_FALSE(graph.empty());
-  EXPECT_EQ(graph.get_degree(0), 0);
+  EXPECT_EQ(graph.num_predecessors(0), 0);
   EXPECT_TRUE(graph.is_root(0));
 }
 
@@ -35,9 +35,9 @@ TEST_F(DependencyMapTest, LinearChain) {
   EXPECT_EQ(node2, 2);
   EXPECT_EQ(graph.size(), 3);
 
-  EXPECT_EQ(graph.get_degree(0), 0);
-  EXPECT_EQ(graph.get_degree(1), 1);
-  EXPECT_EQ(graph.get_degree(2), 1);
+  EXPECT_EQ(graph.num_predecessors(0), 0);
+  EXPECT_EQ(graph.num_predecessors(1), 1);
+  EXPECT_EQ(graph.num_predecessors(2), 1);
 
   EXPECT_TRUE(graph.is_root(0));
   EXPECT_FALSE(graph.is_root(1));
@@ -60,9 +60,9 @@ TEST_F(DependencyMapTest, DiamondPattern) {
   graph.add(std::vector<size_t>{1, 2}); // Merge
 
   EXPECT_EQ(graph.size(), 4);
-  EXPECT_EQ(graph.get_degree(3), 2);
+  EXPECT_EQ(graph.num_predecessors(3), 2);
 
-  auto deps = graph.get_dependencies(3);
+  auto deps = graph.get_predecessors(3);
   auto dep_vec = std::vector<size_t>(deps.begin(), deps.end());
   EXPECT_EQ(dep_vec.size(), 2);
   EXPECT_EQ(dep_vec[0], 1);
@@ -84,8 +84,8 @@ TEST_F(DependencyMapTest, ValidationTests) {
   EXPECT_FALSE(graph.validate(std::vector<size_t>{0, 5}));
 
   // Test adding with invalid dependencies
-  auto invalid_id = graph.add(std::vector<size_t>{10});
-  EXPECT_EQ(invalid_id, static_cast<size_t>(-1));
+  auto bad_id = graph.add(std::vector<size_t>{10});
+  EXPECT_EQ(bad_id, static_cast<size_t>(-1));
   EXPECT_EQ(graph.size(), 2); // Size should not change
 }
 
@@ -163,16 +163,16 @@ TEST_F(DependencyMapTest, ReserveFunctionality) {
 }
 
 TEST_F(DependencyMapTest, TotalDependencies) {
-  EXPECT_EQ(graph.total_dependencies(), 0);
+  EXPECT_EQ(graph.total_predecessors(), 0);
 
   graph.add(std::vector<size_t>{}); // 0 deps
-  EXPECT_EQ(graph.total_dependencies(), 0);
+  EXPECT_EQ(graph.total_predecessors(), 0);
 
   graph.add(std::vector<size_t>{0}); // 1 dep
-  EXPECT_EQ(graph.total_dependencies(), 1);
+  EXPECT_EQ(graph.total_predecessors(), 1);
 
   graph.add(std::vector<size_t>{0, 1}); // 2 deps
-  EXPECT_EQ(graph.total_dependencies(), 3);
+  EXPECT_EQ(graph.total_predecessors(), 3);
 }
 
 TEST_F(DependencyMapTest, GetDependents) {
@@ -181,16 +181,16 @@ TEST_F(DependencyMapTest, GetDependents) {
   auto child2 = graph.add(std::vector<size_t>{root});               // 2
   auto grandchild = graph.add(std::vector<size_t>{child1, child2}); // 3
 
-  auto root_dependents = graph.get_dependents(root);
+  auto root_dependents = graph.get_successors(root);
   EXPECT_EQ(root_dependents.size(), 2);
   EXPECT_TRUE(std::ranges::find(root_dependents, child1) != root_dependents.end());
   EXPECT_TRUE(std::ranges::find(root_dependents, child2) != root_dependents.end());
 
-  auto child1_dependents = graph.get_dependents(child1);
+  auto child1_dependents = graph.get_successors(child1);
   EXPECT_EQ(child1_dependents.size(), 1);
   EXPECT_EQ(child1_dependents[0], grandchild);
 
-  auto grandchild_dependents = graph.get_dependents(grandchild);
+  auto grandchild_dependents = graph.get_successors(grandchild);
   EXPECT_EQ(grandchild_dependents.size(), 0);
 }
 
@@ -221,7 +221,7 @@ TEST_F(DependencyMapTest, DependsOn) {
 TEST_F(DependencyMapTest, Statistics) {
   auto stats = graph.get_statistics();
   EXPECT_EQ(stats.node_count, 0);
-  EXPECT_EQ(stats.total_dependencies, 0);
+  EXPECT_EQ(stats.total_predecessors, 0);
   EXPECT_EQ(stats.max_degree, 0);
   EXPECT_EQ(stats.avg_degree, 0.0);
   EXPECT_EQ(stats.root_count, 0);
@@ -233,7 +233,7 @@ TEST_F(DependencyMapTest, Statistics) {
 
   stats = graph.get_statistics();
   EXPECT_EQ(stats.node_count, 3);
-  EXPECT_EQ(stats.total_dependencies, 3);
+  EXPECT_EQ(stats.total_predecessors, 3);
   EXPECT_EQ(stats.max_degree, 2);
   EXPECT_EQ(stats.avg_degree, 1.0);
   EXPECT_EQ(stats.root_count, 1);

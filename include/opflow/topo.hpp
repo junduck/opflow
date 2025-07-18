@@ -22,30 +22,8 @@ enum class colour {
   black  ///< Node has been visited
 };
 
-/**
- * @brief A generic topological sorter for directed acyclic graphs (DAGs)
- *
- * This class provides functionality to build a directed graph and perform
- * topological sorting using Kahn's algorithm. It maintains both forward
- * and reverse adjacency lists for efficient operations.
- *
- * @tparam T The type of nodes in the graph
- * @tparam Hash Hash function for type T (defaults to std::hash<T>)
- * @tparam Equal Equality comparison for type T (defaults to std::equal_to<T>)
- *
- * @note The graph must be acyclic for topological sorting to work correctly.
- *       If a cycle is detected, the sort() method returns an empty vector.
- *
- * Example usage:
- * @code
- * topological_sorter<std::string> sorter;
- * sorter.add_vertex("task1", std::vector<std::string>{"dependency1", "dependency2"});
- * sorter.add_vertex("task2", std::vector<std::string>{"task1"});
- * auto sorted = sorter.sort(); // Returns topologically sorted order
- * @endcode
- */
 template <typename T, typename Hash = std::hash<T>, typename Equal = std::equal_to<T>>
-class topological_sorter {
+class graph_base {
 public:
   /// @brief Type alias for a set of nodes
   using NodeSet = std::unordered_set<T, Hash, Equal>;
@@ -53,52 +31,35 @@ public:
   /// @brief Type alias for a map from nodes to sets of nodes
   using NodeMap = std::unordered_map<T, NodeSet, Hash, Equal>;
 
-  /// @brief Type alias for colour map used in BFS
-  using colour_map_type = std::unordered_map<T, colour, Hash, Equal>;
-
-  /// @brief Type alias for depth map used in BFS
-  using depth_map_type = std::unordered_map<T, size_t, Hash, Equal>;
-
-  /**
-   * @brief No-op visitor for BFS
-   *
-   * This is a default visitor that does nothing and always returns true.
-   * It can be used when no specific action is needed during BFS traversal.
-   */
-  constexpr static auto noop_visitor = [](T const &, NodeMap const &, size_t) noexcept { return true; };
-
-private:
+protected:
   NodeMap graph;         ///< Adjacency list: node -> set of nodes it depends on (predecessors)
   NodeMap reverse_graph; ///< Reverse adjacency list: node -> set of nodes that depend on it (successors)
 
 public:
-  /**
-   * @brief Default constructor
-   *
-   * Creates an empty topological sorter with no nodes or edges.
-   */
-  topological_sorter() = default;
+  graph_base() = default;
 
   /**
-   * @brief Add a vertex with specified dependencies
+   * @brief Add a vertex with specified predecessors
    *
-   * Adds a node to the graph along with its dependencies. If the node already exists,
-   * the new dependencies are added to its existing dependency set.
+   * Adds a node to the graph along with its predecessors. If the node already exists,
+   * the new predecessors are added to its existing predecessor set.
    *
    * @tparam R A forward range type containing elements of type T
    * @param node The node to add to the graph
-   * @param deps A range of dependencies that this node depends on
+   * @param preds A range of predecessors that this node has
    *
-   * @note If any dependency doesn't exist in the graph, it will be created automatically
+   * @note If any predecessor doesn't exist in the graph, it will be created automatically
+   * @note node is copy constructed into the graph, user should consider value semantics or
+   * shared ownership if needed
    *
    * Example:
    * @code
-   * std::vector<std::string> deps = {"dep1", "dep2"};
-   * sorter.add_vertex("mynode", deps);
+   * std::vector<std::string> preds = {"dep1", "dep2"};
+   * sorter.add_vertex("mynode", preds);
    * @endcode
    */
   template <std::ranges::forward_range R>
-  void add_vertex(T const &node, R &&deps) {
+  void add_vertex(T const &node, R &&preds) {
     // Ensure the node exists in both graphs
     if (graph.find(node) == graph.end()) {
       graph.emplace(node, NodeSet{});
@@ -107,24 +68,24 @@ public:
       reverse_graph.emplace(node, NodeSet{});
     }
 
-    // Add dependencies
-    for (auto const &dep : deps) {
-      // Ensure dependency exists in both graphs
-      if (graph.find(dep) == graph.end()) {
-        graph.emplace(dep, NodeSet{});
+    // Add predecessors
+    for (auto const &pred : preds) {
+      // Ensure predecessor exists in both graphs
+      if (graph.find(pred) == graph.end()) {
+        graph.emplace(pred, NodeSet{});
       }
-      if (reverse_graph.find(dep) == reverse_graph.end()) {
-        reverse_graph.emplace(dep, NodeSet{});
+      if (reverse_graph.find(pred) == reverse_graph.end()) {
+        reverse_graph.emplace(pred, NodeSet{});
       }
 
-      // Add the dependency relationship
-      graph[node].emplace(dep);
-      reverse_graph[dep].emplace(node);
+      // Add the predecessor relationship
+      graph[node].emplace(pred);
+      reverse_graph[pred].emplace(node);
     }
   }
 
   /**
-   * @brief Add a vertex with no dependencies
+   * @brief Add a vertex with no predecessors
    *
    * Convenience method to add a node that doesn't depend on any other nodes.
    * This node can serve as a starting point in the topological order.
@@ -134,7 +95,7 @@ public:
   void add_vertex(T const &node) { add_vertex(node, std::vector<T>{}); }
 
   /**
-   * @brief Remove a vertex and all its connections
+   * @brief Remove a vertex from the graph
    *
    * Removes the specified node from the graph along with all edges connecting
    * to or from this node. This includes both incoming and outgoing edges.
@@ -143,7 +104,6 @@ public:
    *
    * @note If the node doesn't exist, this operation has no effect
    *
-   * @warning Removing a node will affect the topological ordering of remaining nodes
    */
   void rm_vertex(T const &node) {
     auto graph_it = graph.find(node);
@@ -167,68 +127,160 @@ public:
   }
 
   /**
-   * @brief Add dependencies to an existing node
+   * @brief Remove specific predecessors from a node
    *
-   * Adds new dependency edges to an existing node. If the node doesn't exist,
-   * it will be created. This is useful for incrementally building the dependency graph.
-   *
-   * @tparam R A forward range type containing elements of type T
-   * @param node The node to add dependencies to
-   * @param deps A range of dependencies to add
-   *
-   * @note If any dependency doesn't exist, it will be created automatically
-   * @note Duplicate dependencies are automatically handled (no duplicate edges)
-   */
-  template <std::ranges::forward_range R>
-  void add_edge(T const &node, R &&deps) {
-    // Ensure the node exists
-    if (graph.find(node) == graph.end()) {
-      add_vertex(node);
-    }
-
-    // Add each dependency
-    for (auto const &dep : deps) {
-      // Ensure dependency exists
-      if (graph.find(dep) == graph.end()) {
-        add_vertex(dep);
-      }
-
-      // Add the dependency relationship
-      graph[node].insert(dep);
-      reverse_graph[dep].insert(node);
-    }
-  }
-
-  /**
-   * @brief Remove specific dependencies from a node
-   *
-   * Removes the specified dependency edges from a node. The node itself
+   * Removes the specified predecessor edges from a node. The node itself
    * and the dependency nodes remain in the graph.
    *
    * @tparam R A forward range type containing elements of type T
-   * @param node The node to remove dependencies from
-   * @param deps A range of dependencies to remove
+   * @param node The node to remove predecessors from
+   * @param preds A range of predecessors to remove
    *
-   * @note If the node or any dependency doesn't exist, those operations are ignored
-   * @note Only the specific dependency edges are removed, not the nodes themselves
+   * @note If the node or any predecessor doesn't exist, those operations are ignored
+   * @note Only the specific predecessor edges are removed, not the nodes themselves
    */
   template <std::ranges::forward_range R>
-  void rm_edge(T const &node, R &&deps) {
+  void rm_edge(T const &node, R &&preds) {
     auto graph_it = graph.find(node);
     if (graph_it == graph.end()) {
       return; // Node doesn't exist
     }
 
-    for (auto const &dep : deps) {
-      // Remove the dependency relationship
-      graph[node].erase(dep);
+    for (auto const &pred : preds) {
+      // Remove the predecessor relationship
+      graph[node].erase(pred);
 
-      auto reverse_it = reverse_graph.find(dep);
+      auto reverse_it = reverse_graph.find(pred);
       if (reverse_it != reverse_graph.end()) {
         reverse_it->second.erase(node);
       }
     }
   }
+
+  /**
+   * @brief Get the number of nodes in the graph
+   *
+   * @return The total number of nodes currently in the graph
+   */
+  size_t size() const { return graph.size(); }
+
+  /**
+   * @brief Check if the graph is empty
+   *
+   * @return true if the graph contains no nodes, false otherwise
+   */
+  bool empty() const { return graph.empty(); }
+
+  /**
+   * @brief Clear the graph
+   *
+   * Removes all nodes and edges from the graph, leaving it in an empty state.
+   * After calling this method, size() will return 0.
+   */
+  void clear() {
+    graph.clear();
+    reverse_graph.clear();
+  }
+
+  /**
+   * @brief Check if a node exists in the graph
+   *
+   * @param node The node to search for
+   * @return true if the node exists in the graph, false otherwise
+   */
+  bool contains(T const &node) const { return graph.find(node) != graph.end(); }
+
+  /**
+   * @brief Get the predecessors of a node
+   *
+   * Returns the set of nodes that the specified node depends on (its predecessors).
+   * These are the nodes that must be processed before the specified node in a
+   * topological ordering.
+   *
+   * @param node The node to get predecessors for
+   * @return A const reference to the set of predecessors, or an empty set if the node doesn't exist
+   *
+   * @note The returned reference remains valid until the graph is modified
+   */
+  NodeSet const &predecessors(T const &node) const {
+    static NodeSet empty_set;
+    auto it = graph.find(node);
+    return (it != graph.end()) ? it->second : empty_set;
+  }
+
+  /**
+   * @brief Get the successors of a node
+   *
+   * Returns the set of nodes that depend on the specified node (its successors).
+   * These are the nodes that must be processed after the specified node in a
+   * topological ordering.
+   *
+   * @param node The node to get successors for
+   * @return A const reference to the set of successors, or an empty set if the node doesn't exist
+   *
+   * @note The returned reference remains valid until the graph is modified
+   */
+  NodeSet const &successors(T const &node) const {
+    static NodeSet empty_set;
+    auto it = reverse_graph.find(node);
+    return (it != reverse_graph.end()) ? it->second : empty_set;
+  }
+};
+
+/**
+ * @brief A generic topological sorter for directed acyclic graphs (DAGs)
+ *
+ * This class provides functionality to build a directed graph and perform
+ * topological sorting using Kahn's algorithm. It maintains both forward
+ * and reverse adjacency lists for efficient operations.
+ *
+ * @tparam T The type of nodes in the graph
+ * @tparam Hash Hash function for type T (defaults to std::hash<T>)
+ * @tparam Equal Equality comparison for type T (defaults to std::equal_to<T>)
+ *
+ * @note The graph must be acyclic for topological sorting to work correctly.
+ *       If a cycle is detected, the sort() method returns an empty vector.
+ *
+ * Example usage:
+ * @code
+ * topological_sorter<std::string> sorter;
+ * sorter.add_vertex("task1", std::vector<std::string>{"dependency1", "dependency2"});
+ * sorter.add_vertex("task2", std::vector<std::string>{"task1"});
+ * auto sorted = sorter.sort(); // Returns topologically sorted order
+ * @endcode
+ */
+template <typename T, typename Hash = std::hash<T>, typename Equal = std::equal_to<T>>
+class topological_sorter : public graph_base<T, Hash, Equal> {
+public:
+  using base = graph_base<T, Hash, Equal>;
+  using typename base::NodeMap;
+  using typename base::NodeSet;
+
+  /// @brief Type alias for colour map used in BFS
+  using colour_map_type = std::unordered_map<T, colour, Hash, Equal>;
+
+  /// @brief Type alias for depth map used in BFS
+  using depth_map_type = std::unordered_map<T, size_t, Hash, Equal>;
+
+protected:
+  using base::graph;
+  using base::reverse_graph;
+
+public:
+  /**
+   * @brief No-op visitor for BFS
+   *
+   * This is a default visitor that does nothing and always returns true.
+   * It can be used when no specific action is needed during BFS traversal.
+   */
+  constexpr static auto noop_visitor = [](T const &, NodeMap const &, size_t) noexcept { return true; };
+
+  /**
+   * @brief Default constructor
+   *
+   * Creates an empty topological sorter with no nodes or edges.
+   */
+  topological_sorter() = default;
 
   /**
    * @brief Perform a breadth-first search (BFS)
@@ -418,75 +470,6 @@ public:
   }
 
   /**
-   * @brief Get the number of nodes in the graph
-   *
-   * @return The total number of nodes currently in the graph
-   */
-  size_t size() const { return graph.size(); }
-
-  /**
-   * @brief Check if the graph is empty
-   *
-   * @return true if the graph contains no nodes, false otherwise
-   */
-  bool empty() const { return graph.empty(); }
-
-  /**
-   * @brief Clear the graph
-   *
-   * Removes all nodes and edges from the graph, leaving it in an empty state.
-   * After calling this method, size() will return 0.
-   */
-  void clear() {
-    graph.clear();
-    reverse_graph.clear();
-  }
-
-  /**
-   * @brief Check if a node exists in the graph
-   *
-   * @param node The node to search for
-   * @return true if the node exists in the graph, false otherwise
-   */
-  bool contains(T const &node) const { return graph.find(node) != graph.end(); }
-
-  /**
-   * @brief Get the dependencies of a node
-   *
-   * Returns the set of nodes that the specified node depends on (its predecessors).
-   * These are the nodes that must be processed before the specified node in a
-   * topological ordering.
-   *
-   * @param node The node to get dependencies for
-   * @return A const reference to the set of dependencies, or an empty set if the node doesn't exist
-   *
-   * @note The returned reference remains valid until the graph is modified
-   */
-  NodeSet const &dependencies(T const &node) const {
-    static NodeSet empty_set;
-    auto it = graph.find(node);
-    return (it != graph.end()) ? it->second : empty_set;
-  }
-
-  /**
-   * @brief Get the dependents of a node
-   *
-   * Returns the set of nodes that depend on the specified node (its successors).
-   * These are the nodes that must be processed after the specified node in a
-   * topological ordering.
-   *
-   * @param node The node to get dependents for
-   * @return A const reference to the set of dependents, or an empty set if the node doesn't exist
-   *
-   * @note The returned reference remains valid until the graph is modified
-   */
-  NodeSet const &dependents(T const &node) const {
-    static NodeSet empty_set;
-    auto it = reverse_graph.find(node);
-    return (it != reverse_graph.end()) ? it->second : empty_set;
-  }
-
-  /**
    * @brief Get all nodes in the graph
    *
    * Returns a view of all nodes currently in the graph. This is useful for
@@ -578,7 +561,6 @@ private:
   std::vector<T> sorted; ///< Nodes in topological order
 
   /// Hide all mutating methods from base class
-  using base_type::add_edge;
   using base_type::add_vertex;
   using base_type::clear;
   using base_type::rm_edge;
@@ -598,7 +580,7 @@ public:
    * @param base The base topological_sorter to copy from
    * @param nodes Vector of nodes in topological order
    */
-  sorted_graph(const base_type &base, std::vector<T> nodes) : base_type(base), sorted(std::move(nodes)) {}
+  sorted_graph(base_type const &base, std::vector<T> nodes) : base_type(base), sorted(std::move(nodes)) {}
 
   using iterator = impl::iterator_t<sorted_graph, true>; ///< Only const iteration is allowed
   using const_iterator = iterator;
@@ -616,21 +598,21 @@ public:
   const_iterator cend() const { return end(); }
 
   /**
-   * @brief Access node and dependencies by sorted index
+   * @brief Access node and predecessors by sorted index
    *
    * @param index The index in topological order (0-based)
-   * @return Pair of (node, dependencies) at the given index
+   * @return Pair of (node, predecessors) at the given index
    */
   value_type operator[](size_type index) const {
-    const T &node = sorted[index];
-    return std::make_pair(std::cref(node), std::cref(this->dependencies(node)));
+    T const &node = sorted[index];
+    return std::make_pair(std::cref(node), std::cref(this->predecessors(node)));
   }
 
   /**
-   * @brief Access node and dependencies by sorted index with bounds checking
+   * @brief Access node and predecessors by sorted index with bounds checking
    *
    * @param index The index in topological order (0-based)
-   * @return Pair of (node, dependencies) at the given index
+   * @return Pair of (node, predecessors) at the given index
    * @throws std::out_of_range if index is out of bounds
    */
   value_type at(size_type index) const {

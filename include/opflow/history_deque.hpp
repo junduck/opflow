@@ -6,7 +6,6 @@
 
 #include "history.hpp"
 #include "impl/iterator.hpp"
-#include "impl/step_view.hpp"
 
 namespace opflow {
 /**
@@ -23,12 +22,9 @@ namespace opflow {
 template <typename T, typename U>
 class history_deque {
 public:
-  template <bool IsConst>
-  using step_view_t = impl::step_view_t<T, U, IsConst>;
-  using step_view = step_view_t<false>;
-  using const_step_view = step_view_t<true>;
+  using value_type = std::pair<T, std::span<U>>;
+  using const_value_type = std::pair<T, std::span<const U>>;
 
-  using value_type = const_step_view;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
 
@@ -38,15 +34,12 @@ private:
   size_type value_size;             ///< Size of each value vector
 
 public:
-  explicit history_deque(size_type val_size, size_type initial_capacity = 16) : value_size(val_size) {
-    // Reserve space if initial_capacity is provided (deque doesn't have reserve, but we can hint)
-    std::ignore = initial_capacity;
-  }
+  explicit history_deque(size_type val_size) : value_size(val_size) {}
 
   // Push data to back
   // @pre data.size() == value_size
   template <std::ranges::sized_range R>
-  step_view push(T t, R &&data) {
+  value_type push(T t, R &&data) {
     assert(std::ranges::size(data) == value_size && "Wrong data dimension");
 
     tick.push_back(t);
@@ -56,7 +49,7 @@ public:
   }
 
   // Push empty entry to back and return mutable span for in-place writing
-  [[nodiscard]] step_view push(T t) {
+  [[nodiscard]] value_type push(T t) {
     tick.push_back(t);
     value.emplace_back(value_size); // Create vector with value_size elements
 
@@ -72,32 +65,32 @@ public:
   }
 
   // Return data at slot idx (0 = front, size()-1 = back)
-  step_view operator[](size_type idx) {
+  value_type operator[](size_type idx) {
     assert(idx < tick.size() && "Index out of bounds");
     return {tick[idx], {value[idx].data(), value_size}};
   }
 
-  const_step_view operator[](size_type idx) const {
+  const_value_type operator[](size_type idx) const {
     assert(idx < tick.size() && "Index out of bounds");
     return {tick[idx], {value[idx].data(), value_size}};
   }
 
-  step_view front() {
+  value_type front() {
     assert(!tick.empty() && "Index out of bounds");
     return {tick.front(), {value.front().data(), value_size}};
   }
 
-  const_step_view front() const {
+  const_value_type front() const {
     assert(!tick.empty() && "Index out of bounds");
     return {tick.front(), {value.front().data(), value_size}};
   }
 
-  step_view back() {
+  value_type back() {
     assert(!tick.empty() && "Index out of bounds");
     return {tick.back(), {value.back().data(), value_size}};
   }
 
-  const_step_view back() const {
+  const_value_type back() const {
     assert(!tick.empty() && "Index out of bounds");
     return {tick.back(), {value.back().data(), value_size}};
   }
