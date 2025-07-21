@@ -17,8 +17,13 @@ struct ewma : public detail::unary_op<T> {
   double a1_n;                ///< (1. - alpha)^n
   double s;                   ///< current weighted sum
 
-  explicit ewma(double alpha, size_t pos = 0) noexcept : base{pos}, total_weight{}, a1{1. - alpha}, a1_n{1.}, s{} {}
-  explicit ewma(size_t period, size_t pos = 0) noexcept : ewma{2.0 / (period + 1), pos} {}
+  explicit ewma(double alpha, size_t pos = 0) noexcept : base{pos}, total_weight{}, a1{1. - alpha}, a1_n{1.}, s{} {
+    assert(alpha > 0. && "alpha/period must be positive.");
+    if (alpha >= 1.) {
+      alpha = 2.0 / (alpha + 1);
+      a1 = 1. - alpha;
+    }
+  }
 
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");

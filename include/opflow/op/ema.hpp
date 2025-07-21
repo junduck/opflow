@@ -14,8 +14,13 @@ struct ema : public detail::unary_op<T> {
   double alpha; ///< Smoothing factor
   bool init;    ///< Whether the first value has been processed
 
-  explicit ema(double alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, init{ZeroInit} {}
-  explicit ema(size_t period, size_t pos = 0) noexcept : ema{2.0 / (period + 1), pos} {}
+  explicit ema(double alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, init{ZeroInit} {
+    assert(alpha > 0. && "alpha/period must be positive.");
+    if (alpha >= 1.) {
+      // alpha is actually a period
+      this->alpha = 2.0 / (alpha + 1);
+    }
+  }
 
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");

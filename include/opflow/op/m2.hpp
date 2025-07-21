@@ -172,8 +172,13 @@ struct s2ew : detail::unary_op<T> {
   double alpha;      ///< smoothing factor
   bool init;         ///< whether the first value has been processed
 
-  explicit s2ew(double alpha, size_t pos = 0) noexcept : base{pos}, m{}, s2{}, alpha{alpha}, init{false} {}
-  explicit s2ew(size_t period, size_t pos = 0) noexcept : s2ew{2.0 / (period + 1), pos} {}
+  explicit s2ew(double alpha, size_t pos = 0) noexcept : base{pos}, m{}, s2{}, alpha{alpha}, init{false} {
+    assert(alpha > 0. && "alpha/period must be positive.");
+    if (alpha >= 1.) {
+      // alpha is actually a period
+      this->alpha = 2.0 / (alpha + 1);
+    }
+  }
 
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
@@ -217,7 +222,6 @@ struct stdew : public s2ew<T> {
 template <time_point_like T>
 struct cov : public detail::binary_op<T> {
   using base = detail::binary_op<T>;
-  using base::base;
   using base::pos0;
   using base::pos1;
 
