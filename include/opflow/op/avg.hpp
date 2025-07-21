@@ -10,8 +10,8 @@ struct avg : public detail::unary_op<T> {
   using base = detail::unary_op<T>;
   using base::pos;
 
-  detail::smooth val;
-  size_t n;
+  detail::smooth val; ///< mean value
+  size_t n;           ///< count of values processed
 
   explicit avg(size_t avg_at = 0) noexcept : base{avg_at}, val{}, n{0} {}
 
@@ -26,6 +26,9 @@ struct avg : public detail::unary_op<T> {
     --n;
     val.sub(rm[0][pos], 1.0 / n);
   }
+
+  // Currently we can not utilise rolling update due to engine design
+  void roll(double x, double x0) noexcept { val.addsub(x, x0, 1.0 / n); }
 
   void value(double *out) noexcept override {
     assert(out && "NULL output buffer.");

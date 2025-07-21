@@ -10,7 +10,7 @@ struct sum : public detail::unary_op<T> {
   using base = detail::unary_op<T>;
   using base::pos;
 
-  detail::accum val;
+  detail::accum val; ///< Accumulated value
 
   explicit sum(size_t sum_at = 0) : base{sum_at}, val{} {}
 

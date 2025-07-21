@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
@@ -8,11 +10,12 @@ struct root_input : public op_base<T> {
   double const *mem;
   size_t input_size;
 
-  explicit root_input(size_t n) : mem(), input_size(n) {} // Initialize with zeros
+  explicit root_input(size_t n) : mem(), input_size(n) {}
 
   void step(T tick, double const *const *in) noexcept override {
-    std::ignore = tick;                  // Unused in root_input
-    mem = in && in[0] ? in[0] : nullptr; // Add null pointer check
+    assert(in && in[0] && "NULL input data.");
+    std::ignore = tick; // Unused in root_input
+    mem = in[0];        // Store the input data pointer
   }
   void value(double *out) noexcept override {
     if (out) { // Add null pointer check

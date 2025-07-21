@@ -12,7 +12,7 @@ struct ema : public detail::unary_op<T> {
 
   detail::smooth val;
   double alpha; ///< Smoothing factor
-  bool init;
+  bool init;    ///< Whether the first value has been processed
 
   explicit ema(double alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, init{ZeroInit} {}
   explicit ema(size_t period, size_t pos = 0) noexcept : ema{2.0 / (period + 1), pos} {}
