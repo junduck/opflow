@@ -281,4 +281,205 @@ struct cov : public detail::binary_op<T> {
     return 3; // mx, my, cov
   }
 };
+
+template <time_point_like T>
+struct cov_ew : public detail::binary_op<T> {
+  using base = detail::binary_op<T>;
+  using base::pos0;
+  using base::pos1;
+
+  detail::smooth mx;   ///< mean of first input
+  detail::smooth my;   ///< mean of second input
+  detail::smooth s2xy; ///< cov
+  double alpha;        ///< smoothing factor
+  bool init;           ///< whether the first value has been processed
+
+  explicit cov_ew(double alpha, size_t pos0 = 0, size_t pos1 = 1) noexcept
+      : base{pos0, pos1}, mx{}, my{}, s2xy{}, alpha{alpha}, init{false} {
+    assert(alpha > 0. && "alpha/period must be positive.");
+    if (alpha >= 1.) {
+      // alpha is actually a period
+      this->alpha = 2.0 / (alpha + 1);
+    }
+  }
+
+  void step(T, double const *const *in) noexcept override {
+    assert(in && in[0] && in[1] && "NULL input data.");
+    double const x = in[0][pos0];
+    double const y = in[1][pos1];
+
+    if (!init) [[unlikely]] {
+      mx = x; // Initialize with the first value
+      my = y;
+      init = true;
+      return;
+    }
+
+    double const dx = x - mx;
+    double const dy = y - my;
+    mx.add(x, alpha);
+    my.add(y, alpha);
+    s2xy.add((1.0 - alpha) * dx * dy, alpha);
+  }
+
+  void value(double *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    assert(init && "value called with empty state.");
+
+    out[0] = mx;   // mean of first input
+    out[1] = my;   // mean of second input
+    out[2] = s2xy; // covariance
+  }
+
+  size_t num_outputs() const noexcept override {
+    return 3; // mx, my, cov
+  }
+};
+
+template <time_point_like T>
+struct corr : public detail::binary_op<T> {
+  using base = detail::binary_op<T>;
+  using base::pos0;
+  using base::pos1;
+
+  detail::smooth mx; ///< mean of first input
+  detail::smooth my; ///< mean of second input
+  detail::accum mxy; ///< m2 of cross product
+  detail::accum m2x; ///< m2 of first input
+  detail::accum m2y; ///< m2 of second input
+  size_t n;          ///< count of values processed
+
+  explicit corr(size_t pos0 = 0, size_t pos1 = 1) noexcept : base{pos0, pos1}, mx{}, my{}, mxy{}, m2x{}, m2y{}, n{} {}
+
+  void step(T, double const *const *in) noexcept override {
+    assert(in && in[0] && in[1] && "NULL input data.");
+    double const x = in[0][pos0];
+    double const y = in[1][pos1];
+
+    ++n;
+    double const a = 1.0 / n;
+    double const dx = x - mx;
+    double const dy = y - my;
+    mx.add(x, a);
+    my.add(y, a);
+    m2x.add((x - mx) * dx);
+    m2y.add((y - my) * dy);
+    mxy.add((x - mx) * dy);
+  }
+
+  void inverse(T, double const *const rm) noexcept override {
+    assert(rm && rm[0] && rm[1] && "NULL removal data.");
+    double const x = rm[0][pos0];
+    double const y = rm[1][pos1];
+
+    --n;
+    double const a = 1.0 / n;
+    double const dx = x - mx;
+    double const dy = y - my;
+    mx.sub(x, a);
+    my.sub(y, a);
+    m2x.sub((x - mx) * dx);
+    m2y.sub((y - my) * dy);
+    mxy.sub((x - mx) * dy);
+  }
+
+  void value(double *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    assert(this->n > 0 && "value called with empty state.");
+
+    out[0] = mx; // mean of first input
+    out[1] = my; // mean of second input
+    if (n == 1) [[unlikely]] {
+      // cov/corr is zero if only one sample
+      out[2] = 0.;
+      out[3] = 0.;
+    } else {
+      out[2] = mxy / (n - 1); // unbiased covariance
+      double const denom = std::sqrt<double>(m2x * m2y);
+      if (denom == 0.) {
+        out[3] = 0.; // avoid division by zero
+      } else {
+        out[3] = mxy / denom; // Pearson correlation coefficient
+      }
+    }
+  }
+
+  size_t num_outputs() const noexcept override {
+    // mx, my, cov, corr
+    return 4;
+  }
+};
+
+template <time_point_like T>
+struct beta : public detail::binary_op<T> {
+  using base = detail::binary_op<T>;
+  using base::pos0;
+  using base::pos1;
+
+  detail::smooth mx; ///< mean of first input
+  detail::smooth my; ///< mean of second input
+  detail::accum mxy; ///< m2 of cross product
+  detail::accum m2x; ///< m2 of first input
+  size_t n;          ///< count of values processed
+
+  explicit beta(size_t pos0 = 0, size_t pos1 = 1) noexcept : base{pos0, pos1}, mx{}, my{}, mxy{}, m2x{}, n{} {}
+
+  void step(T, double const *const *in) noexcept override {
+    assert(in && in[0] && in[1] && "NULL input data.");
+    double const x = in[0][pos0];
+    double const y = in[1][pos1];
+
+    ++n;
+    double const a = 1.0 / n;
+    double const dx = x - mx;
+    double const dy = y - my;
+    mx.add(x, a);
+    my.add(y, a);
+    m2x.add((x - mx) * dx);
+    mxy.add((x - mx) * dy);
+  }
+
+  void inverse(T, double const *const rm) noexcept override {
+    assert(rm && rm[0] && rm[1] && "NULL removal data.");
+    double const x = rm[0][pos0];
+    double const y = rm[1][pos1];
+
+    --n;
+    double const a = 1.0 / n;
+    double const dx = x - mx;
+    double const dy = y - my;
+    mx.sub(x, a);
+    my.sub(y, a);
+    m2x.sub((x - mx) * dx);
+    mxy.sub((x - mx) * dy);
+  }
+
+  void value(double *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    assert(this->n > 0 && "value called with empty state.");
+
+    out[0] = mx; // mean of first input
+
+    out[1] = my; // mean of second input
+
+    if (n == 1) [[unlikely]] {
+      out[2] = 0.;
+      out[3] = 0.;
+      return;
+    }
+
+    out[2] = mxy / (n - 1); // unbiased covariance
+
+    if (m2x > 0.) {
+      out[3] = mxy / m2x; // beta = cov(x, y) / var(x)
+    } else {
+      out[3] = 0.; // avoid division by zero
+    }
+  }
+
+  size_t num_outputs() const noexcept override {
+    // mx, my, cov, beta
+    return 4;
+  }
+};
 } // namespace opflow::op
