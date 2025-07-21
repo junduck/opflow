@@ -145,7 +145,12 @@ struct s2vw : public detail::weighted_op<T> {
       out[1] = 0.;
     } else {
       double const rel_weight = w_sum - w2_sum / w_sum;
-      out[1] = m2 / rel_weight;
+      // TODO: remove hardcoded epsilon
+      if (rel_weight > 1e-15) [[likely]] {
+        out[1] = m2 / rel_weight;
+      } else {
+        out[1] = 0.;
+      }
     }
   }
 };
