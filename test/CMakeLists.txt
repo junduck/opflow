@@ -38,6 +38,10 @@ target_link_libraries(test_iterator GTest::gtest_main opflow::headers)
 add_executable(test_flat_multivect flat_multivect_test.cpp)
 target_link_libraries(test_flat_multivect GTest::gtest_main opflow::headers)
 
+# OHLC operator tests
+add_executable(test_ohlc ohlc_test.cpp)
+target_link_libraries(test_ohlc GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_engine)
@@ -50,3 +54,4 @@ gtest_discover_tests(test_history_ringbuf)
 gtest_discover_tests(test_history_comparison)
 gtest_discover_tests(test_iterator)
 gtest_discover_tests(test_flat_multivect)
+gtest_discover_tests(test_ohlc)

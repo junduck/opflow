@@ -11,116 +11,16 @@
 
 #include "flat_graph.hpp"
 #include "history_ringbuf.hpp"
+#include "op_base.hpp"
 
 namespace opflow {
 
-template <typename T>
-using time_delta_t = decltype(std::declval<T>() - std::declval<T>());
-
-template <typename T>
-concept scalar_time = std::regular<T> && std::totally_ordered<T> && std::is_default_constructible_v<T> &&
-                      requires(T a, time_delta_t<T> b) {
-                        { a - b } -> std::convertible_to<T>;
-                        { a + b } -> std::convertible_to<T>;
-                      };
-
-// Forward declarations
-template <scalar_time T>
-struct op_base;
-template <scalar_time T>
+template <time_point_like T>
 struct engine_builder;
 template <typename T>
 struct engine;
 
-enum class retention_policy : int {
-  cumulative = 0,      // Cumulative
-  remove_at_watermark, // Data at watermark is removed
-  keep_at_watermark    // Data at watermark is kept
-};
-
-template <scalar_time T>
-struct op_base {
-  /**
-   * @brief Update operator state with new data
-   *
-   * @param tick Current tick
-   * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
-   */
-  virtual void step(T tick, double const *const *in) noexcept = 0;
-
-  /**
-   * @brief Update operator state by removing expired data
-   *
-   * @param tick Expired tick
-   * @param rm Pointer to removal data, where rm[parent_id] points to the data from parent operator
-   */
-  virtual void inverse(T tick, double const *const *rm) noexcept {
-    std::ignore = tick; // Unused in base class
-    std::ignore = rm;   // Unused in base class
-  };
-
-  /**
-   * @brief Write operator's output value to the provided buffer
-   *
-   * @param out Pointer to output buffer where the operator's value will be written
-   * @note The output buffer is allocated as reported num_ouputs()
-   */
-  virtual void value(double *out) noexcept = 0;
-
-  /**
-   * @brief Get data retention policy for this operator
-   *
-   * @details retention() is called when an instance of this operator is added to the DAG.
-   *
-   * @return retention_policy
-   */
-  virtual retention_policy retention() const noexcept { return retention_policy::cumulative; }
-
-  /**
-   * @brief Get the watermark (expiry) for this operator
-   *
-   * @details Data older than watermark is considered expired and will be removed by calls to inverse.  An operator can
-   * return a default-constructed T{} to indicate an initial cumulative state, thus no invserse will be called at this
-   * stage and at a later point returns a valid watermark to remove expired data. It is undefined behavior to return a
-   * watermark older than previous one.
-   *
-   * If retention() returns retention_policy::cumulative, it is gaurenteed that watermark()/inverse() are never called.
-   *
-   * @note watermark does not imply that out-of-order / late-arrival data is allowed. Currently it is UB if data arrives
-   * out of order.
-   *
-   * @return T
-   */
-  virtual T watermark() const noexcept { return T{}; }
-
-  /**
-   * @brief Returns number of dependencies/parents.
-   *
-   * @return size_t
-   */
-  virtual size_t num_depends() const noexcept = 0;
-
-  /**
-   * @brief Returns number of outputs this operator produces.
-   *
-   * @return size_t
-   */
-  virtual size_t num_outputs() const noexcept = 0;
-
-  /**
-   * @brief Query number of inputs required from a predecessor operator.
-   *
-   * @details num_inputs returns the number of inputs this operator expects from the predecessor operator with id pid.
-   *
-   * @param pid Predecessor id
-   * @return size_t
-   */
-  virtual size_t num_inputs(size_t pid) const noexcept = 0;
-
-  virtual ~op_base() = default;
-};
-
-template <scalar_time T>
+template <time_point_like T>
 struct root_input : public op_base<T> {
   std::vector<double> mem;
 
@@ -143,7 +43,7 @@ struct root_input : public op_base<T> {
   size_t num_inputs(size_t) const noexcept override { return 0; } // No inputs
 };
 
-template <scalar_time T>
+template <time_point_like T>
 struct rollsum : public op_base<T> {
   double sum{};
   T current{};
@@ -183,20 +83,6 @@ struct rollsum : public op_base<T> {
 
   void value(double *out) noexcept override { *out = sum; }
 
-  retention_policy retention() const noexcept override {
-    return cumulative() ? retention_policy::cumulative : retention_policy::remove_at_watermark;
-  }
-
-  T watermark() const noexcept override {
-    assert(!cumulative() && "Watermark called on cumulative rollsum");
-
-    T cumulative_stage = T{} + window_size;
-    if (current < cumulative_stage) {
-      return T{};
-    }
-    return current - window_size;
-  }
-
   size_t num_depends() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
   size_t num_inputs(size_t pid) const noexcept override {
@@ -206,7 +92,7 @@ struct rollsum : public op_base<T> {
   }
 };
 
-template <scalar_time T>
+template <time_point_like T>
 struct engine_builder {
   using node_type = std::shared_ptr<op_base<T>>;
 
@@ -322,15 +208,15 @@ struct engine {
     size_t id = nodes.size();
 
     // Validate dependencies first
-    for (auto dep : dependencies) {
-      if (dep >= id) {
-        return std::numeric_limits<size_t>::max();
-      }
+    if (!std::ranges::all_of(dependencies, [id](auto dep) { return dep < id; })) {
+      return invalid_id; // Invalid dependency index
     }
 
-    // Validate that the number of dependencies matches what the node expects
-    if (std::ranges::distance(dependencies) != static_cast<std::ptrdiff_t>(op->num_depends())) {
-      return std::numeric_limits<size_t>::max();
+    auto dep_ptrs = std::views::all(dependencies) | std::views::transform([this](auto dep) {
+                      return static_cast<op_base<T> const *>(nodes[dep].get());
+                    });
+    if (!op->compatible_with(dep_ptrs)) {
+      return invalid_id; // Incompatible dependencies
     }
 
     // All validations passed, now modify state
@@ -408,9 +294,11 @@ struct engine {
       node->step(tick, input_ptrs.data());
 
       // 3. Check expired data and call inverse if needed
-      auto retention = node->retention();
+      // auto retention = node->retention();
+      auto retention = retention_policy::cumulative; // Default to cumulative for now
       if (retention != retention_policy::cumulative && node_id > 0) {
-        auto wm = node->watermark();
+        // auto wm = node->watermark();
+        auto wm = T{};
         if (wm != T{}) {
           auto last_wm = watermarks[node_id];
           if (last_wm != T{}) {
@@ -427,9 +315,9 @@ struct engine {
             const auto [step_tick, step_data] = step_history[hist_idx];
             bool should_remove = false;
 
-            if (retention == retention_policy::remove_at_watermark) {
+            if (retention == retention_policy::remove_start) {
               should_remove = (step_tick > last_wm && step_tick <= wm);
-            } else if (retention == retention_policy::keep_at_watermark) {
+            } else if (retention == retention_policy::keep_start) {
               should_remove = (step_tick >= last_wm && step_tick < wm);
             }
 
@@ -460,7 +348,8 @@ struct engine {
     T min_watermark = tick;
     bool has_watermark = false;
     for (size_t i = 1; i < watermarks.size(); ++i) {
-      if (nodes[i]->retention() != retention_policy::cumulative) {
+      // if (nodes[i]->retention() != retention_policy::cumulative) {
+      if (false) {
         auto const &wm = watermarks[i];
         if (wm != T{}) {
           has_watermark = true;
@@ -553,7 +442,7 @@ struct engine {
 };
 
 // Build method implementation for engine_builder
-template <scalar_time T>
+template <time_point_like T>
 engine<T> engine_builder<T>::build(size_t initial_history_capacity) {
   if (nodes.empty()) {
     throw std::runtime_error("Cannot build engine with no nodes");

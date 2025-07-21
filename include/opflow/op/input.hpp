@@ -1,0 +1,27 @@
+#pragma once
+
+#include "opflow/op_base.hpp"
+
+namespace opflow::op {
+template <time_point_like T>
+struct root_input : public op_base<T> {
+  double const *mem;
+  size_t input_size;
+
+  explicit root_input(size_t n) : mem(), input_size(n) {} // Initialize with zeros
+
+  void step(T tick, double const *const *in) noexcept override {
+    std::ignore = tick;                  // Unused in root_input
+    mem = in && in[0] ? in[0] : nullptr; // Add null pointer check
+  }
+  void value(double *out) noexcept override {
+    if (out) { // Add null pointer check
+      std::copy(mem, mem + input_size, out);
+    }
+  }
+
+  size_t num_depends() const noexcept override { return 0; } // Root input has no dependencies
+  size_t num_outputs() const noexcept override { return input_size; }
+  size_t num_inputs(size_t) const noexcept override { return 0; } // No inputs
+};
+} // namespace opflow::op
