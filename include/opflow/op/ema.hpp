@@ -11,10 +11,10 @@ struct ema : public detail::unary_op<T> {
   using base::pos;
 
   detail::smooth val;
-  double alpha; ///< Smoothing factor
-  bool init;    ///< Whether the first value has been processed
+  double alpha;     ///< Smoothing factor
+  bool initialised; ///< Whether the first value has been processed
 
-  explicit ema(double alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, init{ZeroInit} {
+  explicit ema(double alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, initialised{ZeroInit} {
     assert(alpha > 0. && "alpha/period must be positive.");
     if (alpha >= 1.) {
       // alpha is actually a period
@@ -22,14 +22,22 @@ struct ema : public detail::unary_op<T> {
     }
   }
 
+  void init(T, double const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+
+    val = 0.;
+    initialised = ZeroInit;
+    step(T{}, in); // Initialize with the first value
+  }
+
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
     double x = in[0][pos];
 
     if constexpr (!ZeroInit) {
-      if (!init) [[unlikely]] {
+      if (!initialised) [[unlikely]] {
         val = x; // Initialize with the first value
-        init = true;
+        initialised = true;
         return;
       }
     }

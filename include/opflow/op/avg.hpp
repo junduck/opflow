@@ -15,6 +15,12 @@ struct avg : public detail::unary_op<T> {
 
   explicit avg(size_t avg_at = 0) noexcept : base{avg_at}, val{}, n{0} {}
 
+  void init(T, double const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    n = 1;
+    val = in[0][pos];
+  }
+
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
     ++n;

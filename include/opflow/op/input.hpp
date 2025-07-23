@@ -17,10 +17,11 @@ struct root_input : public op_base<T> {
     std::ignore = tick; // Unused in root_input
     mem = in[0];        // Store the input data pointer
   }
+
   void value(double *out) noexcept override {
-    if (out) { // Add null pointer check
-      std::copy(mem, mem + input_size, out);
-    }
+    assert(out && "NULL output buffer.");
+    assert(mem && "No input data available.");
+    std::copy(mem, mem + input_size, out);
   }
 
   size_t num_depends() const noexcept override { return 0; } // Root input has no dependencies

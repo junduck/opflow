@@ -25,6 +25,16 @@ struct ewma : public detail::unary_op<T> {
     }
   }
 
+  void init(T, double const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+
+    total_weight = 0.;
+    a1_n = 1.;
+    s = 0.;
+
+    step(T{}, in); // Initialize with the first value
+  }
+
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
     double x = in[0][pos];

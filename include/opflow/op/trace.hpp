@@ -10,7 +10,7 @@
 
 namespace opflow::op {
 
-enum class trace_event_type { step, inverse, value, window_start_query };
+enum class trace_event_type { init, step, inverse, value, window_start_query };
 
 template <time_point_like T>
 struct trace_event {
@@ -42,6 +42,29 @@ public:
     if (!wrapped_op) {
       throw std::invalid_argument("Cannot trace null operator");
     }
+  }
+
+  void init(T tick, double const *const *in) noexcept override {
+    trace_event<T> event(trace_event_type::init, tick);
+
+    // Capture input data if enabled
+    if (capture_data && in) {
+      event.input_data.reserve(num_depends());
+      for (size_t dep_id = 0; dep_id < num_depends(); ++dep_id) {
+        if (in[dep_id]) {
+          size_t input_size = num_inputs(dep_id);
+          event.input_data.emplace_back(in[dep_id], in[dep_id] + input_size);
+        } else {
+          event.input_data.emplace_back(); // Empty vector for null input
+        }
+      }
+    }
+
+    // Call the wrapped operator
+    wrapped_op->init(tick, in);
+
+    // Store event
+    add_event(std::move(event));
   }
 
   void step(T tick, double const *const *in) noexcept override {

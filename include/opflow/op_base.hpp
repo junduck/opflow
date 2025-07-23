@@ -47,6 +47,19 @@ constexpr inline double fmax = std::numeric_limits<double>::max();       ///< Ma
 template <time_point_like T>
 struct op_base {
   /**
+   * @brief Initialize operator state with input data
+   *
+   * This method is only called in aggregation context to flush and initialise a new aggregate window
+   *
+   * @param tick Current tick
+   * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
+   */
+  virtual void init(T tick, double const *const *in) noexcept {
+    std::ignore = tick; // Unused in base class
+    std::ignore = in;   // Unused in base class
+  }
+
+  /**
    * @brief Update operator state with new data
    *
    * @param tick Current tick

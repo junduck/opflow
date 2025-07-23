@@ -14,6 +14,11 @@ struct sum : public detail::unary_op<T> {
 
   explicit sum(size_t sum_at = 0) : base{sum_at}, val{} {}
 
+  void init(T, double const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    val = in[0][pos]; // Initialize with the first value
+  }
+
   void step(T, double const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
     val.add(in[0][pos]);
