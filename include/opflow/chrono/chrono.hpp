@@ -380,6 +380,15 @@ public:
   constexpr weeks(const duration<int64_t> &d) : duration<int64_t>(d) {}
 };
 
+// R POSIXct, Python datetime compatible
+class POSIXct : public duration<double> {
+public:
+  constexpr POSIXct() : duration<double>(0, second) {}
+  constexpr explicit POSIXct(double count) : duration<double>(count, second) {}
+  constexpr POSIXct(double count, period p) : duration<double>(count, p) {}
+  constexpr POSIXct(const duration<double> &d) : duration<double>(d) {}
+};
+
 // Factory functions for common durations
 constexpr nanoseconds operator""_ns(unsigned long long ns) { return nanoseconds(static_cast<int64_t>(ns), nano); }
 
