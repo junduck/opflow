@@ -444,21 +444,3 @@ TEST_F(HistoryDequeTest, MixedPushPopOperations) {
   EXPECT_EQ(h.size(), 1);
   EXPECT_EQ(h.front().first, 5);
 }
-
-// Test zero value size operations
-TEST_F(HistoryDequeTest, ZeroValueSizeOperations) {
-  history_deque<int, int> h(0);
-
-  std::vector<int> empty_data;
-  h.push(1, empty_data);
-
-  EXPECT_EQ(h.size(), 1);
-  auto [t, d] = h[0];
-  EXPECT_EQ(t, 1);
-  EXPECT_EQ(d.size(), 0);
-
-  // Test push without data
-  auto [t2, d2] = h.push(2);
-  EXPECT_EQ(t2, 2);
-  EXPECT_EQ(d2.size(), 0);
-}

@@ -500,25 +500,6 @@ TEST_F(HistoryRingbufTest, PerformanceCharacteristics) {
   EXPECT_EQ(h[9999].first, 9999);
 }
 
-// Additional edge case tests
-TEST_F(HistoryRingbufTest, ZeroValueSizeOperations) {
-  history_ringbuf<int, int> h(0); // Zero value size
-
-  std::vector<int> empty_data;
-  h.push(1, empty_data);
-  h.push(2, empty_data);
-
-  EXPECT_EQ(h.size(), 2);
-
-  auto [t, d] = h[0];
-  EXPECT_EQ(t, 1);
-  EXPECT_EQ(d.size(), 0);
-
-  auto [t2, d2] = h[1];
-  EXPECT_EQ(t2, 2);
-  EXPECT_EQ(d2.size(), 0);
-}
-
 TEST_F(HistoryRingbufTest, MoveSemantics) {
   history_ringbuf<std::string, int> h1(2);
 

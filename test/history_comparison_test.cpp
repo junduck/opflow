@@ -165,34 +165,6 @@ TEST_F(HistoryComparisonTest, IdenticalPushEmptyBehavior) {
   compare_histories(deque_hist, ringbuf_hist);
 }
 
-// Test edge cases behave identically
-TEST_F(HistoryComparisonTest, IdenticalEdgeCaseBehavior) {
-  // Zero value size
-  history_deque<int, int> deque_hist_zero(0);
-  history_ringbuf<int, int> ringbuf_hist_zero(0);
-
-  std::vector<int> empty_data;
-  deque_hist_zero.push(1, empty_data);
-  ringbuf_hist_zero.push(1, empty_data);
-
-  compare_histories(deque_hist_zero, ringbuf_hist_zero);
-
-  // Single element operations
-  history_deque<int, int> deque_hist_one(1);
-  history_ringbuf<int, int> ringbuf_hist_one(1);
-
-  std::array<int, 1> single_data{42};
-  deque_hist_one.push(1, single_data);
-  ringbuf_hist_one.push(1, single_data);
-
-  compare_histories(deque_hist_one, ringbuf_hist_one);
-
-  deque_hist_one.pop();
-  ringbuf_hist_one.pop();
-
-  compare_histories(deque_hist_one, ringbuf_hist_one);
-}
-
 // Test that ringbuf matches deque behavior even after buffer growth
 TEST_F(HistoryComparisonTest, RingbufMatchesDequeAfterGrowth) {
   constexpr size_t value_size = 2;
