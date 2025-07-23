@@ -36,10 +36,20 @@ private:
 public:
   explicit history_deque(size_type val_size) : value_size(val_size) {}
 
+  history_deque() = default;
+
+  void init(size_type val_size) {
+    assert(val_size > 0 && "value size must be greater than 0");
+    value_size = val_size;
+    tick.clear();
+    value.clear();
+  }
+
   // Push data to back
   // @pre data.size() == value_size
   template <std::ranges::sized_range R>
   value_type push(T t, R &&data) {
+    assert(value_size > 0 && "history buffer not initialised");
     assert(std::ranges::size(data) == value_size && "Wrong data dimension");
 
     tick.push_back(t);

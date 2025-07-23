@@ -55,10 +55,28 @@ public:
     value.resize(capacity * value_size);
   }
 
+  history_ringbuf() = default;
+
+  void init(size_type val_size, size_type initial_capacity = 16) {
+    value_size = val_size;
+    head = 0;
+    count = 0;
+    capacity = next_pow2(initial_capacity);
+
+    // Check for potential overflow in value allocation
+    if (value_size > 0 && capacity > std::numeric_limits<size_type>::max() / value_size) {
+      throw std::bad_alloc();
+    }
+
+    tick.resize(capacity);
+    value.resize(capacity * value_size);
+  }
+
   // Push data to back, if buffer is full, we should ALLOCATE more space
   // @pre data.size() == value_size
   template <std::ranges::sized_range R>
   value_type push(T t, R &&data) {
+    assert(value_size > 0 && "history buffer not initialised");
     assert(std::ranges::size(data) == value_size && "Wrong data dimension");
 
     if (count == capacity) {
