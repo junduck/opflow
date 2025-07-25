@@ -1,5 +1,5 @@
-add_executable(flat_graph_example flat_graph_example.cpp)
-target_link_libraries(flat_graph_example opflow::headers)
+add_executable(dependency_map_example dependency_map_example.cpp)
+target_link_libraries(dependency_map_example opflow::headers)
 
 add_executable(engine_integration_test engine_integration_test.cpp)
 target_link_libraries(engine_integration_test opflow::headers)

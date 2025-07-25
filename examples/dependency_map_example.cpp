@@ -2,7 +2,7 @@
 #include <iostream>
 #include <vector>
 
-#include "opflow/flat_graph.hpp"
+#include "opflow/dependency_map.hpp"
 #include "opflow/topo.hpp"
 
 int main() {
@@ -28,18 +28,18 @@ int main() {
 
   for (auto const &node : sorted_vec) {
     std::cout << "Node: " << node << ", ID: " << id_lookup[node];
-    if (sorted.predecessors(node).empty()) {
+    if (sorted.pred_of(node).empty()) {
       std::cout << " (no dependencies)";
     } else {
       std::cout << ", Dependencies: ";
-      for (const auto &dep : sorted.predecessors(node)) {
+      for (const auto &dep : sorted.pred_of(node)) {
         std::cout << dep << " ";
       }
     }
     std::cout << "\n";
   }
 
-  flat_graph graph;
+  dependency_map graph;
   for (auto const &[node, deps] : sorted) {
     deps_by_id.clear();
     for (auto const &dep : deps) {

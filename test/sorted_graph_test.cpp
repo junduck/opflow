@@ -76,14 +76,14 @@ TEST_F(SortedGraphTest, IteratorBasics) {
   auto [node2, deps2] = *it;
   EXPECT_EQ(node2, 2);
   EXPECT_EQ(deps2.size(), 1);
-  EXPECT_TRUE(deps2.contains(1));
+  EXPECT_TRUE(std::ranges::find(deps2, 1) != deps2.end());
 
   // Move to third element
   ++it;
   auto [node3, deps3] = *it;
   EXPECT_EQ(node3, 3);
   EXPECT_EQ(deps3.size(), 1);
-  EXPECT_TRUE(deps3.contains(2));
+  EXPECT_TRUE(std::ranges::find(deps3, 2) != deps3.end());
 
   // Should be at end now
   ++it;
@@ -171,7 +171,7 @@ TEST_F(SortedGraphTest, FrontAndBack) {
   auto [back_node, back_deps] = graph.back();
   EXPECT_EQ(back_node, 3);
   EXPECT_EQ(back_deps.size(), 1);
-  EXPECT_TRUE(back_deps.contains(2));
+  EXPECT_TRUE(std::ranges::find(back_deps, 2) != back_deps.end());
 }
 
 // Test range-based for loop
@@ -217,8 +217,8 @@ TEST_F(SortedGraphTest, DiamondDependency) {
   auto [node4, deps4] = graph.back();
   EXPECT_EQ(node4, 4);
   EXPECT_EQ(deps4.size(), 2);
-  EXPECT_TRUE(deps4.contains(2));
-  EXPECT_TRUE(deps4.contains(3));
+  EXPECT_TRUE(std::ranges::find(deps4, 2) != deps4.end());
+  EXPECT_TRUE(std::ranges::find(deps4, 3) != deps4.end());
 }
 
 // Test with string nodes
@@ -236,7 +236,7 @@ TEST_F(SortedGraphTest, StringNodes) {
 
   auto [node3, deps3] = graph[2];
   EXPECT_EQ(node3, "end");
-  EXPECT_TRUE(deps3.contains("middle"));
+  EXPECT_TRUE(std::ranges::find(deps3, "middle") != deps3.end());
 }
 
 // Test immutability (mutating methods should be hidden)

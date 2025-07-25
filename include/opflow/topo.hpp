@@ -5,227 +5,22 @@
 #include <queue>
 #include <ranges>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
+#include "graph.hpp"
 #include "impl/iterator.hpp"
+#include "opflow/dependency_map.hpp"
 
 namespace opflow {
-
-// Forward declaration
-template <typename T, typename Hash, typename Equal>
-class sorted_graph;
-
 enum class colour {
   white, ///< Node has not been visited
   gray,  ///< Node is discovered but not visited yet
   black  ///< Node has been visited
 };
 
-template <typename T, typename Hash = std::hash<T>, typename Equal = std::equal_to<T>>
-class graph_base {
-public:
-  /// @brief Type alias for a set of nodes
-  using NodeSet = std::unordered_set<T, Hash, Equal>;
-
-  /// @brief Type alias for a map from nodes to sets of nodes
-  using NodeMap = std::unordered_map<T, NodeSet, Hash, Equal>;
-
-protected:
-  NodeMap graph;         ///< Adjacency list: node -> set of nodes it depends on (predecessors)
-  NodeMap reverse_graph; ///< Reverse adjacency list: node -> set of nodes that depend on it (successors)
-
-public:
-  graph_base() = default;
-
-  /**
-   * @brief Add a vertex with specified predecessors
-   *
-   * Adds a node to the graph along with its predecessors. If the node already exists,
-   * the new predecessors are added to its existing predecessor set.
-   *
-   * @tparam R A forward range type containing elements of type T
-   * @param node The node to add to the graph
-   * @param preds A range of predecessors that this node has
-   *
-   * @note If any predecessor doesn't exist in the graph, it will be created automatically
-   * @note node is copy constructed into the graph, user should consider value semantics or
-   * shared ownership if needed
-   *
-   * Example:
-   * @code
-   * std::vector<std::string> preds = {"dep1", "dep2"};
-   * sorter.add_vertex("mynode", preds);
-   * @endcode
-   */
-  template <std::ranges::forward_range R>
-  void add_vertex(T const &node, R &&preds) {
-    // Ensure the node exists in both graphs
-    if (graph.find(node) == graph.end()) {
-      graph.emplace(node, NodeSet{});
-    }
-    if (reverse_graph.find(node) == reverse_graph.end()) {
-      reverse_graph.emplace(node, NodeSet{});
-    }
-
-    // Add predecessors
-    for (auto const &pred : preds) {
-      // Ensure predecessor exists in both graphs
-      if (graph.find(pred) == graph.end()) {
-        graph.emplace(pred, NodeSet{});
-      }
-      if (reverse_graph.find(pred) == reverse_graph.end()) {
-        reverse_graph.emplace(pred, NodeSet{});
-      }
-
-      // Add the predecessor relationship
-      graph[node].emplace(pred);
-      reverse_graph[pred].emplace(node);
-    }
-  }
-
-  /**
-   * @brief Add a vertex with no predecessors
-   *
-   * Convenience method to add a node that doesn't depend on any other nodes.
-   * This node can serve as a starting point in the topological order.
-   *
-   * @param node The node to add to the graph
-   */
-  void add_vertex(T const &node) { add_vertex(node, std::vector<T>{}); }
-
-  /**
-   * @brief Remove a vertex from the graph
-   *
-   * Removes the specified node from the graph along with all edges connecting
-   * to or from this node. This includes both incoming and outgoing edges.
-   *
-   * @param node The node to remove from the graph
-   *
-   * @note If the node doesn't exist, this operation has no effect
-   *
-   */
-  void rm_vertex(T const &node) {
-    auto graph_it = graph.find(node);
-    if (graph_it == graph.end()) {
-      return; // Node doesn't exist
-    }
-
-    // Remove this node from all nodes that depend on it
-    for (auto const &dependent : reverse_graph[node]) {
-      graph[dependent].erase(node);
-    }
-
-    // Remove this node from all nodes it depends on
-    for (auto const &dependency : graph[node]) {
-      reverse_graph[dependency].erase(node);
-    }
-
-    // Remove the node from both graphs
-    graph.erase(node);
-    reverse_graph.erase(node);
-  }
-
-  /**
-   * @brief Remove specific predecessors from a node
-   *
-   * Removes the specified predecessor edges from a node. The node itself
-   * and the dependency nodes remain in the graph.
-   *
-   * @tparam R A forward range type containing elements of type T
-   * @param node The node to remove predecessors from
-   * @param preds A range of predecessors to remove
-   *
-   * @note If the node or any predecessor doesn't exist, those operations are ignored
-   * @note Only the specific predecessor edges are removed, not the nodes themselves
-   */
-  template <std::ranges::forward_range R>
-  void rm_edge(T const &node, R &&preds) {
-    auto graph_it = graph.find(node);
-    if (graph_it == graph.end()) {
-      return; // Node doesn't exist
-    }
-
-    for (auto const &pred : preds) {
-      // Remove the predecessor relationship
-      graph[node].erase(pred);
-
-      auto reverse_it = reverse_graph.find(pred);
-      if (reverse_it != reverse_graph.end()) {
-        reverse_it->second.erase(node);
-      }
-    }
-  }
-
-  /**
-   * @brief Get the number of nodes in the graph
-   *
-   * @return The total number of nodes currently in the graph
-   */
-  size_t size() const { return graph.size(); }
-
-  /**
-   * @brief Check if the graph is empty
-   *
-   * @return true if the graph contains no nodes, false otherwise
-   */
-  bool empty() const { return graph.empty(); }
-
-  /**
-   * @brief Clear the graph
-   *
-   * Removes all nodes and edges from the graph, leaving it in an empty state.
-   * After calling this method, size() will return 0.
-   */
-  void clear() {
-    graph.clear();
-    reverse_graph.clear();
-  }
-
-  /**
-   * @brief Check if a node exists in the graph
-   *
-   * @param node The node to search for
-   * @return true if the node exists in the graph, false otherwise
-   */
-  bool contains(T const &node) const { return graph.find(node) != graph.end(); }
-
-  /**
-   * @brief Get the predecessors of a node
-   *
-   * Returns the set of nodes that the specified node depends on (its predecessors).
-   * These are the nodes that must be processed before the specified node in a
-   * topological ordering.
-   *
-   * @param node The node to get predecessors for
-   * @return A const reference to the set of predecessors, or an empty set if the node doesn't exist
-   *
-   * @note The returned reference remains valid until the graph is modified
-   */
-  NodeSet const &predecessors(T const &node) const {
-    static NodeSet empty_set;
-    auto it = graph.find(node);
-    return (it != graph.end()) ? it->second : empty_set;
-  }
-
-  /**
-   * @brief Get the successors of a node
-   *
-   * Returns the set of nodes that depend on the specified node (its successors).
-   * These are the nodes that must be processed after the specified node in a
-   * topological ordering.
-   *
-   * @param node The node to get successors for
-   * @return A const reference to the set of successors, or an empty set if the node doesn't exist
-   *
-   * @note The returned reference remains valid until the graph is modified
-   */
-  NodeSet const &successors(T const &node) const {
-    static NodeSet empty_set;
-    auto it = reverse_graph.find(node);
-    return (it != reverse_graph.end()) ? it->second : empty_set;
-  }
-};
+// Forward declaration
+template <typename T, typename Hash, typename Equal>
+class sorted_graph;
 
 /**
  * @brief A generic topological sorter for directed acyclic graphs (DAGs)
@@ -250,9 +45,9 @@ public:
  * @endcode
  */
 template <typename T, typename Hash = std::hash<T>, typename Equal = std::equal_to<T>>
-class topological_sorter : public graph_base<T, Hash, Equal> {
+class topological_sorter : public graph<T, Hash, Equal> {
 public:
-  using base = graph_base<T, Hash, Equal>;
+  using base = graph<T, Hash, Equal>;
   using typename base::NodeMap;
   using typename base::NodeSet;
 
@@ -263,8 +58,8 @@ public:
   using depth_map_type = std::unordered_map<T, size_t, Hash, Equal>;
 
 protected:
-  using base::graph;
-  using base::reverse_graph;
+  using base::adj;
+  using base::reverse_adj;
 
 public:
   /**
@@ -305,13 +100,13 @@ public:
     std::queue<T> fifo{};
 
     // Check if start node exists in the graph
-    if (reverse_graph.find(root) == reverse_graph.end()) {
+    if (reverse_adj.find(root) == reverse_adj.end()) {
       // Start node doesn't exist, return empty maps
       return std::make_tuple(std::move(colour_map), std::move(depth_map));
     }
 
     // Initialize all nodes as unvisited
-    for (const auto &[node, _] : reverse_graph) {
+    for (const auto &[node, _] : reverse_adj) {
       colour_map[node] = colour::white;
       // Only initialize depth for nodes we might visit - others remain uninitialized
     }
@@ -326,7 +121,7 @@ public:
       bool should_continue = true;
 
       // Discover successors (nodes that depend on current)
-      if (auto it = reverse_graph.find(current); it != reverse_graph.end()) {
+      if (auto it = reverse_adj.find(current); it != reverse_adj.end()) {
         for (auto const &successor : it->second) {
           switch (colour_map[successor]) {
           case colour::white:
@@ -337,17 +132,17 @@ public:
           case colour::gray:
             // a gray node is discovered
             if constexpr (std::is_invocable_v<GrayHandler, T const &, NodeMap const &, size_t>) {
-              should_continue = gray_handler(successor, std::cref(reverse_graph), depth_map[successor]);
+              should_continue = gray_handler(successor, std::cref(reverse_adj), depth_map[successor]);
             } else {
-              should_continue = gray_handler(successor, std::cref(reverse_graph));
+              should_continue = gray_handler(successor, std::cref(reverse_adj));
             }
             break;
           case colour::black:
             // a black node is discovered
             if constexpr (std::is_invocable_v<BlackHandler, T const &, NodeMap const &, size_t>) {
-              should_continue = black_handler(successor, std::cref(reverse_graph), depth_map[successor]);
+              should_continue = black_handler(successor, std::cref(reverse_adj), depth_map[successor]);
             } else {
-              should_continue = black_handler(successor, std::cref(reverse_graph));
+              should_continue = black_handler(successor, std::cref(reverse_adj));
             }
             break;
           }
@@ -360,9 +155,9 @@ public:
 
       // Visit the current node
       if constexpr (std::is_invocable_v<Visitor, T const &, NodeMap const &, size_t>) {
-        should_continue = visitor(current, std::cref(reverse_graph), depth_map[current]);
+        should_continue = visitor(current, std::cref(reverse_adj), depth_map[current]);
       } else {
-        should_continue = visitor(current, std::cref(reverse_graph));
+        should_continue = visitor(current, std::cref(reverse_adj));
       }
       colour_map[current] = colour::black; // Mark as visited
 
@@ -404,16 +199,16 @@ public:
    * @endcode
    */
   std::vector<T> sort() const {
-    if (graph.empty()) {
+    if (adj.empty()) {
       return {};
     }
 
     // Create working copies of the graph structures
     std::unordered_map<T, size_t, Hash, Equal> in_degree_map;
-    in_degree_map.reserve(graph.size());
+    in_degree_map.reserve(adj.size());
 
     // Initialize in-degree count for all nodes
-    for (auto const &[node, dependencies] : graph) {
+    for (auto const &[node, dependencies] : adj) {
       in_degree_map[node] = dependencies.size();
     }
 
@@ -426,7 +221,7 @@ public:
     }
 
     std::vector<T> result;
-    result.reserve(graph.size());
+    result.reserve(adj.size());
 
     // Process nodes with zero in-degree
     while (!zero_in_degree.empty()) {
@@ -435,8 +230,8 @@ public:
       result.push_back(current);
 
       // For each node that depends on current
-      auto reverse_it = reverse_graph.find(current);
-      if (reverse_it != reverse_graph.end()) {
+      auto reverse_it = reverse_adj.find(current);
+      if (reverse_it != reverse_adj.end()) {
         for (auto const &dependent : reverse_it->second) {
           if (--in_degree_map[dependent] == 0) {
             zero_in_degree.push(dependent);
@@ -445,7 +240,7 @@ public:
       }
     }
 
-    if (result.size() != graph.size()) {
+    if (result.size() != adj.size()) {
       // throw cycle_error("Graph contains a cycle");
       return {}; // Return empty vector if cycle detected
     }
@@ -487,7 +282,7 @@ public:
    * }
    * @endcode
    */
-  auto nodes() const { return std::views::keys(graph); }
+  auto nodes() const { return std::views::keys(adj); }
 
   /**
    * @brief Get all root nodes in the graph
@@ -502,7 +297,7 @@ public:
    */
   auto get_roots() const {
     std::vector<T> roots;
-    for (auto const &[node, dependencies] : graph) {
+    for (auto const &[node, dependencies] : adj) {
       if (dependencies.empty()) {
         roots.push_back(node);
       }
@@ -523,7 +318,7 @@ public:
    */
   auto get_leaves() const {
     std::vector<T> leaves;
-    for (auto const &[node, dependents] : reverse_graph) {
+    for (auto const &[node, dependents] : reverse_adj) {
       if (dependents.empty()) {
         leaves.push_back(node);
       }
@@ -558,7 +353,8 @@ public:
   using difference_type = std::ptrdiff_t;
 
 private:
-  std::vector<T> sorted; ///< Nodes in topological order
+  std::vector<T> sorted;                            ///< Nodes in topological order
+  std::unordered_map<T, size_t, Hash, Equal> index; ///< Maps nodes to their sorted index
 
   /// Hide all mutating methods from base class
   using base_type::add_vertex;
@@ -580,7 +376,12 @@ public:
    * @param base The base topological_sorter to copy from
    * @param nodes Vector of nodes in topological order
    */
-  sorted_graph(base_type const &base, std::vector<T> nodes) : base_type(base), sorted(std::move(nodes)) {}
+  sorted_graph(base_type const &base, std::vector<T> nodes) : base_type(base), sorted(std::move(nodes)) {
+    index.reserve(sorted.size());
+    for (size_t i = 0; i < sorted.size(); ++i) {
+      index.emplace(sorted[i], i);
+    }
+  }
 
   using iterator = impl::iterator_t<sorted_graph, true>; ///< Only const iteration is allowed
   using const_iterator = iterator;
@@ -600,35 +401,49 @@ public:
   /**
    * @brief Access node and predecessors by sorted index
    *
-   * @param index The index in topological order (0-based)
+   * @param id The index in topological order (0-based)
    * @return Pair of (node, predecessors) at the given index
    */
-  value_type operator[](size_type index) const {
-    T const &node = sorted[index];
-    return std::make_pair(std::cref(node), std::cref(this->predecessors(node)));
+  value_type operator[](size_type id) const {
+    T const &node = sorted[id];
+    return std::make_pair(std::cref(node), std::cref(this->pred_of(node)));
   }
 
   /**
    * @brief Access node and predecessors by sorted index with bounds checking
    *
-   * @param index The index in topological order (0-based)
+   * @param id The index in topological order (0-based)
    * @return Pair of (node, predecessors) at the given index
    * @throws std::out_of_range if index is out of bounds
    */
-  value_type at(size_type index) const {
-    if (index >= sorted.size()) {
+  value_type at(size_type id) const {
+    if (id >= sorted.size()) {
       throw std::out_of_range("Index out of range");
     }
-    return (*this)[index];
+    return (*this)[id];
+  }
+
+  /**
+   * @brief Query id of a node in the sorted graph
+   *
+   * @param node The node to find the ID for
+   * @return The index of the node in the sorted order, or invalid_id if not found
+   */
+  size_type id(T const &node) const {
+    auto it = index.find(node);
+    if (it == index.end()) {
+      return invalid_id;
+    }
+    return it->second;
   }
 
   /**
    * @brief Get the node at a specific sorted index
    *
-   * @param index The index in topological order (0-based)
+   * @param id The index in topological order (0-based)
    * @return The node at the given index
    */
-  T const &node_at(size_type index) const { return sorted[index]; }
+  T const &node_at(size_type id) const { return sorted[id]; }
 
   /**
    * @brief Get access to the sorted nodes vector

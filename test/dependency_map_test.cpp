@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-#include "opflow/flat_graph.hpp"
+#include "opflow/dependency_map.hpp"
 #include "opflow/topo.hpp"
 
 using namespace opflow;
 
 class DependencyMapTest : public ::testing::Test {
 protected:
-  flat_graph graph;
+  dependency_map graph;
 };
 
 TEST_F(DependencyMapTest, EmptyGraph) {
@@ -216,28 +216,6 @@ TEST_F(DependencyMapTest, DependsOn) {
   // Self dependency (should be false)
   EXPECT_FALSE(graph.depends_on(root, root));
   EXPECT_FALSE(graph.depends_on(child, child));
-}
-
-TEST_F(DependencyMapTest, Statistics) {
-  auto stats = graph.get_statistics();
-  EXPECT_EQ(stats.node_count, 0);
-  EXPECT_EQ(stats.total_predecessors, 0);
-  EXPECT_EQ(stats.max_degree, 0);
-  EXPECT_EQ(stats.avg_degree, 0.0);
-  EXPECT_EQ(stats.root_count, 0);
-  EXPECT_EQ(stats.leaf_count, 0);
-
-  graph.add(std::vector<size_t>{});     // root
-  graph.add(std::vector<size_t>{0});    // child with 1 dep
-  graph.add(std::vector<size_t>{0, 1}); // child with 2 deps
-
-  stats = graph.get_statistics();
-  EXPECT_EQ(stats.node_count, 3);
-  EXPECT_EQ(stats.total_predecessors, 3);
-  EXPECT_EQ(stats.max_degree, 2);
-  EXPECT_EQ(stats.avg_degree, 1.0);
-  EXPECT_EQ(stats.root_count, 1);
-  EXPECT_EQ(stats.leaf_count, 1); // node 2 is leaf
 }
 
 TEST_F(DependencyMapTest, ContainsMethods) {

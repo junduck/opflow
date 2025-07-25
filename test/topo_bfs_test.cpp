@@ -54,7 +54,7 @@ protected:
 
     // Check that depths increase correctly along edges
     for (const auto &[node, depth] : depth_map) {
-      for (const auto &dependent : sorter.successors(node)) {
+      for (const auto &dependent : sorter.succ_of(node)) {
         auto dependent_depth_it = depth_map.find(dependent);
         if (dependent_depth_it != depth_map.end()) {
           EXPECT_EQ(dependent_depth_it->second, depth + 1) << "Dependent " << dependent << " should have depth "
@@ -554,16 +554,16 @@ TEST_F(TopoBfsTest, GraphStructureIntegrity) {
   int_sorter.add_vertex(3, std::vector<int>{1});
 
   // Store original dependents
-  auto original_successors_1 = int_sorter.successors(1);
-  auto original_successors_2 = int_sorter.successors(2);
-  auto original_successors_3 = int_sorter.successors(3);
+  auto original_successors_1 = int_sorter.succ_of(1);
+  auto original_successors_2 = int_sorter.succ_of(2);
+  auto original_successors_3 = int_sorter.succ_of(3);
 
   auto [colour_map, depth_map] = int_sorter.bfs(1, topological_sorter<int>::noop_visitor);
 
   // Verify graph structure is unchanged
-  EXPECT_EQ(int_sorter.successors(1), original_successors_1);
-  EXPECT_EQ(int_sorter.successors(2), original_successors_2);
-  EXPECT_EQ(int_sorter.successors(3), original_successors_3);
+  EXPECT_EQ(int_sorter.succ_of(1), original_successors_1);
+  EXPECT_EQ(int_sorter.succ_of(2), original_successors_2);
+  EXPECT_EQ(int_sorter.succ_of(3), original_successors_3);
 }
 
 // Test large graph performance and correctness

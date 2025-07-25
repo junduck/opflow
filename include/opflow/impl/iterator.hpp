@@ -37,7 +37,7 @@ public:
     return self->operator[](index);
   }
   pointer operator->() const
-    requires std::is_reference_v<reference>
+    requires(std::is_reference_v<reference>)
   {
     assert(self != nullptr && "Iterator dereferencing null pointer");
     return std::addressof(**this);

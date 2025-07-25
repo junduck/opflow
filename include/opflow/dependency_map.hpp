@@ -15,14 +15,14 @@ constexpr inline size_t invalid_id = static_cast<size_t>(-1);
  * added nodes, ensuring the graph remains acyclic and topologically sorted.
  *
  */
-class flat_graph {
+class dependency_map {
   impl::flat_multivect<size_t> graph; ///< Flattened storage of dependencies
 
 public:
   /**
    * @brief Default constructor creates an empty dependency map
    */
-  flat_graph() = default;
+  dependency_map() = default;
 
   /**
    * @brief Get the number of nodes in the dependency map
@@ -216,41 +216,6 @@ public:
   void clear() noexcept { graph.clear(); }
 
   void reserve(size_t n_nodes, size_t n_preds) { graph.reserve(n_nodes, n_preds); }
-
-  /**
-   * @brief Get statistics about the dependency map
-   */
-  struct statistics {
-    size_t node_count;
-    size_t total_predecessors;
-    size_t max_degree;
-    double avg_degree;
-    size_t root_count;
-    size_t leaf_count;
-  };
-
-  statistics get_statistics() const noexcept {
-    if (empty()) {
-      return {0, 0, 0, 0.0, 0, 0};
-    }
-
-    size_t max_deg = 0;
-    size_t root_cnt = 0;
-
-    for (size_t i = 0; i < size(); ++i) {
-      size_t deg = num_predecessors(i);
-      max_deg = std::max(max_deg, deg);
-      if (deg == 0)
-        ++root_cnt;
-    }
-
-    return {.node_count = size(),
-            .total_predecessors = total_predecessors(),
-            .max_degree = max_deg,
-            .avg_degree = static_cast<double>(total_predecessors()) / size(),
-            .root_count = root_cnt,
-            .leaf_count = get_leaves().size()};
-  }
 };
 
 } // namespace opflow
