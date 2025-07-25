@@ -2,10 +2,9 @@
 
 #include "opflow/op/detail/accum.hpp"
 #include "opflow/op/detail/binary.hpp"
-#include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <time_point_like T>
+template <typename T>
 struct var_vw : public detail::weighted_op<T> {
   using base = detail::weighted_op<T>;
   using base::pos;
@@ -80,7 +79,7 @@ struct var_vw : public detail::weighted_op<T> {
   }
 };
 
-template <time_point_like T>
+template <typename T>
 struct std_vw : public var_vw<T> {
   using base = var_vw<T>;
   using base::base;

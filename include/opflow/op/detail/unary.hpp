@@ -5,7 +5,7 @@
 #include "opflow/op_base.hpp"
 
 namespace opflow::op::detail {
-template <time_point_like T>
+template <typename T>
 struct unary_op : public op_base<T> {
   size_t pos;
 

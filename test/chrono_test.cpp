@@ -442,13 +442,8 @@ TEST_F(ChronoTest, OpFlowCompatibility) {
   using clock_type = steady_clock<int64_t>;
   using time_point_type = clock_type::time_point;
 
-  // Test time_point_like concept
-  static_assert(time_point_like<time_point_type>);
-  static_assert(time_point_like<system_clock<int64_t>::time_point>);
-  static_assert(time_point_like<high_resolution_clock<int64_t>::time_point>);
-
-  // Test time_delta_t type alias
-  static_assert(std::same_as<time_delta_t<time_point_type>, clock_type::duration>);
+  // Test duration_t type alias
+  static_assert(std::same_as<duration_t<time_point_type>, clock_type::duration>);
 
   // Test that our time_point satisfies concept requirements
   time_point_type tp1{};

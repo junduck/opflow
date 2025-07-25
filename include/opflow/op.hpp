@@ -9,18 +9,18 @@
 #include <tuple>
 #include <vector>
 
-#include "flat_graph.hpp"
+#include "dependency_map.hpp"
 #include "history_ringbuf.hpp"
 #include "op_base.hpp"
 
 namespace opflow {
 
-template <time_point_like T>
+template <typename T>
 struct engine_builder;
 template <typename T>
 struct engine;
 
-template <time_point_like T>
+template <typename T>
 struct root_input : public op_base<T> {
   std::vector<double> mem;
 
@@ -43,22 +43,22 @@ struct root_input : public op_base<T> {
   size_t num_inputs(size_t) const noexcept override { return 0; } // No inputs
 };
 
-template <time_point_like T>
+template <typename T>
 struct rollsum : public op_base<T> {
   double sum{};
   T current{};
-  time_delta_t<T> window_size;
+  duration_t<T> window_size;
   std::vector<size_t> sum_idx{};
 
   template <std::ranges::input_range R>
-  rollsum(R &&idx, time_delta_t<T> window = {}) : window_size(window) {
+  rollsum(R &&idx, duration_t<T> window = {}) : window_size(window) {
     if (std::ranges::empty(idx))
       sum_idx.push_back(0);
     else
       sum_idx.assign(std::ranges::begin(idx), std::ranges::end(idx));
   }
 
-  bool cumulative() const noexcept { return window_size == time_delta_t<T>{}; }
+  bool cumulative() const noexcept { return window_size == duration_t<T>{}; }
 
   void step(T tick, double const *const *in) noexcept override {
     assert(tick != T{} && "default-constructed tick.");
@@ -92,7 +92,7 @@ struct rollsum : public op_base<T> {
   }
 };
 
-template <time_point_like T>
+template <typename T>
 struct engine_builder {
   using node_type = std::shared_ptr<op_base<T>>;
 
@@ -104,7 +104,7 @@ struct engine_builder {
   };
 
   std::vector<node_info> nodes{};
-  flat_graph dependency_graph{};
+  dependency_map dependency_graph{};
   size_t total_output_size{0};
 
   explicit engine_builder(size_t input_size) {
@@ -166,7 +166,7 @@ struct engine {
   using node_type = std::shared_ptr<op_base<T>>;
 
   std::vector<node_type> nodes{};
-  flat_graph dependency_graph{};
+  dependency_map dependency_graph{};
   std::vector<size_t> output_offset{}; // Starting index in step data for each node output
   size_t output_size{};                // Total size of all outputs per step
 
@@ -248,6 +248,7 @@ struct engine {
 
       step_history = std::move(new_history);
     } else {
+      output_size += n;
       output_offset.push_back(output_size - n);
     }
 
@@ -442,7 +443,7 @@ struct engine {
 };
 
 // Build method implementation for engine_builder
-template <time_point_like T>
+template <typename T>
 engine<T> engine_builder<T>::build(size_t initial_history_capacity) {
   if (nodes.empty()) {
     throw std::runtime_error("Cannot build engine with no nodes");

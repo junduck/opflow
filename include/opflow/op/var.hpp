@@ -2,10 +2,9 @@
 
 #include "opflow/op/detail/accum.hpp"
 #include "opflow/op/detail/unary.hpp"
-#include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <time_point_like T>
+template <typename T>
 struct moment2 : public detail::unary_op<T> {
   using base = detail::unary_op<T>;
   using base::pos;
@@ -63,7 +62,7 @@ struct moment2 : public detail::unary_op<T> {
   size_t num_outputs() const noexcept override { return 2; }
 };
 
-template <time_point_like T, bool Unbiased = true>
+template <typename T, bool Unbiased = true>
 struct var : public moment2<T> {
   using base = moment2<T>;
   using base::base;
@@ -85,7 +84,7 @@ struct var : public moment2<T> {
   }
 };
 
-template <time_point_like T, bool Unbiased = true>
+template <typename T, bool Unbiased = true>
 struct stddev : public var<T, Unbiased> {
   using base = var<T, Unbiased>;
   using base::pos;

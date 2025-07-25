@@ -4,10 +4,9 @@
 
 #include "opflow/op/detail/accum.hpp"
 #include "opflow/op/detail/unary.hpp"
-#include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <time_point_like T>
+template <typename T>
 struct ewma : public detail::unary_op<T> {
   using base = detail::unary_op<T>;
   using base::pos;

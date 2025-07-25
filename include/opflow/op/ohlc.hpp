@@ -22,24 +22,24 @@ namespace opflow::op {
  *
  * @tparam T
  */
-template <time_point_like T>
+template <typename T>
 struct ohlc : public detail::unary_op<T> {
   using base = detail::unary_op<T>;
   using base::pos;
 
-  time_delta_t<T> window_size; ///< Size of the tumbling window
-  T next_tick;                 ///< Next tick time point for the tumbling window
-  double open;                 ///< Open price
-  double high;                 ///< High price
-  double low;                  ///< Low price
-  double close;                ///< Close price
+  duration_t<T> window_size; ///< Size of the tumbling window
+  T next_tick;               ///< Next tick time point for the tumbling window
+  double open;               ///< Open price
+  double high;               ///< High price
+  double low;                ///< Low price
+  double close;              ///< Close price
 
   std::array<double, 4> output_data; ///< Output data buffer for OHLC values
 
   // here we assume that a tumbling window is always aligned to epoch
-  explicit ohlc(time_delta_t<T> window, size_t pos = 0) noexcept
+  explicit ohlc(duration_t<T> window, size_t pos = 0) noexcept
       : base{pos}, window_size{window}, next_tick{}, open{}, high{}, low{}, close{} {
-    output_data.fill(fnan);
+    output_data.fill(fnan<double>);
   }
 
   T align_to_window(T tick) const noexcept {
@@ -57,7 +57,7 @@ struct ohlc : public detail::unary_op<T> {
         return tick - remainder + window_size; // Align to the next window start
     } else {
       // TODO: this may be very inefficient
-      // our time_point_like T only requires comparison and basic arithmetic
+      // our typename T only requires comparison and basic arithmetic
       T t{};
       while (t < tick) {
         t += window_size;
@@ -107,7 +107,7 @@ struct ohlc : public detail::unary_op<T> {
     std::copy(output_data.begin(), output_data.end(), out);
     // Reset output data after reading
     // where there is not enough data for a tumbling window, we return nans
-    output_data.fill(fnan);
+    output_data.fill(fnan<double>);
   }
 };
 } // namespace opflow::op

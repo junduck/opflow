@@ -12,7 +12,7 @@ namespace opflow::op {
 
 enum class trace_event_type { init, step, inverse, value, window_start_query };
 
-template <time_point_like T>
+template <typename T>
 struct trace_event {
   trace_event_type type;
   T tick;
@@ -24,7 +24,7 @@ struct trace_event {
   trace_event(trace_event_type t, T tick_val) : type(t), tick(tick_val), wall_time(std::chrono::steady_clock::now()) {}
 };
 
-template <time_point_like T>
+template <typename T>
 struct trace : public op_base<T> {
 private:
   std::shared_ptr<op_base<T>> wrapped_op;
@@ -156,7 +156,7 @@ public:
 
   template <std::ranges::forward_range R>
   bool compatible_with(R &&deps) const noexcept
-    requires detail::range_derived_from<R, op_base<T>>
+    requires(detail::range_derived_from<R, op_base<T>>)
   {
     return wrapped_op->compatible_with(std::forward<R>(deps));
   }
@@ -293,7 +293,7 @@ private:
 };
 
 // Helper function to create traced operators
-template <time_point_like T>
+template <typename T>
 std::shared_ptr<trace<T>> make_trace(std::shared_ptr<op_base<T>> op, std::string name = "traced_op",
                                      size_t max_history = 1000, bool capture_data = true) {
   return std::make_shared<trace<T>>(std::move(op), std::move(name), max_history, capture_data);

@@ -14,24 +14,10 @@ concept range_derived_from =
 } // namespace detail
 
 template <typename T>
-using time_delta_t = decltype(std::declval<T>() - std::declval<T>());
+using duration_t = decltype(std::declval<T>() - std::declval<T>());
 
-template <typename T>
-concept time_point_like =
-    // can compare
-    std::regular<T> && std::totally_ordered<T> &&
-    // can default construct
-    std::is_nothrow_default_constructible_v<T> &&
-    // can be constructed directly from time delta (epoch + delta)
-    std::is_nothrow_constructible_v<T, time_delta_t<T>> &&
-    // basic arithmetic operations
-    requires(T a, time_delta_t<T> b) {
-      { a - b } -> std::convertible_to<T>;
-      { a + b } -> std::convertible_to<T>;
-    };
-
-/// \note an operator should never worry about the time or the current window, unless it has dynamic window size
-
+// TODO: REMOVE THIS, retention policy design here is logically flawed
+// As a sliding window, we should always keep data in the window (window_start, current_time], LEFT OPEN
 enum class retention_policy : int {
   cumulative = 0, ///< Cumulative, no data removal
   keep_start,     ///< Data at window start is kept, boundary is calculated as current - window_size
@@ -39,43 +25,56 @@ enum class retention_policy : int {
 };
 
 // convenience constants
-constexpr inline double fnan = std::numeric_limits<double>::quiet_NaN(); ///< NaN constant
-constexpr inline double finf = std::numeric_limits<double>::infinity();  ///< Infinity constant
-constexpr inline double fmin = std::numeric_limits<double>::min();       ///< Minimum double value
-constexpr inline double fmax = std::numeric_limits<double>::max();       ///< Maximum double value
 
-template <time_point_like T>
+template <std::floating_point T>
+constexpr inline T fnan = std::numeric_limits<T>::quiet_NaN(); ///< NaN constant
+template <std::floating_point T>
+constexpr inline T finf = std::numeric_limits<T>::infinity(); ///< Infinity constant
+template <std::floating_point T>
+constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double value
+template <std::floating_point T>
+constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
+
+template <typename T, typename U = double>
 struct op_base {
+  using time_type = T;                 ///< Time type used by this operator
+  using duration_type = duration_t<T>; ///< Duration type used by this operator
+  using data_type = U;                 ///< Data type produced by this operator
+
+  // size_t id; ///< Unique ID for this operator instance
+  // void assign_id(size_t new_id) noexcept { id = new_id; }
+  // size_t get_id() const noexcept { return id; }
+
   /**
    * @brief Initialize operator state with input data
    *
    * This method is only called in aggregation context to flush and initialise a new aggregate window
    *
-   * @param tick Current tick
+   * @param timestamp Current timestamp
    * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
    */
-  virtual void init(T tick, double const *const *in) noexcept {
-    std::ignore = tick; // Unused in base class
-    std::ignore = in;   // Unused in base class
+  virtual void init(time_type timestamp, data_type const *const *in) noexcept {
+    std::ignore = timestamp; // Unused in base class
+    std::ignore = in;        // Unused in base class
   }
 
   /**
    * @brief Update operator state with new data
    *
-   * @param tick Current tick
+   * @param timestamp Current timestamp
    * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
    */
-  virtual void step(T tick, double const *const *in) noexcept = 0;
+  virtual void step(time_type timestamp, data_type const *const *in) noexcept = 0;
 
   /**
    * @brief Update operator state by removing expired data
    *
-   * @param tick Expired tick
+   * @param expired Timestamp of the expired data
    * @param rm Pointer to removal data, where rm[parent_id] points to the data from parent operator
    */
-  virtual void inverse(T tick, double const *const *rm) noexcept {
-    std::ignore = tick; // Unused in base class
-    std::ignore = rm;   // Unused in base class
+  virtual void inverse(time_type expired, data_type const *const *rm) noexcept {
+    std::ignore = expired; // Unused in base class
+    std::ignore = rm;      // Unused in base class
   };
 
   /**
@@ -84,19 +83,31 @@ struct op_base {
    * @param out Pointer to output buffer where the operator's value will be written
    * @note The output buffer is allocated as reported num_ouputs()
    */
-  virtual void value(double *out) noexcept = 0;
+  virtual void value(data_type *out) noexcept = 0;
 
   /**
    * @brief Get the window start (expiry) for this operator
    *
-   * @details Data older than window start is considered expired and will be removed by calls to inverse.
-   * This method is only called if the operator has a dynamic window size (when registered, retention policy is not
-   * cumulative and window size is T{}). Engine consults this method to determine data expiry and cleanup with inverse.
-   * If window_start() returns an earlier time point than previous calls, it is undefined behavior.
+   * @details When the operator is run in a streaming pipeline, data older than window start is considered expired and
+   * will be removed by calls to inverse. This method is only called if the operator has a dynamic window size (when
+   * registered, retention policy is not cumulative and window size is T{}). Engine consults this method to determine
+   * data expiry and cleanup with inverse. If window_start() returns an earlier time point than previous calls, it is
+   * undefined behavior.
    *
    * @return T Window start time point
    */
-  virtual T window_start() const noexcept { return T{}; }
+  virtual time_type window_start() const noexcept { return time_type{}; }
+
+  /**
+   * @brief Get the window period for this operator
+   *
+   * @details When the operator is run in a tumbling pipeline, and the window period is not provided to the pipeline
+   * while initialisation, executor will consult this method ONCE to determine the period of the window. If the operator
+   * is run in a streaming pipeline, this method is never called.
+   *
+   * @return size_t
+   */
+  virtual size_t window_period() const noexcept { return 0; }
 
   /**
    * @brief Returns number of dependencies/parents.
@@ -126,7 +137,7 @@ struct op_base {
 
   template <std::ranges::forward_range R>
   bool compatible_with(R &&deps) const noexcept
-    requires detail::range_derived_from<R, op_base>
+    requires(detail::range_derived_from<R, op_base>)
   {
     // Check if the number of dependencies matches the expected count
     if (!(num_depends() == std::ranges::size(deps))) {

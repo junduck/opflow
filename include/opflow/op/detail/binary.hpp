@@ -5,7 +5,7 @@
 #include "opflow/op_base.hpp"
 
 namespace opflow::op::detail {
-template <time_point_like T>
+template <typename T>
 struct binary_op : public op_base<T> {
   size_t pos0, pos1;
 
@@ -19,7 +19,7 @@ struct binary_op : public op_base<T> {
   size_t num_outputs() const noexcept override { return 1; }
 };
 
-template <time_point_like T>
+template <typename T>
 struct weighted_op : public op_base<T> {
   size_t pos, pow_weight;
 

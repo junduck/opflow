@@ -5,7 +5,7 @@
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <time_point_like T>
+template <typename T>
 struct root_input : public op_base<T> {
   double const *mem;
   size_t input_size;

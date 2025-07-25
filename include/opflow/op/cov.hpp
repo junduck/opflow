@@ -2,10 +2,9 @@
 
 #include "opflow/op/detail/accum.hpp"
 #include "opflow/op/detail/binary.hpp"
-#include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <time_point_like T>
+template <typename T>
 struct cov : public detail::binary_op<T> {
   using base = detail::binary_op<T>;
   using base::pos0;
