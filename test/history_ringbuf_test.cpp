@@ -1,9 +1,11 @@
-#include "opflow/history_ringbuf.hpp"
 #include "gtest/gtest.h"
+
 #include <array>
 #include <chrono>
 #include <numeric>
 #include <vector>
+
+#include "opflow/history_ringbuf.hpp"
 
 using namespace opflow;
 
@@ -34,10 +36,9 @@ TEST_F(HistoryRingbufTest, ConstructionWithCustomCapacity) {
 }
 
 TEST_F(HistoryRingbufTest, ConstructionWithZeroValueSize) {
-  // This should be allowed but may not be very useful
-  history_ringbuf<int, double> h(0);
-  EXPECT_TRUE(h.empty());
-  EXPECT_EQ(h.size(), 0);
+  // expect to throw std::bad_alloc
+  using history_ringbuf_specialise = history_ringbuf<int, double>;
+  EXPECT_THROW(history_ringbuf_specialise h(0, 8), std::bad_alloc);
 }
 
 // Test basic push and access operations

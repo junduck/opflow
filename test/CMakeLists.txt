@@ -66,6 +66,10 @@ target_link_libraries(test_chrono GTest::gtest_main opflow::headers)
 add_executable(test_pipeline pipeline_test.cpp)
 target_link_libraries(test_pipeline GTest::gtest_main opflow::headers)
 
+# Pipeline comprehensive tests
+add_executable(test_pipeline_comprehensive pipeline_comprehensive_test.cpp)
+target_link_libraries(test_pipeline_comprehensive GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_engine)
@@ -84,3 +88,5 @@ gtest_discover_tests(test_flat_set_edge_cases)
 gtest_discover_tests(test_flat_set_corner_cases)
 gtest_discover_tests(test_ohlc)
 gtest_discover_tests(test_chrono)
+gtest_discover_tests(test_pipeline)
+gtest_discover_tests(test_pipeline_comprehensive)

@@ -9,10 +9,14 @@
 namespace {
 using namespace opflow;
 
+using Time = int;
+using Data = double;
+
 class PipelineTest : public ::testing::Test {
 protected:
   using op_type = op_base<Time, Data>;
   using node_type = std::shared_ptr<op_type>;
+  using pipeline_type = opflow::pipeline<Time, Data>;
   using sum_type = op::sum<Time>;
   using add_type = op::add<Time>;
   using vect = std::vector<node_type>;
@@ -32,13 +36,13 @@ protected:
     win[sum_right] = window_descriptor<Time>(false, 7);
     win[add_final] = window_descriptor<Time>(false, 5);
 
-    p = std::make_unique<pipeline>(g, sliding::time, win);
+    p = std::make_unique<pipeline_type>(g, sliding::time, win);
   }
 
   graph<node_type> g;
   std::unordered_map<node_type, window_descriptor<Time>> win;
 
-  std::unique_ptr<pipeline> p;
+  std::unique_ptr<pipeline_type> p;
 };
 
 TEST_F(PipelineTest, BasicStepFunctionality) {
@@ -131,6 +135,7 @@ class SimplePipelineTest : public ::testing::Test {
 protected:
   using op_type = op_base<Time, Data>;
   using node_type = std::shared_ptr<op_type>;
+  using pipeline_type = opflow::pipeline<Time, Data>;
   using sum_type = op::sum<Time>;
   using vect = std::vector<node_type>;
 
@@ -146,12 +151,12 @@ protected:
     win[sum1] = window_descriptor<Time>(false, 3);
     win[sum2] = window_descriptor<Time>(false, 2);
 
-    p = std::make_unique<pipeline>(g, sliding::time, win);
+    p = std::make_unique<pipeline_type>(g, sliding::time, win);
   }
 
   graph<node_type> g;
   std::unordered_map<node_type, window_descriptor<Time>> win;
-  std::unique_ptr<pipeline> p;
+  std::unique_ptr<pipeline_type> p;
 };
 
 TEST_F(SimplePipelineTest, LinearAccumulation) {

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <chrono>
 #include <memory>
 #include <stdexcept>
 
+#include "common.hpp"
 #include "graph.hpp"
 #include "history_ringbuf.hpp"
 #include "op_base.hpp"
@@ -11,32 +11,27 @@
 
 namespace opflow {
 
-template <typename Container, typename Key, typename Value>
-concept associative = requires(Container const c) {
-  // query using find
-  { c.find(std::declval<Key>()) } -> std::same_as<typename Container::const_iterator>;
-  { c.end() } -> std::same_as<typename Container::const_iterator>;
-
-  // check iterator returns [key, value] pairs
-  { std::declval<typename Container::const_iterator>()->first } -> std::convertible_to<Key const &>;
-  { std::declval<typename Container::const_iterator>()->second } -> std::convertible_to<Value const &>;
-};
-
-// Dev only we specialise this to make clangd more efficient
-using Time = int; // std::chrono::system_clock::time_point;
-using Data = double;
-
 // A pipeline handles a DAG of operators
 
+/**
+ * @brief Sliding window types for a pipeline.
+ *
+ */
 enum class sliding {
   time, ///< sliding window based on time
   step, ///< sliding window based on step
 };
 
+/**
+ * @brief Window descriptor a operator node.
+ *
+ * @tparam Time
+ */
 template <typename Time>
 struct window_descriptor {
   using time_type = Time;
   using duration_type = duration_t<time_type>;
+
   /**
    * @brief Window size if node is run in sliding pipeline
    *
@@ -67,132 +62,41 @@ struct window_descriptor {
       : window_size(), window_period(window_period), cumulative(cumulative) {}
 };
 
-template <typename NodeType>
-class node_error : public std::runtime_error {
+/**
+ * @brief pipeline
+ *
+ * @details A pipeline maintains a sliding window of data for a DAG.
+ *
+ * @tparam Time
+ * @tparam Data
+ */
+template <typename Time, typename Data>
+class pipeline {
 public:
-  using node_type = NodeType;
-
-  node_error(auto &&msg, node_type const &node) : std::runtime_error(std::forward<decltype(msg)>(msg)), node(node) {}
-
-  node_type const &get_node() const noexcept { return node; }
-
-private:
-  node_type node;
-};
-
-template <typename Time>
-Time min_time() noexcept {
-  return Time::min(); // Use min time for non-arithmetic types
-}
-
-template <typename Time>
-Time min_time() noexcept
-  requires(std::is_arithmetic_v<Time>)
-{
-  return std::numeric_limits<Time>::min();
-}
-
-// template <typename Time, typename Data>
-struct pipeline {
   using time_type = Time;
   using duration_type = duration_t<time_type>;
   using data_type = Data;
   using op_type = op_base<time_type, data_type>;
   using node_type = std::shared_ptr<op_type>;
 
-  topo_graph<node_type> nodes;
-  // TODO: history provider should be a template parameter for future extensibility
-  std::vector<size_t> data_offset;               ///< I/O data offsets for each node
-  size_t data_size;                              ///< Total size of I/O data for all nodes
-  history_ringbuf<time_type, data_type> history; ///< History buffer for node I/O data
-
-  // window management
-  sliding window_mode;                                   ///< Window sliding mode
-  std::vector<window_descriptor<time_type>> window_desc; ///< Window descriptors for each node
-
-  std::vector<time_type> last_removed; ///< Last window boundary time for each node, used in time sliding mode
-  std::vector<size_t> step_count;      ///< Step count for each node, used in step sliding mode
-  size_t max_window_period;            ///< Maximum window period across all nodes, used in step sliding mode
-
-  bool all_cumulative;
-
   pipeline(graph<node_type> const &g, sliding mode,
            associative<node_type, window_descriptor<time_type>> auto const &desc)
       : nodes(g), data_offset(), data_size(), history(), window_mode(mode), window_desc(), last_removed(), step_count(),
-        max_window_period(), all_cumulative() {
-    // 0. check empty graph and any nullptr nodes
-    if (nodes.empty()) {
-      throw std::runtime_error("Pipeline cannot be constructed from an empty graph.");
-    }
-    if (std::ranges::any_of(nodes, [](auto const &node) { return node == nullptr; })) {
-      throw std::runtime_error("Pipeline contains null operator node.");
-    }
+        all_cumulative() {
 
-    // 1. check number of roots (input nodes)
-    if (nodes.get_roots().size() != 1) {
-      throw std::runtime_error("Pipeline must have exactly one root input node.");
-    }
+    validate_nodes_topo();
+    validate_nodes_compat();
 
-    // 2. check compatiblity of nodes, nodes are topo-sorted, we skip root input node
-    for (size_t i = 1; i < nodes.size(); ++i) {
-      auto const &node = nodes[i];
-      // collect pointers to dependencies
-      auto deps = std::views::all(nodes.preds(i)) |
-                  std::views::transform([this](size_t id) { return static_cast<op_type const *>(nodes[id].get()); });
-      if (!node->compatible_with(deps)) {
-        throw node_error("Operator node is not compatible with its dependencies.", node);
-      }
-    }
+    init_io_index();
 
-    // 3. calculate data offsets and total size
-    data_offset.reserve(nodes.size());
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      data_offset.push_back(data_size);
-      data_size += nodes[i]->num_outputs();
-    }
+    init_history();
 
-    // 4. initialise history buffer
-    history.init(data_size);
+    init_window_desc(desc);
 
-    // 5. initialise window descriptors
-    window_desc.reserve(nodes.size());
-    // 5.1. handle root input node
-    window_desc.emplace_back();
-    // 5.2. handle other nodes
-    for (size_t i = 1; i < nodes.size(); ++i) {
-      auto const &node = nodes[i];
-      auto it = desc.find(node);
-      if (it == desc.end()) {
-        throw node_error("Operator node is not registered in the pipeline descriptor.", node);
-      }
-      auto d = it->second;
-      if (window_mode == sliding::step && d.window_period == 0) {
-        auto p = node->window_period();
-        if (p == 0) {
-          throw node_error("Operator node does not provide a valid window period.", node);
-        }
-        d.window_period = p;
-      }
-      window_desc.push_back(d);
-      max_window_period = std::max(max_window_period, d.window_period);
-    }
-
-    // 6. initialise window boundaries
-    switch (window_mode) {
-    case sliding::time:
-      last_removed.resize(nodes.size(), min_time<time_type>());
-      all_cumulative = std::ranges::all_of(window_desc, [](auto const &d) { return d.cumulative; });
-      break;
-    case sliding::step:
-      step_count.resize(nodes.size(), 0);
-      break;
-    default:
-      // TODO: add time weighted window type (delta_t inserted, 1 step lagged data)
-      break;
-    }
+    init_window_meta();
   }
 
-  auto step(time_type timestamp, std::span<data_type> input_data) {
+  void step(time_type timestamp, std::span<const data_type> input_data) {
     // 0. validate timestamp and input data
     if (!history.empty() && timestamp <= history.back().first) {
       throw std::runtime_error("Non-monotonic timestamp detected in pipeline step.");
@@ -201,142 +105,81 @@ struct pipeline {
       throw std::runtime_error("Input data size does not match root input node requirement.");
     }
 
-    // 1. prepare data buffer for current step, we use a mutable span provided by history to avoid copy
-    auto [_unused, data] = history.push(timestamp);
+    // 1. insert new data into nodes
 
-    std::vector<data_type const *> input_ptrs;
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      // 1.1. prepare input pointers for input
+    auto [_, data] = history.push(timestamp);
+
+    // 1.0. handle root input node
+    std::vector<data_type const *> input_ptrs{input_data.data()};
+    nodes[0]->step(timestamp, input_ptrs.data());
+    nodes[0]->value(data.data()); // Store root input node data directly
+
+    for (size_t i = 1; i < nodes.size(); ++i) {
+      // 1.1. prepare input pointers for current node
       input_ptrs.clear();
-      if (i == 0) {
-        // Root input node gets external input
-        input_ptrs.push_back(input_data.data());
-      } else {
-        // Construct input from predecessors/dependencies in current step
-        for (auto dep : nodes.preds(i)) {
-          input_ptrs.push_back(data.data() + data_offset[dep]);
-        }
+      for (auto dep : nodes.preds(i)) {
+        input_ptrs.push_back(data.data() + data_offset[dep]);
       }
-
-      // 1.2.1. call step on the operator node
+      // 1.2. call step on the operator node
       nodes[i]->step(timestamp, input_ptrs.data());
-      // 1.2.1.0. for root input node we write data directly and skip to next node
-      if (i == 0) {
-        nodes[i]->value(data.data());
-        continue;
-      }
-      // 1.2.2. update step count for tumbling pipelines
+      // 1.2.1. update step count if window is step-based
       if (window_mode == sliding::step) {
         ++step_count[i];
       }
 
-      // 1.3. check retention policy and call inverse if needed
-      switch (window_mode) {
-      case sliding::time:
-        if (!window_desc[i].cumulative) {
-          inverse_streaming(timestamp, i);
+      // 2. remove expired data if needed
+
+      if (!window_desc[i].cumulative) {
+        switch (window_mode) {
+        case sliding::time:
+          inverse_sliding_time(timestamp, i);
+          break;
+        case sliding::step:
+          inverse_sliding_step(timestamp, i);
+          break;
         }
-        break;
-      case sliding::step:
-        inverse_tumbling(timestamp, i);
-        break;
       }
 
-      // 1.4. collect operator node output
+      // 3. collect operator node output
+
       double *output_ptr = data.data() + data_offset[i];
       nodes[i]->value(output_ptr);
     }
 
     // 2. flush unneeded history entries
+
+    if (all_cumulative) {
+      // If all nodes are cumulative, we leave newest entry for output, remove all others
+      while (history.size() > 1) {
+        history.pop();
+      }
+      return;
+    }
+
+    // TODO: we need history.flush() for side effects/observability
     switch (window_mode) {
     case sliding::time: {
-      // TODO: we need history.flush() for side effects/observability
-      // providers
-      if (all_cumulative) {
-        // If all nodes are cumulative, we can clear history
-        history.clear();
-      } else {
-        // we only need to keep data within the oldest removed timestamp across all nodes
-        time_type oldest_removed = timestamp;
-        for (auto t : last_removed) {
-          oldest_removed = std::min(oldest_removed, t);
-        }
-        while (!history.empty() && history.front().first < oldest_removed) {
-          history.pop();
-        }
+      // For cumulative nodes, set dummy last_removed timestamp
+      for (auto id : cumulative_nodes)
+        last_removed[id] = timestamp;
+      // we only need to keep data within the oldest removed timestamp across all nodes
+      time_type oldest_removed = std::ranges::min(last_removed);
+      while (!history.empty() && history.front().first < oldest_removed) {
+        history.pop();
       }
       break;
     }
     case sliding::step:
+      // For cumulative nodes, only keep last step
+      for (auto id : cumulative_nodes)
+        step_count[id] = 1;
       // we only need to keep max_window_period steps in history
+      size_t max_window_period = std::ranges::max(step_count);
       while (history.size() > max_window_period) {
         history.pop();
       }
       break;
     }
-  }
-
-  // Post: op only contains data in (window_start, timestamp]
-  void inverse_streaming(time_type timestamp, size_t id) {
-    // 1. Calculate window start
-    auto w = window_desc[id].window_size;
-    time_type window_start = (w == duration_type{}) ? nodes[id]->window_start() : timestamp - w;
-    if (window_start <= last_removed[id]) {
-      return; // No new data to remove
-    }
-
-    // 2. Process history entries that need to be removed
-    std::vector<const data_type *> rm_ptrs;
-    rm_ptrs.reserve(nodes.preds(id).size());
-
-    time_type new_boundary = last_removed[id];
-
-    for (auto const [time, data] : history) {
-      if (time > window_start)
-        break; // No more data to remove, we are done
-      if (time <= last_removed[id])
-        continue; // Skip data that is already removed before
-
-      // This data point is in the range (last_removed[id], window_start]
-      rm_ptrs.clear(); // Clear previous pointers
-      for (auto dep : nodes.preds(id)) {
-        rm_ptrs.push_back(data.data() + data_offset[dep]);
-      }
-      nodes[id]->inverse(time, rm_ptrs.data());
-
-      // Update the new boundary to the last removed timestamp
-      new_boundary = time;
-    }
-
-    // 3. Update boundary to the last removed timestamp
-    last_removed[id] = new_boundary;
-  }
-
-  // Post: op only contains window_period data points
-  void inverse_tumbling(time_type timestamp, size_t id) {
-    std::ignore = timestamp; // Unused in tumbling pipelines
-    // 1. get current window period
-    auto window_period = window_desc[id].window_period;
-
-    // 2. check if we need to remove data
-    if (step_count[id] <= window_period)
-      return; // Nothing to do, we are accumulating data
-
-    // Since we call inverse_tumbling on every step, we should have exactly 1 expired data to remove
-    assert(step_count[id] == window_period + 1 && "[BUG] Step count inconsistent with window period.");
-    assert(!history.empty() && "[BUG] History is empty when calling inverse_tumbling.");
-
-    // 3.1. prepare data for inverse
-    const auto [time, data] = history[0];
-    std::vector<const data_type *> rm_ptrs;
-    rm_ptrs.reserve(nodes.preds(id).size());
-    for (auto dep : nodes.preds(id)) {
-      rm_ptrs.push_back(data.data() + data_offset[dep]);
-    }
-    // 2.2 call inverse on the operator node
-    nodes[id]->inverse(time, rm_ptrs.data());
-    // 2.3 decrement step count
-    --step_count[id];
   }
 
   auto get_output(size_t node_id) const {
@@ -350,6 +193,175 @@ struct pipeline {
     // 2. Return the output for the specified node
     return latest_data.subspan(start_idx, num_outputs);
   }
+
+private:
+  void validate_nodes_topo() const {
+    // check empty graph
+    if (nodes.empty()) {
+      throw std::runtime_error("Pipeline cannot be constructed from an empty graph.");
+    }
+    // check any null operator nodes
+    if (std::ranges::any_of(nodes, [](auto const &node) { return node == nullptr; })) {
+      throw std::runtime_error("Pipeline contains null operator node.");
+    }
+    // check number of roots (input nodes)
+    if (nodes.get_roots().size() != 1) {
+      throw std::runtime_error("Pipeline must have exactly one root input node.");
+    }
+  }
+
+  void validate_nodes_compat() const {
+    for (size_t i = 1; i < nodes.size(); ++i) {
+      auto const &node = nodes[i];
+      // collect pointers to dependencies
+      auto deps = std::views::all(nodes.preds(i)) |
+                  std::views::transform([this](size_t id) { return static_cast<op_type const *>(nodes[id].get()); });
+      if (!node->compatible_with(deps)) {
+        throw node_error("Operator node is not compatible with its dependencies.", node);
+      }
+    }
+  }
+
+  void init_io_index() {
+    data_offset.reserve(nodes.size());
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      data_offset.push_back(data_size);
+      data_size += nodes[i]->num_outputs();
+    }
+  }
+
+  void init_history() { history.init(data_size); }
+
+  void init_window_desc(auto const &desc) {
+    window_desc.reserve(nodes.size());
+    // handle root input node
+    window_desc.emplace_back();
+    // handle other nodes
+    for (size_t i = 1; i < nodes.size(); ++i) {
+      auto const &node = nodes[i];
+      auto it = desc.find(node);
+      if (it == desc.end()) {
+        throw node_error("Operator node is not registered in the pipeline descriptor.", node);
+      }
+      window_desc.push_back(it->second);
+    }
+  }
+
+  void init_window_meta() {
+    // collect cumulative nodes
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      if (window_desc[i].cumulative) {
+        cumulative_nodes.push_back(i);
+      }
+    }
+    all_cumulative = cumulative_nodes.size() == nodes.size();
+    // initialise sliding window metadata
+    switch (window_mode) {
+    case sliding::time:
+      last_removed.resize(nodes.size(), min_time<time_type>());
+      break;
+    case sliding::step:
+      step_count.resize(nodes.size(), 0);
+      break;
+    default:
+      // TODO: add time weighted window type (delta_t inserted, 1 step lagged data)
+      break;
+    }
+  }
+
+  void inverse_sliding_time(time_type timestamp, size_t id) {
+    // Pre: op contains data in  (last_removed[id],    timestamp]
+    // Post: op contains data in (window_start,        timestamp]
+    // Obj: remove data in       (last_removed[id], window_start], update last_removed[id]
+
+    // 1. Calculate removal range
+    auto w = window_desc[id].window_size;
+    auto rm_start = last_removed[id];
+    auto rm_end = (w == duration_type{}) ? nodes[id]->window_start() : timestamp - w;
+    auto rm_last = last_removed[id];
+    if (rm_start >= rm_end) {
+      return; // No data to remove
+    }
+
+    // 2. Process history entries that need to be removed
+    std::vector<data_type const *> rm_ptrs;
+    rm_ptrs.reserve(nodes.preds(id).size());
+
+    for (auto const [time, data] : history) {
+      if (time <= rm_start)
+        continue;
+      if (time > rm_end)
+        break;
+      // This data point is in the range (rm_start, rm_end]
+      rm_ptrs.clear();
+      for (auto dep : nodes.preds(id)) {
+        rm_ptrs.push_back(data.data() + data_offset[dep]);
+      }
+      nodes[id]->inverse(time, rm_ptrs.data());
+      // record last removed timestamp
+      rm_last = time;
+    }
+
+    // 3. Update last removed timestamp
+    last_removed[id] = rm_last;
+  }
+
+  void inverse_sliding_step(time_type timestamp, size_t id) {
+    // Pre: op contains data at history idx  [size() - step_count[id], size() - 1]
+    // Post: op contains data at history idx [size() - window_period,  size() - 1]
+    // Obj: remove data at history idx       [size() - step_count[id], size() - window_period) <- right open
+
+    std::ignore = timestamp; // Unused in tumbling pipelines
+    // 1. get current window period
+    auto window_period = window_desc[id].window_period ? window_desc[id].window_period : nodes[id]->window_period();
+    if (window_period == 0) {
+      throw node_error("Operator node does not provide a valid window period.", nodes[id]);
+    }
+
+    // 2. check if we need to remove data
+    if (step_count[id] <= window_period)
+      return; // Nothing to do, we are accumulating data
+
+    assert(history.size() >= step_count[id] && "[BUG] History is smaller than step count for node.");
+
+    size_t rm_start = history.size() - step_count[id];
+    size_t rm_end = history.size() - window_period;
+
+    // 3.1. prepare data for inverse
+    std::vector<const data_type *> rm_ptrs;
+    rm_ptrs.reserve(nodes.preds(id).size());
+
+    for (size_t i = rm_start; i < rm_end; ++i) {
+      auto [time, data] = history[i];
+      rm_ptrs.clear();
+      for (auto dep : nodes.preds(id)) {
+        size_t data_start = data_offset[dep];
+        rm_ptrs.push_back(data.data() + data_start);
+      }
+      nodes[id]->inverse(time, rm_ptrs.data());
+      // 3.2 decrement step count
+      --step_count[id];
+    }
+    assert(step_count[id] == window_period &&
+           "[BUG] Step count is not equal to window period after inverse sliding step.");
+  }
+
+private:
+  topo_graph<node_type> nodes;
+  // TODO: history provider should be a template parameter for future extensibility
+  std::vector<size_t> data_offset;               ///< I/O data offsets for each node
+  size_t data_size;                              ///< Total size of I/O data for all nodes
+  history_ringbuf<time_type, data_type> history; ///< History buffer for node I/O data
+
+  // window management
+  sliding window_mode;                                   ///< Window sliding mode
+  std::vector<window_descriptor<time_type>> window_desc; ///< Window descriptors for each node
+
+  std::vector<time_type> last_removed; ///< Last window boundary time for each node, used in time sliding mode
+  std::vector<size_t> step_count;      ///< Step count for each node, used in step sliding mode
+
+  std::vector<size_t> cumulative_nodes; ///< Cumulative nodes
+  bool all_cumulative;
 };
 
 } // namespace opflow

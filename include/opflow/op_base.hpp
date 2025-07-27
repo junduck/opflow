@@ -41,10 +41,6 @@ struct op_base {
   using duration_type = duration_t<T>; ///< Duration type used by this operator
   using data_type = U;                 ///< Data type produced by this operator
 
-  // size_t id; ///< Unique ID for this operator instance
-  // void assign_id(size_t new_id) noexcept { id = new_id; }
-  // size_t get_id() const noexcept { return id; }
-
   /**
    * @brief Initialize operator state with input data
    *
@@ -88,11 +84,9 @@ struct op_base {
   /**
    * @brief Get the window start (expiry) for this operator
    *
-   * @details When the operator is run in a streaming pipeline, data older than window start is considered expired and
-   * will be removed by calls to inverse. This method is only called if the operator has a dynamic window size (when
-   * registered, retention policy is not cumulative and window size is T{}). Engine consults this method to determine
-   * data expiry and cleanup with inverse. If window_start() returns an earlier time point than previous calls, it is
-   * undefined behavior.
+   * @details When the operator is run in time-based sliding window, data in (window_start, current_time] is maintained
+   * and expired data is removed by inverse(). Engine consults this method to determine window_start on every data step
+   * if window_size is not specified by window descriptor.
    *
    * @return T Window start time point
    */
@@ -101,11 +95,11 @@ struct op_base {
   /**
    * @brief Get the window period for this operator
    *
-   * @details When the operator is run in a tumbling pipeline, and the window period is not provided to the pipeline
-   * while initialisation, executor will consult this method ONCE to determine the period of the window. If the operator
-   * is run in a streaming pipeline, this method is never called.
+   * @details When the operator is run in step-based sliding window, window_period steps of data are maintained and
+   * expired data is removed by inverse(). Engine consults this method to determine window_period on every data step if
+   * window_size is not specified by window descriptor.
    *
-   * @return size_t
+   * @return number of steps in the window
    */
   virtual size_t window_period() const noexcept { return 0; }
 
