@@ -40,31 +40,29 @@ private:
   static constexpr size_type next_pow2(size_type n) noexcept { return n == 0 ? 1 : std::bit_ceil(n); }
 
 public:
+  history_ringbuf() = default;
+
   explicit history_ringbuf(size_type val_size, size_type initial_capacity = 16)
       : value_size(val_size), head(0), count(0) {
-    if (val_size == 0) {
-      // Allow zero value_size but warn that it may not be useful
-    }
-    capacity = next_pow2(initial_capacity);
-    tick.resize(capacity);
 
+    capacity = next_pow2(initial_capacity);
     // Check for potential overflow in value allocation
-    if (value_size > 0 && capacity > std::numeric_limits<size_type>::max() / value_size) {
+    if (value_size == 0 || capacity > std::numeric_limits<size_type>::max() / value_size) {
       throw std::bad_alloc();
     }
+
+    tick.resize(capacity);
     value.resize(capacity * value_size);
   }
-
-  history_ringbuf() = default;
 
   void init(size_type val_size, size_type initial_capacity = 16) {
     value_size = val_size;
     head = 0;
     count = 0;
-    capacity = next_pow2(initial_capacity);
 
+    capacity = next_pow2(initial_capacity);
     // Check for potential overflow in value allocation
-    if (value_size > 0 && capacity > std::numeric_limits<size_type>::max() / value_size) {
+    if (value_size == 0 || capacity > std::numeric_limits<size_type>::max() / value_size) {
       throw std::bad_alloc();
     }
 
@@ -147,6 +145,17 @@ public:
     size_type actual_idx = (head + idx) & (capacity - 1);
     size_type value_start = actual_idx * value_size;
     return {tick[actual_idx], {value.data() + value_start, value_size}};
+  }
+
+  // Access elements from the back (0 = back, size()-1 = front)
+  value_type from_back(size_type back_idx) {
+    assert(back_idx < count && "Index out of bounds");
+    return operator[](count - 1 - back_idx);
+  }
+
+  const_value_type from_back(size_type back_idx) const {
+    assert(back_idx < count && "Index out of bounds");
+    return operator[](count - 1 - back_idx);
   }
 
   value_type front() {

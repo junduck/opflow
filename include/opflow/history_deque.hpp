@@ -85,6 +85,19 @@ public:
     return {tick[idx], {value[idx].data(), value_size}};
   }
 
+  // Access elements from the back (0 = back, size()-1 = front)
+  value_type from_back(size_type back_idx) {
+    assert(back_idx < tick.size() && "Index out of bounds");
+    auto rev_idx = tick.size() - 1 - back_idx; // Reverse index
+    return {tick[rev_idx], {value[rev_idx].data(), value_size}};
+  }
+
+  const_value_type from_back(size_type back_idx) const {
+    assert(back_idx < tick.size() && "Index out of bounds");
+    auto rev_idx = tick.size() - 1 - back_idx; // Reverse index
+    return {tick[rev_idx], {value[rev_idx].data(), value_size}};
+  }
+
   value_type front() {
     assert(!tick.empty() && "Index out of bounds");
     return {tick.front(), {value.front().data(), value_size}};
