@@ -146,7 +146,7 @@ public:
       nodes[i]->value(output_ptr);
     }
 
-    // 2. flush unneeded history entries
+    // 4. flush unneeded history entries
 
     if (all_cumulative) {
       // If all nodes are cumulative, we leave newest entry for output, remove all others
@@ -182,16 +182,47 @@ public:
     }
   }
 
+  // TODO: there is a disconnect between the meaningful node objects user creates and the opaque IDs the current
+  // interface requires the user to use for output access
+
+  template <std::ranges::forward_range R>
+  auto get_id(R &&node_range) const {
+    std::vector<size_t> ids;
+    ids.reserve(std::ranges::distance(node_range));
+    for (auto const &node : node_range) {
+      ids.push_back(get_id(node));
+    }
+    return ids;
+  }
+
+  auto get_id(node_type const &node) const {
+    auto it = std::ranges::find(nodes, node);
+    if (it == nodes.end()) {
+      throw node_error("Node not found in pipeline.", node);
+    }
+    return std::distance(nodes.begin(), it);
+  }
+
+  auto leaf_ids() const { return nodes.leaf_ids(); }
+
+  template <std::ranges::forward_range R>
+  auto get_output(R &&id_range) const {
+    std::vector<std::span<const data_type>> outputs;
+    outputs.reserve(std::ranges::distance(id_range));
+    for (auto id : id_range) {
+      outputs.push_back(get_output(id));
+    }
+    return outputs;
+  }
+
   auto get_output(size_t node_id) const {
     if (node_id >= nodes.size()) {
       throw std::out_of_range("Node ID out of range in get_output.");
     }
-    auto [latest_tick, latest_data] = history.back();
-    size_t start_idx = data_offset[node_id];
-    size_t num_outputs = nodes[node_id]->num_outputs();
-
-    // 2. Return the output for the specified node
-    return latest_data.subspan(start_idx, num_outputs);
+    auto [_, latest_data] = history.back();
+    size_t pos = data_offset[node_id];
+    size_t size = nodes[node_id]->num_outputs();
+    return latest_data.subspan(pos, size);
   }
 
 private:

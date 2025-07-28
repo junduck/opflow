@@ -481,6 +481,10 @@ TEST_F(TopoGraphTest, ComplexDependencyPatterns) {
   // Node 7 should be last
   EXPECT_EQ(tg[6], 7);
   EXPECT_EQ(tg.preds(6).size(), 3);
+
+  auto leaf = tg.leaf_ids();
+  EXPECT_EQ(leaf.size(), 1);
+  EXPECT_EQ(leaf[0], 6); // Node 7 is the only leaf
 }
 
 // Test with duplicate node values (should not happen in practice, but test robustness)
