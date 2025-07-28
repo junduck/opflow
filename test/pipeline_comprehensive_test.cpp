@@ -18,13 +18,13 @@ protected:
   using op_type = op_base<Time, Data>;
   using node_type = std::shared_ptr<op_type>;
   using pipeline_type = pipeline<Time, Data>;
-  using sum_type = op::sum<Time>;
-  using add_type = op::add<Time>;
+  using sum_type = op::sum<Time, Data>;
+  using add_type = op::add<Time, Data>;
   using vect = std::vector<node_type>;
 
   void SetUp() override {
     // Common setup for single input
-    input = std::make_shared<op::root_input<Time>>(1);
+    input = std::make_shared<op::root_input<Time, Data>>(1);
   }
 
   // Helper to create a simple linear pipeline: input -> sum1 -> sum2

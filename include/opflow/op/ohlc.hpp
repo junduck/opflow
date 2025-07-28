@@ -22,24 +22,24 @@ namespace opflow::op {
  *
  * @tparam T
  */
-template <typename T>
-struct ohlc : public detail::unary_op<T> {
-  using base = detail::unary_op<T>;
+template <typename T, std::floating_point U>
+struct ohlc : public detail::unary_op<T, U> {
+  using base = detail::unary_op<T, U>;
   using base::pos;
 
   duration_t<T> window_size; ///< Size of the tumbling window
   T next_tick;               ///< Next tick time point for the tumbling window
-  double open;               ///< Open price
-  double high;               ///< High price
-  double low;                ///< Low price
-  double close;              ///< Close price
+  U open;                    ///< Open price
+  U high;                    ///< High price
+  U low;                     ///< Low price
+  U close;                   ///< Close price
 
-  std::array<double, 4> output_data; ///< Output data buffer for OHLC values
+  std::array<U, 4> output_data; ///< Output data buffer for OHLC values
 
   // here we assume that a tumbling window is always aligned to epoch
   explicit ohlc(duration_t<T> window, size_t pos = 0) noexcept
       : base{pos}, window_size{window}, next_tick{}, open{}, high{}, low{}, close{} {
-    output_data.fill(fnan<double>);
+    output_data.fill(fnan<U>);
   }
 
   T align_to_window(T tick) const noexcept {
@@ -66,9 +66,9 @@ struct ohlc : public detail::unary_op<T> {
     }
   }
 
-  void step(T tick, double const *const *in) noexcept override {
+  void step(T tick, U const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
-    double x = in[0][pos];
+    U x = in[0][pos];
 
     // Case 1: Initialization state - next_tick is T{} (default constructed)
     if (next_tick == T{}) {
@@ -102,12 +102,12 @@ struct ohlc : public detail::unary_op<T> {
     open = high = low = close = x;
   }
 
-  void value(double *out) noexcept override {
+  void value(U *out) noexcept override {
     assert(out && "NULL output buffer.");
     std::copy(output_data.begin(), output_data.end(), out);
     // Reset output data after reading
     // where there is not enough data for a tumbling window, we return nans
-    output_data.fill(fnan<double>);
+    output_data.fill(fnan<U>);
   }
 };
 } // namespace opflow::op

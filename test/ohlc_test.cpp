@@ -33,7 +33,7 @@ protected:
 
 // Test basic construction
 TEST_F(OHLCTest, BasicConstruction) {
-  ohlc<int> op(10); // 10-unit window
+  ohlc<int, double> op(10); // 10-unit window
   EXPECT_EQ(op.window_size, 10);
   EXPECT_EQ(op.next_tick, 0); // Default constructed int is 0
 
@@ -43,14 +43,14 @@ TEST_F(OHLCTest, BasicConstruction) {
 }
 
 TEST_F(OHLCTest, ConstructionWithPosition) {
-  ohlc<int> op(10, 2); // 10-unit window, position 2
+  ohlc<int, double> op(10, 2); // 10-unit window, position 2
   EXPECT_EQ(op.window_size, 10);
   EXPECT_EQ(op.pos, 2);
 }
 
 // Test window alignment for different types
 TEST_F(OHLCTest, WindowAlignmentInteger) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
 
   // Test exact alignment
   EXPECT_EQ(op.align_to_window(0), 0);
@@ -65,7 +65,7 @@ TEST_F(OHLCTest, WindowAlignmentInteger) {
 }
 
 TEST_F(OHLCTest, WindowAlignmentFloat) {
-  ohlc<double> op(10.0);
+  ohlc<double, double> op(10.0);
 
   // Test exact alignment
   EXPECT_DOUBLE_EQ(op.align_to_window(0.0), 0.0);
@@ -81,7 +81,7 @@ TEST_F(OHLCTest, WindowAlignmentFloat) {
 
 // Test basic step operation - first data point
 TEST_F(OHLCTest, FirstDataPoint) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   double input_val = 100.0;
   const double *input_ptr = &input_val;
   const double *const *input = &input_ptr;
@@ -103,7 +103,7 @@ TEST_F(OHLCTest, FirstDataPoint) {
 
 // Test multiple data points within same window
 TEST_F(OHLCTest, MultiplePointsSameWindow) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   // First point
@@ -133,7 +133,7 @@ TEST_F(OHLCTest, MultiplePointsSameWindow) {
 
 // Test window completion - tick reaches next window
 TEST_F(OHLCTest, WindowCompletion) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   // Add data points within window [0, 10)
@@ -170,7 +170,7 @@ TEST_F(OHLCTest, WindowCompletion) {
 
 // Test exact boundary condition - tick exactly at boundary
 TEST_F(OHLCTest, ExactBoundary) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   // Start with tick 0 (exact boundary)
@@ -199,7 +199,7 @@ TEST_F(OHLCTest, ExactBoundary) {
 
 // Test sparse data - large gaps between ticks
 TEST_F(OHLCTest, SparseData) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   // First data point
@@ -225,7 +225,7 @@ TEST_F(OHLCTest, SparseData) {
 
 // Test very sparse data - extreme gaps
 TEST_F(OHLCTest, VerySparseData) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   double input_val = 100.0;
@@ -247,7 +247,7 @@ TEST_F(OHLCTest, VerySparseData) {
 
 // Test floating point precision with small window sizes
 TEST_F(OHLCTest, FloatingPointPrecision) {
-  ohlc<double> op(0.1);
+  ohlc<double, double> op(0.1);
 
   double input_val = 100.0;
   const double *input_ptr = &input_val;
@@ -268,7 +268,7 @@ TEST_F(OHLCTest, FloatingPointPrecision) {
 
 // Test with different input positions
 TEST_F(OHLCTest, DifferentInputPositions) {
-  ohlc<int> op(10, 1); // Position 1
+  ohlc<int, double> op(10, 1); // Position 1
 
   // Create input array with multiple values
   std::array<double, 3> input_vals = {50.0, 100.0, 150.0};
@@ -286,7 +286,7 @@ TEST_F(OHLCTest, DifferentInputPositions) {
 
 // Test continuous windows - multiple complete windows
 TEST_F(OHLCTest, ContinuousWindows) {
-  ohlc<int> op(5); // Smaller window for easier testing
+  ohlc<int, double> op(5); // Smaller window for easier testing
   std::array<double, 4> output{};
 
   double input_val;
@@ -327,7 +327,7 @@ TEST_F(OHLCTest, ContinuousWindows) {
 
 // Test single data point per window
 TEST_F(OHLCTest, SingleDataPointPerWindow) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   double input_val;
@@ -355,7 +355,7 @@ TEST_F(OHLCTest, SingleDataPointPerWindow) {
 
 // Test with negative values
 TEST_F(OHLCTest, NegativeValues) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   double input_val;
@@ -380,7 +380,7 @@ TEST_F(OHLCTest, NegativeValues) {
 
 // Test with zero values
 TEST_F(OHLCTest, ZeroValues) {
-  ohlc<int> op(10);
+  ohlc<int, double> op(10);
   std::array<double, 4> output{};
 
   double input_val;
@@ -403,7 +403,7 @@ TEST_F(OHLCTest, ZeroValues) {
 
 // Test window size of 1 - edge case
 TEST_F(OHLCTest, WindowSizeOne) {
-  ohlc<int> op(1);
+  ohlc<int, double> op(1);
   std::array<double, 4> output{};
 
   double input_val;

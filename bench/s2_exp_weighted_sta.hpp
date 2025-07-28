@@ -6,11 +6,11 @@
 
 namespace opflow::op {
 struct s2_exp_weighted_sta {
-  detail::smooth m{};          ///< mean
-  detail::smooth s2{};         ///< variance (only using u_prev)
-  detail::smooth s2_welford{}; ///< variance (welford's like, using u_prev and u_curr)
-  double alpha;                ///< smoothing factor
-  bool init{};                 ///< whether the first value has been processed
+  detail::smooth<double> m{};          ///< mean
+  detail::smooth<double> s2{};         ///< variance (only using u_prev)
+  detail::smooth<double> s2_welford{}; ///< variance (welford's like, using u_prev and u_curr)
+  double alpha;                        ///< smoothing factor
+  bool init{};                         ///< whether the first value has been processed
 
   explicit s2_exp_weighted_sta(double alpha) noexcept : alpha{alpha} {}
 

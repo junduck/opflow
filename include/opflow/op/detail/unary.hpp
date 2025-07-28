@@ -5,8 +5,8 @@
 #include "opflow/op_base.hpp"
 
 namespace opflow::op::detail {
-template <typename T>
-struct unary_op : public op_base<T> {
+template <typename T, typename U>
+struct unary_op : public op_base<T, U> {
   size_t pos;
 
   explicit unary_op(size_t pos = 0) : pos{pos} {}

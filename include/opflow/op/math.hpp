@@ -5,199 +5,132 @@
 #include "opflow/op/detail/binary.hpp"
 #include "opflow/op/detail/unary.hpp"
 
+#define DEF_MATH_OP(name, fn)                                                                                          \
+  template <typename T, std::floating_point U>                                                                         \
+  struct name : public detail::unary_op<T, U> {                                                                        \
+    using base = detail::unary_op<T, U>;                                                                               \
+    using base::pos;                                                                                                   \
+    U val;                                                                                                             \
+    void step(T, U const *const *in) noexcept override {                                                               \
+      assert(in && in[0] && "NULL input data.");                                                                       \
+      val = fn(in[0][pos]);                                                                                            \
+    }                                                                                                                  \
+    void value(U *out) noexcept override {                                                                             \
+      assert(out && "NULL output buffer.");                                                                            \
+      *out = val;                                                                                                      \
+    }                                                                                                                  \
+  };
+
+#define DEF_MATH_BIN_OP(name, fn)                                                                                      \
+  template <typename T, std::floating_point U>                                                                         \
+  struct name : public detail::binary_op<T, U> {                                                                       \
+    using base = detail::binary_op<T, U>;                                                                              \
+    using base::pos0;                                                                                                  \
+    using base::pos1;                                                                                                  \
+    using base::base;                                                                                                  \
+    U val;                                                                                                             \
+    void step(T, U const *const *in) noexcept override {                                                               \
+      assert(in && in[0] && in[1] && "NULL input data.");                                                              \
+      val = fn(in[0][pos0], in[1][pos1]);                                                                              \
+    }                                                                                                                  \
+    void value(U *out) noexcept override {                                                                             \
+      assert(out && "NULL output buffer.");                                                                            \
+      *out = val;                                                                                                      \
+    }                                                                                                                  \
+  };
+
 namespace opflow::op {
 namespace detail {
-using unary_math_fptr = double (*)(double);
+template <std::floating_point U>
+inline U inv(U a) noexcept {
+  return 1.0 / a;
+}
+template <std::floating_point U>
+inline U neg(U a) noexcept {
+  return -a;
+}
 
-template <typename T, unary_math_fptr Fn>
-struct math_op : public unary_op<T> {
-  using base = unary_op<T>;
-  using base::pos;
-
-  double val;
-
-  using base::base;
-
-  void step(T, double const *const *in) noexcept override {
-    assert(in && in[0] && "NULL input data.");
-    val = Fn(in[0][pos]);
-  }
-
-  void inverse(T, double const *const *) noexcept override {}
-
-  void value(double *out) noexcept override {
-    assert(out && "NULL output buffer.");
-    *out = val;
-  }
-};
-
-using binary_math_fptr = double (*)(double, double);
-
-template <typename T, binary_math_fptr Fn>
-struct math_bin_op : public binary_op<T> {
-  using base = binary_op<T>;
-  using base::pos0;
-  using base::pos1;
-
-  double val;
-
-  using base::base;
-
-  void step(T, double const *const *in) noexcept override {
-    assert(in && in[0] && in[1] && "NULL input data.");
-    val = Fn(in[0][pos0], in[1][pos1]);
-  }
-
-  void inverse(T, double const *const *) noexcept override {}
-
-  void value(double *out) noexcept override {
-    assert(out && "NULL output buffer.");
-    *out = val;
-  }
-};
-
-inline double inv(double a) noexcept { return 1.0 / a; }
-inline double neg(double a) noexcept { return -a; }
-
-inline double add(double a, double b) noexcept { return a + b; }
-inline double sub(double a, double b) noexcept { return a - b; }
-inline double mul(double a, double b) noexcept { return a * b; }
-inline double div(double a, double b) noexcept { return a / b; }
-inline double fmod(double a, double b) noexcept { return std::fmod(a, b); }
-
+template <std::floating_point U>
+inline U add(U a, U b) noexcept {
+  return a + b;
+}
+template <std::floating_point U>
+inline U sub(U a, U b) noexcept {
+  return a - b;
+}
+template <std::floating_point U>
+inline U mul(U a, U b) noexcept {
+  return a * b;
+}
+template <std::floating_point U>
+inline U div(U a, U b) noexcept {
+  return a / b;
+}
+template <std::floating_point U>
+inline U fmod(U a, U b) noexcept {
+  return std::fmod(a, b);
+}
 } // namespace detail
 
 // basic arithmetic operations
 
-template <typename T>
-using add = detail::math_bin_op<T, detail::add>;
-
-template <typename T>
-using sub = detail::math_bin_op<T, detail::sub>;
-
-template <typename T>
-using mul = detail::math_bin_op<T, detail::mul>;
-
-template <typename T>
-using div = detail::math_bin_op<T, detail::div>;
-
-template <typename T>
-using fmod = detail::math_bin_op<T, detail::fmod>;
-
-template <typename T>
-using inv = detail::math_op<T, detail::inv>;
-
-template <typename T>
-using neg = detail::math_op<T, detail::neg>;
+DEF_MATH_BIN_OP(add, detail::add);
+DEF_MATH_BIN_OP(sub, detail::sub);
+DEF_MATH_BIN_OP(mul, detail::mul);
+DEF_MATH_BIN_OP(div, detail::div);
+DEF_MATH_BIN_OP(fmod, detail::fmod);
+DEF_MATH_OP(inv, detail::inv);
+DEF_MATH_OP(neg, detail::neg);
 
 // from <cmath>
 
-template <typename T>
-using abs = detail::math_op<T, std::abs>;
+DEF_MATH_OP(abs, std::abs);
+DEF_MATH_OP(exp, std::exp);
+DEF_MATH_OP(expm1, std::expm1);
+DEF_MATH_OP(log, std::log);
+DEF_MATH_OP(log10, std::log10);
+DEF_MATH_OP(log2, std::log2);
+DEF_MATH_OP(log1p, std::log1p);
+DEF_MATH_OP(sqrt, std::sqrt);
+DEF_MATH_OP(cbrt, std::cbrt);
+DEF_MATH_OP(sin, std::sin);
+DEF_MATH_OP(cos, std::cos);
+DEF_MATH_OP(tan, std::tan);
+DEF_MATH_OP(asin, std::asin);
+DEF_MATH_OP(acos, std::acos);
+DEF_MATH_OP(atan, std::atan);
+DEF_MATH_OP(sinh, std::sinh);
+DEF_MATH_OP(cosh, std::cosh);
+DEF_MATH_OP(tanh, std::tanh);
+DEF_MATH_OP(asinh, std::asinh);
+DEF_MATH_OP(acosh, std::acosh);
+DEF_MATH_OP(atanh, std::atanh);
+DEF_MATH_OP(erf, std::erf);
+DEF_MATH_OP(erfc, std::erfc);
+DEF_MATH_OP(tgamma, std::tgamma);
+DEF_MATH_OP(lgamma, std::lgamma);
+DEF_MATH_OP(ceil, std::ceil);
+DEF_MATH_OP(floor, std::floor);
+DEF_MATH_OP(trunc, std::trunc);
+DEF_MATH_OP(round, std::round);
 
-template <typename T>
-using exp = detail::math_op<T, std::exp>;
-
-template <typename T>
-using expm1 = detail::math_op<T, std::expm1>;
-
-template <typename T>
-using log = detail::math_op<T, std::log>;
-
-template <typename T>
-using log10 = detail::math_op<T, std::log10>;
-
-template <typename T>
-using log2 = detail::math_op<T, std::log2>;
-
-template <typename T>
-using log1p = detail::math_op<T, std::log1p>;
-
-template <typename T>
-using sqrt = detail::math_op<T, std::sqrt>;
-
-template <typename T>
-using cbrt = detail::math_op<T, std::cbrt>;
-
-template <typename T>
-using sin = detail::math_op<T, std::sin>;
-
-template <typename T>
-using cos = detail::math_op<T, std::cos>;
-
-template <typename T>
-using tan = detail::math_op<T, std::tan>;
-
-template <typename T>
-using asin = detail::math_op<T, std::asin>;
-
-template <typename T>
-using acos = detail::math_op<T, std::acos>;
-
-template <typename T>
-using atan = detail::math_op<T, std::atan>;
-
-template <typename T>
-using sinh = detail::math_op<T, std::sinh>;
-
-template <typename T>
-using cosh = detail::math_op<T, std::cosh>;
-
-template <typename T>
-using tanh = detail::math_op<T, std::tanh>;
-
-template <typename T>
-using asinh = detail::math_op<T, std::asinh>;
-
-template <typename T>
-using acosh = detail::math_op<T, std::acosh>;
-
-template <typename T>
-using atanh = detail::math_op<T, std::atanh>;
-
-template <typename T>
-using erf = detail::math_op<T, std::erf>;
-
-template <typename T>
-using erfc = detail::math_op<T, std::erfc>;
-
-template <typename T>
-using tgamma = detail::math_op<T, std::tgamma>;
-
-template <typename T>
-using lgamma = detail::math_op<T, std::lgamma>;
-
-template <typename T>
-using ceil = detail::math_op<T, std::ceil>;
-
-template <typename T>
-using floor = detail::math_op<T, std::floor>;
-
-template <typename T>
-using trunc = detail::math_op<T, std::trunc>;
-
-template <typename T>
-using round = detail::math_op<T, std::round>;
-
-template <typename T>
-struct lerp : public detail::binary_op<T> {
-  using base = detail::binary_op<T>;
+template <typename T, std::floating_point U>
+struct lerp : public detail::binary_op<T, U> {
+  using base = detail::binary_op<T, U>;
   using base::pos0;
   using base::pos1;
 
-  double t;
-  double val;
+  U t;
+  U val;
 
-  explicit lerp(double t, size_t pos0 = 0, size_t pos1 = 0) : base{pos0, pos1}, t{t} {}
+  explicit lerp(U t, size_t pos0 = 0, size_t pos1 = 0) : base{pos0, pos1}, t{t} {}
 
-  void step(T, double const *const *in) noexcept override {
+  void step(T, U const *const *in) noexcept override {
     assert(in && in[0] && in[1] && "NULL input data.");
     val = std::lerp(in[0][pos0], in[1][pos1], t);
   }
 
-  void inverse(T, double const *const *) noexcept override {}
-
-  void value(double *out) noexcept override {
+  void value(U *out) noexcept override {
     assert(out && "NULL output buffer.");
     *out = val;
   }

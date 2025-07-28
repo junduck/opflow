@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <concepts>
 
 namespace opflow::op::detail {
 /**
@@ -9,24 +10,25 @@ namespace opflow::op::detail {
  * This class uses Kahan summation to improve numerical stability
  *
  */
+template <std::floating_point T = double>
 class accum {
-  double sum, carry;
-  inline void _add(double x) {
-    double const y = x - carry;
-    double const t = sum + y;
+  T sum, carry;
+  inline void _add(T x) {
+    T const y = x - carry;
+    T const t = sum + y;
     carry = (t - sum) - y;
     sum = t;
   }
 
 public:
-  void add(double x) noexcept { _add(x); }
-  void sub(double x) noexcept { _add(-x); }
-  void addsub(double x0, double x1) noexcept { _add(x0 - x1); }
+  void add(T x) noexcept { _add(x); }
+  void sub(T x) noexcept { _add(-x); }
+  void addsub(T x0, T x1) noexcept { _add(x0 - x1); }
 
-  double value() const noexcept { return sum; }
-  operator double() const noexcept { return sum; }
+  T value() const noexcept { return sum; }
+  operator T() const noexcept { return sum; }
 
-  accum &operator=(double s) noexcept {
+  accum &operator=(T s) noexcept {
     sum = s;
     carry = 0;
     return *this;
@@ -39,18 +41,19 @@ public:
  * This class uses fma (fused multiply-add) to improve numerical stability
  *
  */
+template <std::floating_point T = double>
 class smooth {
-  double val;
+  T val;
 
 public:
-  void add(double x, double w) noexcept { val = std::fma(w, x - val, val); }
-  void sub(double x, double w) noexcept { val = std::fma(w, val - x, val); }
-  void addsub(double x0, double x1, double w) noexcept { val = std::fma(w, x0 - x1, val); }
+  void add(T x, T w) noexcept { val = std::fma(w, x - val, val); }
+  void sub(T x, T w) noexcept { val = std::fma(w, val - x, val); }
+  void addsub(T x0, T x1, T w) noexcept { val = std::fma(w, x0 - x1, val); }
 
-  double value() const noexcept { return val; }
-  operator double() const noexcept { return val; }
+  T value() const noexcept { return val; }
+  operator T() const noexcept { return val; }
 
-  smooth &operator=(double x) noexcept {
+  smooth &operator=(T x) noexcept {
     val = x;
     return *this;
   }

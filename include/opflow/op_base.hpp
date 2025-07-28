@@ -35,7 +35,7 @@ constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double val
 template <std::floating_point T>
 constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
 
-template <typename T, typename U = double>
+template <typename T, typename U>
 struct op_base {
   using time_type = T;                 ///< Time type used by this operator
   using duration_type = duration_t<T>; ///< Duration type used by this operator

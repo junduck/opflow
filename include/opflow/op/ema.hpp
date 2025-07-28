@@ -4,16 +4,16 @@
 #include "opflow/op/detail/unary.hpp"
 
 namespace opflow::op {
-template <typename T, bool ZeroInit = false>
-struct ema : public detail::unary_op<T> {
-  using base = detail::unary_op<T>;
+template <typename T, std::floating_point U, bool ZeroInit = false>
+struct ema : public detail::unary_op<T, U> {
+  using base = detail::unary_op<T, U>;
   using base::pos;
 
-  detail::smooth val;
-  double alpha;     ///< Smoothing factor
+  detail::smooth<U> val;
+  U alpha;          ///< Smoothing factor
   bool initialised; ///< Whether the first value has been processed
 
-  explicit ema(double alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, initialised{ZeroInit} {
+  explicit ema(U alpha, size_t pos = 0) noexcept : base{pos}, val{}, alpha{alpha}, initialised{ZeroInit} {
     assert(alpha > 0. && "alpha/period must be positive.");
     if (alpha >= 1.) {
       // alpha is actually a period
@@ -21,7 +21,7 @@ struct ema : public detail::unary_op<T> {
     }
   }
 
-  void init(T, double const *const *in) noexcept override {
+  void init(T, U const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
 
     val = 0.;
@@ -29,9 +29,9 @@ struct ema : public detail::unary_op<T> {
     step(T{}, in); // Initialize with the first value
   }
 
-  void step(T, double const *const *in) noexcept override {
+  void step(T, U const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
-    double x = in[0][pos];
+    U x = in[0][pos];
 
     if constexpr (!ZeroInit) {
       if (!initialised) [[unlikely]] {
@@ -43,7 +43,7 @@ struct ema : public detail::unary_op<T> {
     val.add(x, alpha);
   }
 
-  void value(double *out) noexcept override {
+  void value(U *out) noexcept override {
     assert(out && "NULL output buffer.");
     *out = val;
   }

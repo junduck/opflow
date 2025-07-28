@@ -17,12 +17,12 @@ protected:
   using op_type = op_base<Time, Data>;
   using node_type = std::shared_ptr<op_type>;
   using pipeline_type = opflow::pipeline<Time, Data>;
-  using sum_type = op::sum<Time>;
-  using add_type = op::add<Time>;
+  using sum_type = op::sum<Time, Data>;
+  using add_type = op::add<Time, Data>;
   using vect = std::vector<node_type>;
 
   void SetUp() override {
-    auto input = std::make_shared<op::root_input<Time>>(1); // Single input value
+    auto input = std::make_shared<op::root_input<Time, Data>>(1); // Single input value
     auto sum_left = std::make_shared<sum_type>();
     auto sum_right = std::make_shared<sum_type>();
     auto add_final = std::make_shared<add_type>();
@@ -136,11 +136,11 @@ protected:
   using op_type = op_base<Time, Data>;
   using node_type = std::shared_ptr<op_type>;
   using pipeline_type = opflow::pipeline<Time, Data>;
-  using sum_type = op::sum<Time>;
+  using sum_type = op::sum<Time, Data>;
   using vect = std::vector<node_type>;
 
   void SetUp() override {
-    auto input = std::make_shared<op::root_input<Time>>(1);
+    auto input = std::make_shared<op::root_input<Time, Data>>(1);
     auto sum1 = std::make_shared<sum_type>();
     auto sum2 = std::make_shared<sum_type>();
 

@@ -51,6 +51,10 @@ target_link_libraries(test_pipeline GTest::gtest_main opflow::headers)
 add_executable(test_pipeline_comprehensive pipeline_comprehensive_test.cpp)
 target_link_libraries(test_pipeline_comprehensive GTest::gtest_main opflow::headers)
 
+# EWMA operator tests
+add_executable(test_op_ewma op_ewma_test.cpp)
+target_link_libraries(test_op_ewma GTest::gtest_main opflow::headers private_headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_topo_graph)
@@ -66,3 +70,4 @@ gtest_discover_tests(test_ohlc)
 gtest_discover_tests(test_chrono)
 gtest_discover_tests(test_pipeline)
 gtest_discover_tests(test_pipeline_comprehensive)
+gtest_discover_tests(test_op_ewma)

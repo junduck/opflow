@@ -12,29 +12,29 @@ namespace opflow::op {
 
 enum class trace_event_type { init, step, inverse, value, window_start_query };
 
-template <typename T>
+template <typename T, std::floating_point U>
 struct trace_event {
   trace_event_type type;
   T tick;
   std::chrono::steady_clock::time_point wall_time;
-  std::vector<std::vector<double>> input_data; // Copy of input data for debugging
-  std::vector<double> output_data;             // Copy of output data after operation
-  T window_start_result{};                     // Result of window_start() if called
+  std::vector<std::vector<U>> input_data; // Copy of input data for debugging
+  std::vector<U> output_data;             // Copy of output data after operation
+  T window_start_result{};                // Result of window_start() if called
 
   trace_event(trace_event_type t, T tick_val) : type(t), tick(tick_val), wall_time(std::chrono::steady_clock::now()) {}
 };
 
-template <typename T>
-struct trace : public op_base<T> {
+template <typename T, std::floating_point U>
+struct trace : public op_base<T, U> {
 private:
-  std::shared_ptr<op_base<T>> wrapped_op;
+  std::shared_ptr<op_base<T, U>> wrapped_op;
   std::string op_name;
-  mutable std::deque<trace_event<T>> event_history;
+  mutable std::deque<trace_event<T, U>> event_history;
   size_t max_events;
   bool capture_data;
 
 public:
-  explicit trace(std::shared_ptr<op_base<T>> op, std::string name = "unknown_op", size_t max_history = 1000,
+  explicit trace(std::shared_ptr<op_base<T, U>> op, std::string name = "unknown_op", size_t max_history = 1000,
                  bool capture_input_output = true)
       : wrapped_op(std::move(op)), op_name(std::move(name)), max_events(max_history),
         capture_data(capture_input_output) {
@@ -44,8 +44,8 @@ public:
     }
   }
 
-  void init(T tick, double const *const *in) noexcept override {
-    trace_event<T> event(trace_event_type::init, tick);
+  void init(T tick, U const *const *in) noexcept override {
+    trace_event<T, U> event(trace_event_type::init, tick);
 
     // Capture input data if enabled
     if (capture_data && in) {
@@ -67,8 +67,8 @@ public:
     add_event(std::move(event));
   }
 
-  void step(T tick, double const *const *in) noexcept override {
-    trace_event<T> event(trace_event_type::step, tick);
+  void step(T tick, U const *const *in) noexcept override {
+    trace_event<T, U> event(trace_event_type::step, tick);
 
     // Capture input data if enabled
     if (capture_data && in) {
@@ -90,8 +90,8 @@ public:
     add_event(std::move(event));
   }
 
-  void inverse(T tick, double const *const *rm) noexcept override {
-    trace_event<T> event(trace_event_type::inverse, tick);
+  void inverse(T tick, U const *const *rm) noexcept override {
+    trace_event<T, U> event(trace_event_type::inverse, tick);
 
     // Capture removal data if enabled
     if (capture_data && rm) {
@@ -119,8 +119,8 @@ public:
     add_event(std::move(event));
   }
 
-  void value(double *out) noexcept override {
-    trace_event<T> event(trace_event_type::value, T{});
+  void value(U *out) noexcept override {
+    trace_event<T, U> event(trace_event_type::value, T{});
 
     // Call the wrapped operator
     wrapped_op->value(out);
@@ -135,7 +135,7 @@ public:
   }
 
   T window_start() const noexcept override {
-    trace_event<T> event(trace_event_type::window_start_query, T{});
+    trace_event<T, U> event(trace_event_type::window_start_query, T{});
 
     // Call the wrapped operator
     T result = wrapped_op->window_start();
@@ -156,7 +156,7 @@ public:
 
   template <std::ranges::forward_range R>
   bool compatible_with(R &&deps) const noexcept
-    requires(detail::range_derived_from<R, op_base<T>>)
+    requires(detail::range_derived_from<R, op_base<T, U>>)
   {
     return wrapped_op->compatible_with(std::forward<R>(deps));
   }
@@ -164,7 +164,7 @@ public:
   // Debugging and inspection methods
   const std::string &get_name() const { return op_name; }
 
-  const std::deque<trace_event<T>> &get_event_history() const { return event_history; }
+  const std::deque<trace_event<T, U>> &get_event_history() const { return event_history; }
 
   void clear_history() { event_history.clear(); }
 
@@ -221,7 +221,7 @@ public:
   }
 
   // Get the wrapped operator (for advanced debugging)
-  std::shared_ptr<op_base<T>> get_wrapped_operator() const { return wrapped_op; }
+  std::shared_ptr<op_base<T, U>> get_wrapped_operator() const { return wrapped_op; }
 
   // Enable/disable data capture at runtime
   void set_data_capture(bool enabled) { capture_data = enabled; }
@@ -282,7 +282,7 @@ public:
   }
 
 private:
-  void add_event(trace_event<T> event) const {
+  void add_event(trace_event<T, U> event) const {
     event_history.push_back(std::move(event));
 
     // Trim history if it exceeds max size
@@ -293,12 +293,10 @@ private:
 };
 
 // Helper function to create traced operators
-template <typename T>
-std::shared_ptr<trace<T>> make_trace(std::shared_ptr<op_base<T>> op, std::string name = "traced_op",
-                                     size_t max_history = 1000, bool capture_data = true) {
-  return std::make_shared<trace<T>>(std::move(op), std::move(name), max_history, capture_data);
+template <typename T, std::floating_point U>
+std::shared_ptr<trace<T, U>> make_trace(std::shared_ptr<op_base<T, U>> op, std::string name = "traced_op",
+                                        size_t max_history = 1000, bool capture_data = true) {
+  return std::make_shared<trace<T, U>>(std::move(op), std::move(name), max_history, capture_data);
 }
-
-constexpr inline size_t s_trace = sizeof(trace<uint64_t>);
 
 } // namespace opflow::op

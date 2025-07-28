@@ -5,8 +5,8 @@
 #include "opflow/op_base.hpp"
 
 namespace opflow::op::detail {
-template <typename T>
-struct binary_op : public op_base<T> {
+template <typename T, typename U>
+struct binary_op : public op_base<T, U> {
   size_t pos0, pos1;
 
   explicit binary_op(size_t pos0 = 0, size_t pos1 = 0) : pos0{pos0}, pos1{pos1} {}
@@ -19,8 +19,8 @@ struct binary_op : public op_base<T> {
   size_t num_outputs() const noexcept override { return 1; }
 };
 
-template <typename T>
-struct weighted_op : public op_base<T> {
+template <typename T, typename U>
+struct weighted_op : public op_base<T, U> {
   size_t pos, pow_weight;
 
   weighted_op(size_t pos = 0, size_t pow_weight = 1) noexcept : pos{pos}, pow_weight{pow_weight} {}
