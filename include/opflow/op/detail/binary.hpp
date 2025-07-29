@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 
 #include "opflow/op_base.hpp"
@@ -21,14 +22,14 @@ struct binary_op : public op_base<T, U> {
 
 template <typename T, typename U>
 struct weighted_op : public op_base<T, U> {
-  size_t pos, pow_weight;
+  size_t pos, pos_weight;
 
-  weighted_op(size_t pos = 0, size_t pow_weight = 1) noexcept : pos{pos}, pow_weight{pow_weight} {}
+  weighted_op(size_t pos = 0, size_t pos_weight = 1) noexcept : pos{pos}, pos_weight{pos_weight} {}
 
   size_t num_depends() const noexcept override { return 1; }
   size_t num_inputs(size_t pid) const noexcept override {
     assert(pid == 0 && "weighted operator expects input from predecessor id 0");
-    return std::max(pos, pow_weight) + 1; // Expect at least pos + 1 and pow_weight + 1 inputs
+    return std::max(pos, pos_weight) + 1; // Expect at least pos + 1 and pos_weight + 1 inputs
   }
   size_t num_outputs() const noexcept override { return 1; }
 };

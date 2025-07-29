@@ -8,7 +8,7 @@ template <typename T, std::floating_point U>
 struct var_vw : public detail::weighted_op<T, U> {
   using base = detail::weighted_op<T, U>;
   using base::pos;
-  using base::pow_weight;
+  using base::pos_weight;
 
   detail::smooth<U> m;     ///< mean
   detail::accum<U> w_sum;  ///< sum of weights
@@ -16,13 +16,13 @@ struct var_vw : public detail::weighted_op<T, U> {
   detail::accum<U> m2;     ///< second moment
   size_t n;                ///< count of values processed
 
-  explicit var_vw(size_t pos = 0, size_t pow_weight = 1) noexcept
-      : base{pos, pow_weight}, m{}, w_sum{}, w2_sum{}, m2{}, n{} {}
+  explicit var_vw(size_t pos = 0, size_t pos_weight = 1) noexcept
+      : base{pos, pos_weight}, m{}, w_sum{}, w2_sum{}, m2{}, n{} {}
 
   void init(T, U const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
     U const x = in[0][pos];
-    U const w = in[0][pow_weight];
+    U const w = in[0][pos_weight];
 
     n = 1;
     w_sum = w;
@@ -35,7 +35,7 @@ struct var_vw : public detail::weighted_op<T, U> {
   void step(T, U const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
     U const x = in[0][pos];
-    U const w = in[0][pow_weight];
+    U const w = in[0][pos_weight];
 
     ++n;
     w_sum.add(w);
@@ -49,7 +49,7 @@ struct var_vw : public detail::weighted_op<T, U> {
   void inverse(T, U const *const rm) noexcept override {
     assert(rm && rm[0] && "NULL removal data.");
     U const x = rm[0][pos];
-    U const w = rm[0][pow_weight];
+    U const w = rm[0][pos_weight];
 
     --n;
     w_sum.sub(w);
