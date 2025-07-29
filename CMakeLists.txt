@@ -31,10 +31,19 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
   # enable testing
   enable_testing()
   add_subdirectory(test)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  # Fetch Google test and benchmark
+  include(cmake/GoogleBenchAndTest.cmake)
+
+  # Add private dev headers
+  add_library(private_headers INTERFACE)
+  target_include_directories(private_headers INTERFACE ${PROJECT_SOURCE_DIR}/private)
 
   # enable benchmarking
   add_subdirectory(bench)
-
-  # add examples
-  add_subdirectory(examples)
 endif()
+
+# add examples
+add_subdirectory(examples)
