@@ -58,4 +58,48 @@ public:
     return *this;
   }
 };
+
+/**
+ * @brief Smooth factor calculation
+ *
+ * This function calculates the smooth factor based on the alpha value.
+ * If alpha is greater than or equal to 1, it treats it as a period and
+ * computes the smooth factor accordingly.
+ *
+ * @param alpha The alpha value (or period)
+ * @return The computed smooth factor
+ */
+template <std::floating_point U>
+U smooth_factor(U alpha) noexcept {
+  if (alpha >= 1.) {
+    // alpha is actually a period
+    return 2.0 / (alpha + 1);
+  }
+  return alpha;
+}
+
+/**
+ * @brief Wilders' smoothing factor calculation
+ *
+ * This function calculates the Wilders' smoothing factor based on the alpha value.
+ * If alpha is greater than or equal to 1, it treats it as a period and computes
+ * the smoothing factor accordingly.
+ *
+ * @param alpha The alpha value (or period)
+ * @return The computed Wilders' smoothing factor
+ */
+template <std::floating_point U>
+U smooth_wilders(U alpha) noexcept {
+  if (alpha >= 1.) {
+    // alpha is actually a period
+    return 1.0 / (alpha + 1);
+  }
+  return alpha;
+}
+
+template <std::floating_point U>
+constexpr U smallest() noexcept {
+  // Return the smallest positive value that is not zero
+  return std::numeric_limits<U>::epsilon();
+}
 } // namespace opflow::op::detail
