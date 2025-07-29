@@ -1,10 +1,10 @@
 #pragma once
 
 #include <concepts>
-#include <limits>
 #include <ranges>
 #include <type_traits>
-#include <utility>
+
+#include "common.hpp"
 
 namespace opflow {
 namespace detail {
@@ -12,28 +12,6 @@ template <typename R, typename Base>
 concept range_derived_from =
     std::derived_from<std::remove_cvref_t<std::remove_pointer_t<std::ranges::range_value_t<R>>>, Base>;
 } // namespace detail
-
-template <typename T>
-using duration_t = decltype(std::declval<T>() - std::declval<T>());
-
-// TODO: REMOVE THIS, retention policy design here is logically flawed
-// As a sliding window, we should always keep data in the window (window_start, current_time], LEFT OPEN
-enum class retention_policy : int {
-  cumulative = 0, ///< Cumulative, no data removal
-  keep_start,     ///< Data at window start is kept, boundary is calculated as current - window_size
-  remove_start    ///< Data at window start is removed
-};
-
-// convenience constants
-
-template <std::floating_point T>
-constexpr inline T fnan = std::numeric_limits<T>::quiet_NaN(); ///< NaN constant
-template <std::floating_point T>
-constexpr inline T finf = std::numeric_limits<T>::infinity(); ///< Infinity constant
-template <std::floating_point T>
-constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double value
-template <std::floating_point T>
-constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
 
 template <typename T, typename U>
 struct op_base {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -38,4 +39,18 @@ public:
 private:
   node_type node;
 };
+
+template <typename T>
+using duration_t = decltype(std::declval<T>() - std::declval<T>());
+
+// convenience constants
+
+template <std::floating_point T>
+constexpr inline T fnan = std::numeric_limits<T>::quiet_NaN(); ///< NaN constant
+template <std::floating_point T>
+constexpr inline T finf = std::numeric_limits<T>::infinity(); ///< Infinity constant
+template <std::floating_point T>
+constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double value
+template <std::floating_point T>
+constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
 } // namespace opflow
