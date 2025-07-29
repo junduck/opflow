@@ -12,14 +12,12 @@ namespace opflow::op {
  *
  * - ema_init::first: Initialise with the first value
  * - ema_init::zero: Initialise with zero
- * - ema_init::epsilon: Initialise with a small value (epsilon), useful for avoiding zero division
  * - ema_init::unbiased: Initialise with bias-corrected value x / (1 - a ^ n) and all produced values are bias-corrected
  *
  */
 enum class ema_init {
   first,   ///< Initialise with the first value
   zero,    ///< Initialise with zero
-  epsilon, ///< Initialise with a small value (epsilon), useful for avoiding zero division
   unbiased ///< Initialise with bias-corrected value (1 - a ^ n)
 };
 
@@ -40,7 +38,7 @@ struct ema : public detail::unary_op<T, U> {
   void init(T, U const *const *in) noexcept override {
     assert(in && in[0] && "NULL input data.");
 
-    val = 0.;
+    val = U{};
     initialised = false;
     step(T{}, in); // Initialize with the first value
   }
@@ -49,20 +47,14 @@ struct ema : public detail::unary_op<T, U> {
     assert(in && in[0] && "NULL input data.");
     U x = in[0][pos];
 
-    if (!initialised) {
-      if constexpr (Init == ema_init::first) {
-        val = x; // Initialize with the first value
-      } else if constexpr (Init == ema_init::zero) {
-        val = 0.; // Initialize with zero
-      } else {
-        // Init == ema_init::epsilon
-        val = detail::smallest<U>(); // Initialize with epsilon
+    if constexpr (Init == ema_init::first) {
+      if (!initialised) {
+        val = x;
+        initialised = true;
+        return;
       }
-      initialised = true;
-      // unbiased is specialisation
-    } else {
-      val.add(x, alpha);
     }
+    val.add(x, alpha);
   }
 
   void value(U *out) noexcept override {
