@@ -137,3 +137,6 @@ struct lerp : public detail::binary_op<T, U> {
 };
 
 } // namespace opflow::op
+
+#undef DEF_MATH_OP
+#undef DEF_MATH_BIN_OP
