@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <deque>
 
 #include "opflow/op/detail/binary.hpp"
 #include "opflow/op/detail/unary.hpp"
@@ -19,7 +20,7 @@
       assert(out && "NULL output buffer.");                                                                            \
       *out = val;                                                                                                      \
     }                                                                                                                  \
-  };
+  }
 
 #define DEF_MATH_BIN_OP(name, fn)                                                                                      \
   template <typename T, std::floating_point U>                                                                         \
@@ -37,7 +38,7 @@
       assert(out && "NULL output buffer.");                                                                            \
       *out = val;                                                                                                      \
     }                                                                                                                  \
-  };
+  }
 
 namespace opflow::op {
 namespace detail {
@@ -137,6 +138,94 @@ struct lerp : public detail::binary_op<T, U> {
 };
 
 template <typename T, std::floating_point U>
+struct clamp : public detail::unary_op<T, U> {
+  using base = detail::unary_op<T, U>;
+  using base::pos;
+
+  U lo;
+  U hi;
+  U val;
+
+  clamp(U lo, U hi, size_t pos = 0) : base{pos}, lo{lo}, hi{hi} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    val = std::clamp(in[0][pos], lo, hi);
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    *out = val;
+  }
+};
+
+template <typename T, std::floating_point U>
+struct rollmin : public detail::unary_op<T, U> {
+  using base = detail::unary_op<T, U>;
+  using base::pos;
+
+  std::deque<U> deq;
+
+  explicit rollmin(size_t pos = 0) : base{pos}, deq{} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    U val = in[0][pos];
+    while (!deq.empty() && deq.back() > val) {
+      deq.pop_back();
+    }
+    deq.push_back(val);
+  }
+
+  void inverse(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    U val = in[0][pos];
+    if (!deq.empty() && deq.front() == val) {
+      deq.pop_front();
+    }
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    assert(!deq.empty() && "value called with empty state.");
+    out[0] = deq.front();
+  }
+};
+
+template <typename T, std::floating_point U>
+struct rollmax : public detail::unary_op<T, U> {
+  using base = detail::unary_op<T, U>;
+  using base::pos;
+
+  std::deque<U> deq;
+
+  explicit rollmax(size_t pos = 0) : base{pos}, deq{} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    U val = in[0][pos];
+    while (!deq.empty() && deq.back() < val) {
+      deq.pop_back();
+    }
+    deq.push_back(val);
+  }
+
+  void inverse(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    U val = in[0][pos];
+    if (!deq.empty() && deq.front() == val) {
+      deq.pop_front();
+    }
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    assert(!deq.empty() && "value called with empty state.");
+    out[0] = deq.front();
+  }
+};
+
+template <typename T, std::floating_point U>
 struct custom_unary_op : public detail::unary_op<T, U> {
   using base = detail::unary_op<T, U>;
   using base::pos;
@@ -153,7 +242,7 @@ struct custom_unary_op : public detail::unary_op<T, U> {
 
   void value(U *out) noexcept override {
     assert(out && "NULL output buffer.");
-    out[pos] = val;
+    out[0] = val;
   }
 };
 
@@ -176,7 +265,7 @@ struct custom_binary_op : public detail::binary_op<T, U> {
 
   void value(U *out) noexcept override {
     assert(out && "NULL output buffer.");
-    out[pos0] = val; // Store the result in the first output position
+    out[0] = val;
   }
 };
 

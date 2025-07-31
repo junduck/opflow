@@ -108,13 +108,10 @@ struct var : public moment2<T, U> {
 template <typename T, std::floating_point U, bool Unbiased = true>
 struct stddev : public var<T, U, Unbiased> {
   using base = var<T, U, Unbiased>;
+  using base::base;
   using base::pos;
 
-  using base::base;
-
   void value(U *out) noexcept override {
-    assert(out && "NULL output buffer.");
-
     base::value(out);
     out[1] = std::sqrt(out[1]);
   }

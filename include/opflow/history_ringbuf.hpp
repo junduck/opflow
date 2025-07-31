@@ -2,9 +2,9 @@
 
 #include <bit>
 #include <cassert>
+#include <span>
 #include <vector>
 
-#include "history.hpp"
 #include "impl/iterator.hpp"
 
 namespace opflow {
@@ -23,7 +23,7 @@ template <typename T, typename U>
 class history_ringbuf {
 public:
   using value_type = std::pair<T, std::span<U>>;
-  using const_value_type = std::pair<T, std::span<const U>>;
+  using const_value_type = std::pair<T, std::span<U const>>;
 
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
@@ -277,6 +277,4 @@ private:
     head = 0; // Reset head since we linearized the data
   }
 };
-
-static_assert(history_container<history_ringbuf<int, double>, int, double>);
 } // namespace opflow

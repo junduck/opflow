@@ -2,9 +2,9 @@
 
 #include <cassert>
 #include <deque>
+#include <span>
 #include <vector>
 
-#include "history.hpp"
 #include "impl/iterator.hpp"
 
 namespace opflow {
@@ -23,7 +23,7 @@ template <typename T, typename U>
 class history_deque {
 public:
   using value_type = std::pair<T, std::span<U>>;
-  using const_value_type = std::pair<T, std::span<const U>>;
+  using const_value_type = std::pair<T, std::span<U const>>;
 
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
@@ -156,6 +156,4 @@ public:
   const_reverse_iterator crbegin() const { return const_reverse_iterator(cend()); }
   const_reverse_iterator crend() const { return const_reverse_iterator(cbegin()); }
 };
-
-static_assert(history_container<history_deque<int, double>, int, double>);
 } // namespace opflow
