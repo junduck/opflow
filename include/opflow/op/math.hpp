@@ -4,6 +4,7 @@
 #include <deque>
 
 #include "opflow/op/detail/binary.hpp"
+#include "opflow/op/detail/ternary.hpp"
 #include "opflow/op/detail/unary.hpp"
 
 #define DEF_MATH_OP(name, fn)                                                                                          \
@@ -246,6 +247,40 @@ struct custom_unary_op : public detail::unary_op<T, U> {
   }
 };
 
+/*
+if (cond(pred0)) {
+  return fn_true(pred1);
+} else {
+  return fn_false(pred1);
+}
+*/
+
+template <typename T, std::floating_point U>
+struct condition_unary_op : public detail::binary_op<T, U> {
+  using base = detail::binary_op<T, U>;
+  using base::pos0;
+  using base::pos1;
+
+  U val;                        ///< Value to store the result
+  std::function<bool(U)> cond;  ///< Condition function to apply
+  std::function<U(U)> fn_true;  ///< Function to apply if condition is true
+  std::function<U(U)> fn_false; ///< Function to apply if condition is false
+
+  explicit condition_unary_op(std::function<bool(U)> cond, std::function<U(U)> fn_true, std::function<U(U)> fn_false,
+                              size_t pos0 = 0, size_t pos1 = 0)
+      : base{pos0, pos1}, cond{std::move(cond)}, fn_true{std::move(fn_true)}, fn_false{std::move(fn_false)} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    val = cond(in[0][pos0]) ? fn_true(in[1][pos1]) : fn_false(in[1][pos1]);
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    out[0] = val;
+  }
+};
+
 template <typename T, std::floating_point U>
 struct custom_binary_op : public detail::binary_op<T, U> {
   using base = detail::binary_op<T, U>;
@@ -269,6 +304,40 @@ struct custom_binary_op : public detail::binary_op<T, U> {
   }
 };
 
+/*
+if (cond(pred0)) {
+  return fn_true(pred1, pred2);
+} else {
+  return fn_false(pred1, pred2);
+}
+*/
+
+template <typename T, std::floating_point U>
+struct condition_binary_op : public detail::ternary_op<T, U> {
+  using base = detail::ternary_op<T, U>;
+  using base::pos0;
+  using base::pos1;
+  using base::pos2;
+
+  U val;                           ///< Value to store the result
+  std::function<bool(U)> cond;     ///< Condition function to apply
+  std::function<U(U, U)> fn_true;  ///< Function to apply if condition is true
+  std::function<U(U, U)> fn_false; ///< Function to apply if condition is false
+
+  explicit condition_binary_op(std::function<bool(U)> cond, std::function<U(U, U)> fn_true,
+                               std::function<U(U, U)> fn_false, size_t pos0 = 0, size_t pos1 = 0, size_t pos2 = 0)
+      : base{pos0, pos1, pos2}, cond{std::move(cond)}, fn_true{std::move(fn_true)}, fn_false{std::move(fn_false)} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && in[1] && in[2] && "NULL input data.");
+    val = cond(in[0][pos0]) ? fn_true(in[1][pos1], in[2][pos2]) : fn_false(in[1][pos1], in[2][pos2]);
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    out[0] = val;
+  }
+};
 } // namespace opflow::op
 
 #undef DEF_MATH_OP

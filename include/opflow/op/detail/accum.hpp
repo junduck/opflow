@@ -96,10 +96,4 @@ U smooth_wilders(U alpha) noexcept {
   }
   return alpha;
 }
-
-template <std::floating_point U>
-constexpr U smallest() noexcept {
-  // Return the smallest positive value that is not zero
-  return std::numeric_limits<U>::epsilon();
-}
 } // namespace opflow::op::detail
