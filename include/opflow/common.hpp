@@ -14,14 +14,20 @@ using duration_t = decltype(std::declval<Time>() - std::declval<Time>());
 
 template <typename Time>
 Time min_time() noexcept {
-  return Time::min(); // Use min time for non-arithmetic types
+  if constexpr (std::is_arithmetic_v<Time>) {
+    return std::numeric_limits<Time>::min();
+  } else {
+    return Time::min(); // Use min time for non-arithmetic types
+  }
 }
 
 template <typename Time>
-Time min_time() noexcept
-  requires(std::is_arithmetic_v<Time>)
-{
-  return std::numeric_limits<Time>::min();
+Time max_time() noexcept {
+  if constexpr (std::is_arithmetic_v<Time>) {
+    return std::numeric_limits<Time>::max();
+  } else {
+    return Time::max(); // Use max time for non-arithmetic types
+  }
 }
 
 // Error handling

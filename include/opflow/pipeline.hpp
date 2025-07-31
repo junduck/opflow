@@ -159,9 +159,6 @@ public:
     // TODO: we need history.flush() for side effects/observability
     switch (window_mode) {
     case sliding::time: {
-      // For cumulative nodes, set dummy last_removed timestamp
-      for (auto id : cumulative_nodes)
-        last_removed[id] = timestamp;
       // we only need to keep data within the oldest removed timestamp across all nodes
       time_type oldest_removed = std::ranges::min(last_removed);
       while (!history.empty() && history.front().first < oldest_removed) {
@@ -170,9 +167,6 @@ public:
       break;
     }
     case sliding::step:
-      // For cumulative nodes, only keep last step
-      for (auto id : cumulative_nodes)
-        step_count[id] = 1;
       // we only need to keep max_window_period steps in history
       size_t max_window_period = std::ranges::max(step_count);
       while (history.size() > max_window_period) {
@@ -280,19 +274,30 @@ private:
 
   void init_window_meta() {
     // collect cumulative nodes
+    all_cumulative = true;
     for (size_t i = 0; i < nodes.size(); ++i) {
-      if (window_desc[i].cumulative) {
-        cumulative_nodes.push_back(i);
+      if (!window_desc[i].cumulative) {
+        all_cumulative = false;
+        break;
       }
     }
-    all_cumulative = cumulative_nodes.size() == nodes.size();
     // initialise sliding window metadata
     switch (window_mode) {
     case sliding::time:
       last_removed.resize(nodes.size(), min_time<time_type>());
+      for (size_t i = 0; i < nodes.size(); ++i) {
+        if (window_desc[i].cumulative) {
+          last_removed[i] = max_time<time_type>();
+        }
+      }
       break;
     case sliding::step:
       step_count.resize(nodes.size(), 0);
+      for (size_t i = 0; i < nodes.size(); ++i) {
+        if (window_desc[i].cumulative) {
+          step_count[i] = 1; // Cumulative nodes always keep last step
+        }
+      }
       break;
     default:
       // TODO: add time weighted window type (delta_t inserted, 1 step lagged data)
@@ -391,7 +396,6 @@ private:
   std::vector<time_type> last_removed; ///< Last window boundary time for each node, used in time sliding mode
   std::vector<size_t> step_count;      ///< Step count for each node, used in step sliding mode
 
-  std::vector<size_t> cumulative_nodes; ///< Cumulative nodes
   bool all_cumulative;
 };
 
