@@ -60,15 +60,15 @@ struct op_base {
   virtual void value(data_type *out) noexcept = 0;
 
   /**
-   * @brief Get the window start (expiry) for this operator
+   * @brief Get the window size for this operator
    *
    * @details When the operator is run in time-based sliding window, data in (window_start, current_time] is maintained
-   * and expired data is removed by inverse(). Engine consults this method to determine window_start on every data step
-   * if window_size is not specified by window descriptor.
+   * and expired data is removed by inverse(). Engine consults this method to determine required window size on every
+   * data step if window_size is not specified by window descriptor.
    *
-   * @return T Window start time point
+   * @return T Window size
    */
-  virtual time_type window_start() const noexcept { return time_type{}; }
+  virtual duration_type window_size() const noexcept { return duration_type{}; }
 
   /**
    * @brief Get the window period for this operator

@@ -306,9 +306,9 @@ private:
     // Obj: remove data in       (last_removed[id], window_start], update last_removed[id]
 
     // 1. Calculate removal range
-    auto w = window_desc[id].window_size;
+    auto w = window_desc[id].window_size != duration_type{} ? window_desc[id].window_size : nodes[id]->window_size();
     auto rm_start = last_removed[id];
-    auto rm_end = (w == duration_type{}) ? nodes[id]->window_start() : timestamp - w;
+    auto rm_end = timestamp - w;
     auto rm_last = last_removed[id];
     if (rm_start >= rm_end) {
       return; // No data to remove
