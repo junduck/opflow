@@ -13,3 +13,7 @@ target_link_libraries(bench_flat_set PRIVATE benchmark::benchmark opflow::header
 # Simple test for s2_exp_weighted_sta (no benchmark dependency)
 add_executable(s2_simple_test s2_simple_test.cpp)
 target_link_libraries(s2_simple_test PRIVATE opflow::headers private_headers)
+
+# Test for inlined traits compared to virtual function call
+add_executable(inlined_trait inlined_trait.cpp)
+target_link_libraries(inlined_trait PRIVATE benchmark::benchmark)
