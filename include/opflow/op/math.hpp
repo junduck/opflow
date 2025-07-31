@@ -136,6 +136,50 @@ struct lerp : public detail::binary_op<T, U> {
   }
 };
 
+template <typename T, std::floating_point U>
+struct custom_unary_op : public detail::unary_op<T, U> {
+  using base = detail::unary_op<T, U>;
+  using base::pos;
+
+  U val;                    ///< Value to store the result
+  std::function<U(U)> func; ///< Custom function to apply
+
+  explicit custom_unary_op(std::function<U(U)> func, size_t pos = 0) : base{pos}, func{std::move(func)} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && "NULL input data.");
+    val = func(in[0][pos]);
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    out[pos] = val;
+  }
+};
+
+template <typename T, std::floating_point U>
+struct custom_binary_op : public detail::binary_op<T, U> {
+  using base = detail::binary_op<T, U>;
+  using base::pos0;
+  using base::pos1;
+
+  U val;                       ///< Value to store the result
+  std::function<U(U, U)> func; ///< Custom function to apply
+
+  explicit custom_binary_op(std::function<U(U, U)> func, size_t pos0 = 0, size_t pos1 = 0)
+      : base{pos0, pos1}, func{std::move(func)} {}
+
+  void step(T, U const *const *in) noexcept override {
+    assert(in && in[0] && in[1] && "NULL input data.");
+    val = func(in[0][pos0], in[1][pos1]);
+  }
+
+  void value(U *out) noexcept override {
+    assert(out && "NULL output buffer.");
+    out[pos0] = val; // Store the result in the first output position
+  }
+};
+
 } // namespace opflow::op
 
 #undef DEF_MATH_OP

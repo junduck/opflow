@@ -46,6 +46,10 @@ using duration_t = decltype(std::declval<T>() - std::declval<T>());
 // convenience constants
 
 template <std::floating_point T>
+constexpr inline T feps = std::numeric_limits<T>::epsilon(); ///< Epsilon constant
+template <std::floating_point T>
+constexpr inline T feps100 = T(100) * feps<T>; ///< Epsilon constant scaled by 100
+template <std::floating_point T>
 constexpr inline T fnan = std::numeric_limits<T>::quiet_NaN(); ///< NaN constant
 template <std::floating_point T>
 constexpr inline T finf = std::numeric_limits<T>::infinity(); ///< Infinity constant
