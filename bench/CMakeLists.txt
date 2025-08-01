@@ -17,3 +17,7 @@ target_link_libraries(s2_simple_test PRIVATE opflow::headers private_headers)
 # Test for inlined traits compared to virtual function call
 add_executable(inlined_trait inlined_trait.cpp)
 target_link_libraries(inlined_trait PRIVATE benchmark::benchmark)
+
+# Test for sorted container access patterns
+add_executable(bench_sorted_lookup sorted_lookup.cpp)
+target_link_libraries(bench_sorted_lookup PRIVATE benchmark::benchmark)
