@@ -59,6 +59,10 @@ target_link_libraries(test_op_ewma GTest::gtest_main opflow::headers private_hea
 add_executable(test_sorted_vect sorted_vect_test.cpp)
 target_link_libraries(test_sorted_vect GTest::gtest_main opflow::headers)
 
+# ringbuf_vect tests
+add_executable(test_ringbuf_vect ringbuf_vect_test.cpp)
+target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_topo_graph)
@@ -76,3 +80,4 @@ gtest_discover_tests(test_pipeline)
 gtest_discover_tests(test_pipeline_comprehensive)
 gtest_discover_tests(test_op_ewma)
 gtest_discover_tests(test_sorted_vect)
+gtest_discover_tests(test_ringbuf_vect)
