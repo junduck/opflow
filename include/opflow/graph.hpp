@@ -238,6 +238,23 @@ public:
     return leaves;
   }
 
+  void merge(graph const &other) {
+    for (auto const &[node, preds] : other.adj) {
+      add_vertex(node, preds);
+    }
+  }
+
+  graph &operator+=(graph const &rhs) {
+    merge(rhs);
+    return *this;
+  }
+
+  friend graph operator+(graph const &lhs, graph const &rhs) {
+    graph result(lhs);
+    result.merge(rhs);
+    return result;
+  }
+
 protected:
   NodeMap adj;         ///< Adjacency list: node -> [predecessors] i.e. set of nodes that it depends on
   NodeMap reverse_adj; ///< Reverse adjacency list: node -> [successors] i.e. set of nodes that depend on it
