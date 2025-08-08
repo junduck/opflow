@@ -11,10 +11,14 @@
 namespace opflow {
 template <typename T>
 class topo_graph {
-  impl::flat_multivect<size_t> pred_map; ///< Flattened storage of predecessors: id -> [pred ids]
-  std::vector<T> sorted;                 ///< Sorted nodes in topological order: id -> node
-
 public:
+  using node_type = T;
+
+  struct arg_type {
+    uint32_t node;
+    uint32_t port;
+  };
+
   /**
    * @brief Construct a topological sorted graph from a directed graph
    *
@@ -32,7 +36,7 @@ public:
     sorted.reserve(g.size());
     sorted_id.reserve(g.size());
 
-    for (auto const &[node, pred] : g.predecessors()) {
+    for (auto const &[node, pred] : g.get_pred()) {
       auto n_pred = pred.size();
       in_degree.emplace(node, n_pred);
       if (n_pred == 0) {
@@ -46,8 +50,8 @@ public:
       sorted.push_back(current);
 
       // update successors
-      auto succ_it = g.successors().find(current);
-      assert(succ_it != g.successors().end() && "[BUG] Node not found in successors map.");
+      auto succ_it = g.get_succ().find(current);
+      assert(succ_it != g.get_succ().end() && "[BUG] Node not found in successors map.");
       for (auto const &succ : succ_it->second) {
         if (--in_degree[succ] == 0) {
           ready.push(succ);
@@ -67,13 +71,20 @@ public:
 
     // Then build the predecessors map
     std::vector<size_t> tmp;
+    std::vector<arg_type> tmp_args;
     for (size_t i = 0; i < sorted.size(); ++i) {
       tmp.clear();
+      tmp_args.clear();
       for (auto const &pred : g.pred_of(sorted[i])) {
         tmp.push_back(sorted_id[pred]);
       }
+      for (auto const &arg : g.args_of(sorted[i])) {
+        tmp_args.emplace_back(sorted_id[arg.node], arg.port);
+      }
       auto test_id = pred_map.push_back(tmp);
+      auto test_args_id = arg_map.push_back(tmp_args);
       assert(test_id == i && "[BUG] Preds ID mismatch when constructing preds map.");
+      assert(test_args_id == i && "[BUG] Args ID mismatch when constructing args map.");
     }
   }
 
@@ -121,7 +132,15 @@ public:
    * @param id The index of the node whose predecessors to retrieve
    * @return std::span<const size_t> A span of the predecessor id for the node at the given index
    */
-  auto preds(size_t id) const noexcept { return pred_map[id]; }
+  auto pred_of(size_t id) const noexcept { return pred_map[id]; }
+
+  /**
+   * @brief Get the arguments of a node by index
+   *
+   * @param id The index of the node whose arguments to retrieve
+   * @return std::span<const arg_type> A span of the arguments for the node at the given index
+   */
+  auto args_of(size_t id) const noexcept { return arg_map[id]; }
 
   /**
    * @brief Check if a node is a root node
@@ -228,6 +247,11 @@ public:
   using const_iterator = impl::iterator_t<topo_graph, true>;
   const_iterator begin() const noexcept { return const_iterator{this, 0}; }
   const_iterator end() const noexcept { return const_iterator{this, size()}; }
+
+private:
+  impl::flat_multivect<size_t> pred_map;  ///< Flattened storage of predecessors: id -> [pred ids]
+  impl::flat_multivect<arg_type> arg_map; ///< Flattened storage of arguments: id -> [pred:port]
+  std::vector<T> sorted;                  ///< Sorted nodes in topological order: id -> node
 };
 
 // Deduction guide
