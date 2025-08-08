@@ -97,6 +97,20 @@ public:
     return end();
   }
 
+  template <typename Pred>
+  size_type erase_if(Pred pred) {
+    size_type count = 0;
+    auto it = std::remove_if(data.begin(), data.end(), [&](T const &val) {
+      if (pred(val)) {
+        ++count;
+        return true; // Remove this element
+      }
+      return false; // Keep this element
+    });
+    data.erase(it, data.end());
+    return count;
+  }
+
   void clear() { data.clear(); }
 
   container_type &&extract() { return std::move(data); }
@@ -110,6 +124,13 @@ public:
   }
 
   bool contains(T const &val) const { return std::ranges::find(data, val) != std::ranges::end(data); }
+
+  size_type count(T const &val) const { return std::ranges::count(data, val); }
+
+  template <typename Pred>
+  size_type count_if(Pred pred) const {
+    return std::ranges::count_if(data, pred);
+  }
 
   friend auto operator<=>(flat_set const &lhs, flat_set const &rhs) = default;
 
