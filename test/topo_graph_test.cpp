@@ -16,48 +16,48 @@ protected:
   // Helper function to create a simple linear chain: A -> B -> C
   graph<int> create_linear_chain() {
     graph<int> g;
-    g.add_vertex(1);                      // A (no dependencies)
-    g.add_vertex(2, std::vector<int>{1}); // B depends on A
-    g.add_vertex(3, std::vector<int>{2}); // C depends on B
+    g.add_vertex(1);      // A (no dependencies)
+    g.add_vertex(2, {1}); // B depends on A
+    g.add_vertex(3, {2}); // C depends on B
     return g;
   }
 
   // Helper function to create a diamond pattern: A -> B, C; B,C -> D
   graph<int> create_diamond() {
     graph<int> g;
-    g.add_vertex(1);                         // A (no dependencies)
-    g.add_vertex(2, std::vector<int>{1});    // B depends on A
-    g.add_vertex(3, std::vector<int>{1});    // C depends on A
-    g.add_vertex(4, std::vector<int>{2, 3}); // D depends on B and C
+    g.add_vertex(1);         // A (no dependencies)
+    g.add_vertex(2, {1});    // B depends on A
+    g.add_vertex(3, {1});    // C depends on A
+    g.add_vertex(4, {2, 3}); // D depends on B and C
     return g;
   }
 
   // Helper function to create a complex graph
   graph<int> create_complex_graph() {
     graph<int> g;
-    g.add_vertex(1);                         // Root
-    g.add_vertex(2);                         // Another root
-    g.add_vertex(3, std::vector<int>{1});    // depends on 1
-    g.add_vertex(4, std::vector<int>{1, 2}); // depends on 1, 2
-    g.add_vertex(5, std::vector<int>{3});    // depends on 3
-    g.add_vertex(6, std::vector<int>{3, 4}); // depends on 3, 4
-    g.add_vertex(7, std::vector<int>{5, 6}); // depends on 5, 6
+    g.add_vertex(1);         // Root
+    g.add_vertex(2);         // Another root
+    g.add_vertex(3, {1});    // depends on 1
+    g.add_vertex(4, {1, 2}); // depends on 1, 2
+    g.add_vertex(5, {3});    // depends on 3
+    g.add_vertex(6, {3, 4}); // depends on 3, 4
+    g.add_vertex(7, {5, 6}); // depends on 5, 6
     return g;
   }
 
   // Helper function to create a graph with cycle
   graph<int> create_cyclic_graph() {
     graph<int> g;
-    g.add_vertex(1, std::vector<int>{3}); // 1 depends on 3
-    g.add_vertex(2, std::vector<int>{1}); // 2 depends on 1
-    g.add_vertex(3, std::vector<int>{2}); // 3 depends on 2 (creates cycle)
+    g.add_vertex(1, {{3, 0}}); // 1 depends on 3
+    g.add_vertex(2, {{1, 0}}); // 2 depends on 1
+    g.add_vertex(3, {{2, 0}}); // 3 depends on 2 (creates cycle)
     return g;
   }
 
   // Helper function to create a self-loop graph
   graph<int> create_self_loop_graph() {
     graph<int> g;
-    g.add_vertex(1, std::vector<int>{1}); // Self dependency
+    g.add_vertex(1, {1}); // Self dependency
     return g;
   }
 
@@ -104,7 +104,7 @@ protected:
       tg_nodes.insert(tg[i]);
     }
 
-    for (const auto &[node, _] : original.predecessors()) {
+    for (const auto &[node, _] : original.get_pred()) {
       if (tg_nodes.find(node) == tg_nodes.end()) {
         return false;
       }
@@ -497,353 +497,4 @@ TEST_F(TopoGraphTest, NodeValueUniqueness) {
     int value = tg[i];
     EXPECT_TRUE(seen_values.insert(value).second) << "Duplicate value: " << value;
   }
-}
-
-// Graph merge tests
-class GraphMergeTest : public ::testing::Test {
-protected:
-  void SetUp() override {}
-
-  // Helper to create a simple graph: 1 -> 2
-  graph<int> create_simple_graph() {
-    graph<int> g;
-    g.add_vertex(1);
-    g.add_vertex(2, std::vector<int>{1});
-    return g;
-  }
-
-  // Helper to create another simple graph: 3 -> 4
-  graph<int> create_another_graph() {
-    graph<int> g;
-    g.add_vertex(3);
-    g.add_vertex(4, std::vector<int>{3});
-    return g;
-  }
-
-  // Helper to create a graph with overlapping nodes: 2 -> 5
-  graph<int> create_overlapping_graph() {
-    graph<int> g;
-    g.add_vertex(2);
-    g.add_vertex(5, std::vector<int>{2});
-    return g;
-  }
-
-  // Helper to validate graph structure
-  bool validate_graph_structure(const graph<int> &g) {
-    // Check that all predecessors exist as nodes
-    for (const auto &[node, preds] : g.predecessors()) {
-      for (const auto &pred : preds) {
-        if (!g.contains(pred)) {
-          return false;
-        }
-        // Check reverse relationship
-        const auto &succs = g.succ_of(pred);
-        if (succs.find(node) == succs.end()) {
-          return false;
-        }
-      }
-    }
-
-    // Check that all successors exist as nodes
-    for (const auto &[node, succs] : g.successors()) {
-      for (const auto &succ : succs) {
-        if (!g.contains(succ)) {
-          return false;
-        }
-        // Check reverse relationship
-        const auto &preds = g.pred_of(succ);
-        if (preds.find(node) == preds.end()) {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  }
-};
-
-TEST_F(GraphMergeTest, MergeEmptyGraphs) {
-  graph<int> g1;
-  graph<int> g2;
-
-  g1.merge(g2);
-
-  EXPECT_TRUE(g1.empty());
-  EXPECT_EQ(g1.size(), 0);
-  EXPECT_TRUE(validate_graph_structure(g1));
-}
-
-TEST_F(GraphMergeTest, MergeWithEmptyGraph) {
-  auto g1 = create_simple_graph();
-  graph<int> g2;
-
-  size_t original_size = g1.size();
-  g1.merge(g2);
-
-  EXPECT_EQ(g1.size(), original_size);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  // Check dependencies are preserved
-  auto preds = g1.pred_of(2);
-  EXPECT_EQ(preds.size(), 1);
-  EXPECT_TRUE(preds.contains(1));
-}
-
-TEST_F(GraphMergeTest, MergeEmptyIntoNonEmpty) {
-  graph<int> g1;
-  auto g2 = create_simple_graph();
-
-  g1.merge(g2);
-
-  EXPECT_EQ(g1.size(), 2);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  // Check dependencies are preserved
-  auto preds = g1.pred_of(2);
-  EXPECT_EQ(preds.size(), 1);
-  EXPECT_TRUE(preds.contains(1));
-}
-
-TEST_F(GraphMergeTest, MergeDisjointGraphs) {
-  auto g1 = create_simple_graph();  // 1 -> 2
-  auto g2 = create_another_graph(); // 3 -> 4
-
-  g1.merge(g2);
-
-  EXPECT_EQ(g1.size(), 4);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(g1.contains(3));
-  EXPECT_TRUE(g1.contains(4));
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  // Check original dependencies are preserved
-  auto preds2 = g1.pred_of(2);
-  EXPECT_EQ(preds2.size(), 1);
-  EXPECT_TRUE(preds2.contains(1));
-
-  auto preds4 = g1.pred_of(4);
-  EXPECT_EQ(preds4.size(), 1);
-  EXPECT_TRUE(preds4.contains(3));
-
-  // Check that nodes are independent
-  EXPECT_EQ(g1.pred_of(1).size(), 0);
-  EXPECT_EQ(g1.pred_of(3).size(), 0);
-}
-
-TEST_F(GraphMergeTest, MergeOverlappingGraphs) {
-  auto g1 = create_simple_graph();      // 1 -> 2
-  auto g2 = create_overlapping_graph(); // 2 -> 5
-
-  g1.merge(g2);
-
-  EXPECT_EQ(g1.size(), 3);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(g1.contains(5));
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  // Check that node 2 has both incoming and outgoing edges
-  auto preds2 = g1.pred_of(2);
-  EXPECT_EQ(preds2.size(), 1);
-  EXPECT_TRUE(preds2.contains(1));
-
-  auto succs2 = g1.succ_of(2);
-  EXPECT_EQ(succs2.size(), 1);
-  EXPECT_TRUE(succs2.contains(5));
-
-  auto preds5 = g1.pred_of(5);
-  EXPECT_EQ(preds5.size(), 1);
-  EXPECT_TRUE(preds5.contains(2));
-}
-
-TEST_F(GraphMergeTest, MergeWithAdditionalDependencies) {
-  graph<int> g1;
-  g1.add_vertex(1);
-  g1.add_vertex(2, std::vector<int>{1});
-
-  graph<int> g2;
-  g2.add_vertex(2, std::vector<int>{3}); // Add new dependency to existing node
-  g2.add_vertex(3);
-
-  g1.merge(g2);
-
-  EXPECT_EQ(g1.size(), 3);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(g1.contains(3));
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  // Node 2 should now have both dependencies
-  auto preds2 = g1.pred_of(2);
-  EXPECT_EQ(preds2.size(), 2);
-  EXPECT_TRUE(preds2.contains(1));
-  EXPECT_TRUE(preds2.contains(3));
-}
-
-TEST_F(GraphMergeTest, MergeComplexGraphs) {
-  // Create first graph: 1 -> 2 -> 4
-  graph<int> g1;
-  g1.add_vertex(1);
-  g1.add_vertex(2, std::vector<int>{1});
-  g1.add_vertex(4, std::vector<int>{2});
-
-  // Create second graph: 3 -> 2 -> 5
-  graph<int> g2;
-  g2.add_vertex(3);
-  g2.add_vertex(2, std::vector<int>{3});
-  g2.add_vertex(5, std::vector<int>{2});
-
-  g1.merge(g2);
-
-  EXPECT_EQ(g1.size(), 5);
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  // Node 2 should have dependencies from both graphs
-  auto preds2 = g1.pred_of(2);
-  EXPECT_EQ(preds2.size(), 2);
-  EXPECT_TRUE(preds2.contains(1));
-  EXPECT_TRUE(preds2.contains(3));
-
-  // Node 2 should have successors from both graphs
-  auto succs2 = g1.succ_of(2);
-  EXPECT_EQ(succs2.size(), 2);
-  EXPECT_TRUE(succs2.contains(4));
-  EXPECT_TRUE(succs2.contains(5));
-}
-
-TEST_F(GraphMergeTest, MergeSelfIntoSelf) {
-  auto g1 = create_simple_graph();
-  auto g1_copy = g1; // Make a copy
-
-  g1.merge(g1_copy);
-
-  // Should be the same as original
-  EXPECT_EQ(g1.size(), 2);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(validate_graph_structure(g1));
-
-  auto preds2 = g1.pred_of(2);
-  EXPECT_EQ(preds2.size(), 1);
-  EXPECT_TRUE(preds2.contains(1));
-}
-
-// Tests for operator+=
-TEST_F(GraphMergeTest, OperatorPlusEquals) {
-  auto g1 = create_simple_graph();
-  auto g2 = create_another_graph();
-
-  auto &result = (g1 += g2);
-
-  // Should return reference to g1
-  EXPECT_EQ(&result, &g1);
-
-  EXPECT_EQ(g1.size(), 4);
-  EXPECT_TRUE(g1.contains(1));
-  EXPECT_TRUE(g1.contains(2));
-  EXPECT_TRUE(g1.contains(3));
-  EXPECT_TRUE(g1.contains(4));
-  EXPECT_TRUE(validate_graph_structure(g1));
-}
-
-// Tests for operator+
-TEST_F(GraphMergeTest, OperatorPlus) {
-  auto g1 = create_simple_graph();
-  auto g2 = create_another_graph();
-
-  auto g1_original = g1; // Keep original for comparison
-  auto g2_original = g2;
-
-  auto result = g1 + g2;
-
-  // Original graphs should be unchanged
-  EXPECT_EQ(g1.size(), g1_original.size());
-  EXPECT_EQ(g2.size(), g2_original.size());
-
-  // Result should contain merged content
-  EXPECT_EQ(result.size(), 4);
-  EXPECT_TRUE(result.contains(1));
-  EXPECT_TRUE(result.contains(2));
-  EXPECT_TRUE(result.contains(3));
-  EXPECT_TRUE(result.contains(4));
-  EXPECT_TRUE(validate_graph_structure(result));
-
-  auto preds2 = result.pred_of(2);
-  EXPECT_EQ(preds2.size(), 1);
-  EXPECT_TRUE(preds2.contains(1));
-
-  auto preds4 = result.pred_of(4);
-  EXPECT_EQ(preds4.size(), 1);
-  EXPECT_TRUE(preds4.contains(3));
-}
-
-TEST_F(GraphMergeTest, ChainedOperatorPlus) {
-  graph<int> g1;
-  g1.add_vertex(1);
-
-  graph<int> g2;
-  g2.add_vertex(2, std::vector<int>{1});
-
-  graph<int> g3;
-  g3.add_vertex(3, std::vector<int>{2});
-
-  auto result = g1 + g2 + g3;
-
-  EXPECT_EQ(result.size(), 3);
-  EXPECT_TRUE(result.contains(1));
-  EXPECT_TRUE(result.contains(2));
-  EXPECT_TRUE(result.contains(3));
-  EXPECT_TRUE(validate_graph_structure(result));
-
-  // Check the chain: 1 -> 2 -> 3
-  auto preds1 = result.pred_of(1);
-  EXPECT_EQ(preds1.size(), 0);
-
-  auto preds2 = result.pred_of(2);
-  EXPECT_EQ(preds2.size(), 1);
-  EXPECT_TRUE(preds2.contains(1));
-
-  auto preds3 = result.pred_of(3);
-  EXPECT_EQ(preds3.size(), 1);
-  EXPECT_TRUE(preds3.contains(2));
-}
-
-// Test that merged graphs can be used to create valid topo_graphs
-TEST_F(GraphMergeTest, MergedGraphTopologicalSort) {
-  auto g1 = create_simple_graph();  // 1 -> 2
-  auto g2 = create_another_graph(); // 3 -> 4
-
-  auto merged = g1 + g2;
-
-  // Should be able to create a valid topological sort
-  EXPECT_NO_THROW({
-    topo_graph<int> tg(merged);
-    EXPECT_EQ(tg.size(), 4);
-  });
-}
-
-TEST_F(GraphMergeTest, MergedGraphWithOverlapTopologicalSort) {
-  auto g1 = create_simple_graph();      // 1 -> 2
-  auto g2 = create_overlapping_graph(); // 2 -> 5
-
-  auto merged = g1 + g2; // Should create: 1 -> 2 -> 5
-
-  topo_graph<int> tg(merged);
-  EXPECT_EQ(tg.size(), 3);
-
-  // Verify topological order
-  std::vector<int> order;
-  for (size_t i = 0; i < tg.size(); ++i) {
-    order.push_back(tg[i]);
-  }
-
-  // Should be in order: 1, 2, 5
-  EXPECT_EQ(order[0], 1);
-  EXPECT_EQ(order[1], 2);
-  EXPECT_EQ(order[2], 5);
 }

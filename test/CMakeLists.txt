@@ -5,6 +5,9 @@ target_link_libraries(test_main GTest::gtest_main private_headers opflow::header
 add_executable(test_topo_graph topo_graph_test.cpp)
 target_link_libraries(test_topo_graph GTest::gtest_main opflow::headers)
 
+add_executable(test_graph graph_test.cpp)
+target_link_libraries(test_graph GTest::gtest_main opflow::headers)
+
 # History tests
 add_executable(test_history_deque history_deque_test.cpp)
 target_link_libraries(test_history_deque GTest::gtest_main opflow::headers)
@@ -66,6 +69,7 @@ target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_topo_graph)
+gtest_discover_tests(test_graph)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)
 gtest_discover_tests(test_history_comparison)
