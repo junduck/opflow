@@ -44,6 +44,14 @@ private:
   node_type node;
 };
 
+// Concepts
+
+template <typename R, typename U>
+concept range_of = std::ranges::forward_range<R> && std::convertible_to<std::ranges::range_value_t<R>, U>;
+
+template <typename R, typename U>
+concept range_derived_from = std::ranges::forward_range<R> && std::derived_from<std::ranges::range_value_t<R>, U>;
+
 // Convenience constants
 
 template <std::floating_point T>
@@ -102,5 +110,23 @@ concept associative = requires(Container const c) {
   // check iterator returns [key, value] pairs
   { std::declval<typename Container::const_iterator>()->first } -> std::convertible_to<Key const &>;
   { std::declval<typename Container::const_iterator>()->second } -> std::convertible_to<Value const &>;
+};
+
+struct strict_bool {
+  bool value;
+
+  constexpr strict_bool() noexcept : value(false) {}
+  constexpr strict_bool(bool v) noexcept : value(v) {}
+
+  template <typename T>
+  constexpr strict_bool(T) = delete;
+
+  template <typename T>
+  strict_bool &operator=(T) = delete;
+
+  constexpr explicit operator bool() const noexcept { return value; }
+  constexpr bool operator!() const noexcept { return !value; }
+
+  friend constexpr bool operator==(strict_bool const &lhs, strict_bool const &rhs) = default;
 };
 } // namespace opflow
