@@ -3,6 +3,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 
+using namespace opflow::chrono::literals; // For duration literals
 using namespace opflow::chrono;
 using namespace opflow;
 

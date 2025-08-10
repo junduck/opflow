@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <ratio>
+#include <type_traits>
 
 namespace opflow::chrono {
 namespace detail {
@@ -16,6 +17,19 @@ constexpr T gcd(T a, T b) noexcept {
   }
   return a;
 }
+
+// Choose a wider intermediate type for mixed multiplications to mitigate overflow.
+template <typename T>
+struct widen_int {
+#ifdef __SIZEOF_INT128__
+  using type =
+      std::conditional_t<(sizeof(T) < 8), std::int64_t, std::conditional_t<(sizeof(T) < 16), __int128_t, long double>>;
+#else
+  using type = std::conditional_t<(sizeof(T) < 8), std::int64_t, long double>;
+#endif
+};
+template <typename T>
+using widen_int_t = typename widen_int<T>::type;
 } // namespace detail
 
 // Type-erased std::ratio
@@ -23,17 +37,27 @@ template <std::integral Underlying>
 struct ratio {
   using rep = Underlying; ///< Type used to represent the numerator and denominator of the ratio
   rep num;                ///< numerator of the ratio
-  rep denom;              ///< denominator of the ratio
+  rep denom;              ///< denominator of the ratio (must be > 0)
 
-  constexpr ratio(rep n = 1, rep d = 1) noexcept : num(n), denom(d) {}
+  constexpr ratio(rep n = 1, rep d = 1) noexcept : num(n), denom(d) { normalize(); }
 
   template <auto Num, auto Denom>
-  constexpr ratio(std::ratio<Num, Denom>) noexcept : num(Num), denom(Denom) {}
+  constexpr ratio(std::ratio<Num, Denom>) noexcept : num(static_cast<rep>(Num)), denom(static_cast<rep>(Denom)) {
+    normalize();
+  }
 
-  constexpr ratio reduce() const noexcept {
-    // Reduce the ratio by dividing both num and denom by their gcd
-    auto g = detail::gcd(num, denom);
-    return ratio(num / g, denom / g);
+  constexpr ratio reduce() const noexcept { return *this; }
+
+  constexpr void normalize() noexcept {
+    if (denom < 0) { // keep denominator positive
+      denom = -denom;
+      num = -num;
+    }
+    auto g = detail::gcd(num < 0 ? -num : num, denom);
+    if (g > 1) {
+      num /= g;
+      denom /= g;
+    }
   }
 
   constexpr auto operator<=>(ratio const &other) const noexcept = default;
@@ -65,9 +89,16 @@ private:
     if (sec_per_tick == other.sec_per_tick) {
       return other.n;
     }
-    rep num = static_cast<rep>(other.sec_per_tick.num) * sec_per_tick.denom;
-    rep denom = static_cast<rep>(other.sec_per_tick.denom) * sec_per_tick.num;
-    return other.n * num / denom;
+    using wide = detail::widen_int_t<rep>;
+    wide num = static_cast<wide>(other.sec_per_tick.num) * static_cast<wide>(sec_per_tick.denom);
+    wide denom = static_cast<wide>(other.sec_per_tick.denom) * static_cast<wide>(sec_per_tick.num);
+    auto g = detail::gcd(num < 0 ? -num : num, denom < 0 ? -denom : denom);
+    if (g > 1) {
+      num /= g;
+      denom /= g;
+    }
+    wide scaled = static_cast<wide>(other.n) * num / denom; // truncation toward zero for integral rep
+    return static_cast<rep>(scaled);
   }
 
 public:
@@ -380,7 +411,7 @@ public:
   constexpr weeks(const duration<int64_t> &d) : duration<int64_t>(d) {}
 };
 
-// R POSIXct, Python datetime compatible
+// R POSIXct, Python datetime compatible (seconds since epoch, double rep)
 class POSIXct : public duration<double> {
 public:
   constexpr POSIXct() : duration<double>(0, second) {}
@@ -389,20 +420,22 @@ public:
   constexpr POSIXct(const duration<double> &d) : duration<double>(d) {}
 };
 
-// Factory functions for common durations
-constexpr nanoseconds operator""_ns(unsigned long long ns) { return nanoseconds(static_cast<int64_t>(ns), nano); }
+namespace literals {
+constexpr nanoseconds operator""_ns(unsigned long long ns) { return nanoseconds(static_cast<int64_t>(ns)); }
+constexpr microseconds operator""_us(unsigned long long us) { return microseconds(static_cast<int64_t>(us)); }
+constexpr milliseconds operator""_ms(unsigned long long ms) { return milliseconds(static_cast<int64_t>(ms)); }
+constexpr seconds operator""_s(unsigned long long s) { return seconds(static_cast<int64_t>(s)); }
+constexpr minutes operator""_min(unsigned long long min) { return minutes(static_cast<int64_t>(min)); }
+constexpr hours operator""_h(unsigned long long h) { return hours(static_cast<int64_t>(h)); }
+constexpr days operator""_d(unsigned long long d) { return days(static_cast<int64_t>(d)); }
 
-constexpr microseconds operator""_us(unsigned long long us) { return microseconds(static_cast<int64_t>(us), micro); }
-
-constexpr milliseconds operator""_ms(unsigned long long ms) { return milliseconds(static_cast<int64_t>(ms), milli); }
-
-constexpr seconds operator""_s(unsigned long long s) { return seconds(static_cast<int64_t>(s), second); }
-
-constexpr minutes operator""_min(unsigned long long min) { return minutes(static_cast<int64_t>(min), minute); }
-
-constexpr hours operator""_h(unsigned long long h) { return hours(static_cast<int64_t>(h), hour); }
-
-constexpr days operator""_d(unsigned long long d) { return days(static_cast<int64_t>(d), day); }
+constexpr POSIXct operator""_us(long double us) { return POSIXct(static_cast<double>(us) / 1'000'000.0); }
+constexpr POSIXct operator""_ms(long double ms) { return POSIXct(static_cast<double>(ms) / 1'000.0); }
+constexpr POSIXct operator""_s(long double s) { return POSIXct(static_cast<double>(s)); }
+constexpr POSIXct operator""_min(long double min) { return POSIXct(static_cast<double>(min) * 60.0); }
+constexpr POSIXct operator""_h(long double h) { return POSIXct(static_cast<double>(h) * 3600.0); }
+constexpr POSIXct operator""_d(long double d) { return POSIXct(static_cast<double>(d) * 86400.0); }
+} // namespace literals
 
 // Duration casting utility
 template <typename ToDuration, typename Rep>
@@ -421,18 +454,21 @@ constexpr ToDuration duration_cast(const duration<Rep> &d) noexcept {
   }
 
   // Prevent overflow in the conversion calculation
-  auto num = static_cast<to_rep>(src_period.num) * target_period.denom;
-  auto denom = static_cast<to_rep>(src_period.denom) * target_period.num;
-  if constexpr (std::floating_point<to_rep>) {
-    // For floating point, we can safely convert
-    return ToDuration(d.count() * num / denom, target_period);
-  } else {
-    // For integral types, we need to be careful about overflow
-    auto g = detail::gcd(num, denom);
+  using wide = detail::widen_int_t<to_rep>;
+  wide num = static_cast<wide>(src_period.num) * static_cast<wide>(target_period.denom);
+  wide denom = static_cast<wide>(src_period.denom) * static_cast<wide>(target_period.num);
+  auto g = detail::gcd(num < 0 ? -num : num, denom < 0 ? -denom : denom);
+  if (g > 1) {
     num /= g;
     denom /= g;
-    auto converted_count = static_cast<to_rep>(d.count()) * num / denom;
-    return ToDuration(converted_count);
+  }
+  if constexpr (std::floating_point<to_rep>) {
+    return ToDuration(static_cast<to_rep>(static_cast<long double>(d.count()) * static_cast<long double>(num) /
+                                          static_cast<long double>(denom)),
+                      target_period);
+  } else {
+    wide converted = static_cast<wide>(d.count()) * num / denom;
+    return ToDuration(static_cast<to_rep>(converted), target_period);
   }
 }
 
