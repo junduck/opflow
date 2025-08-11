@@ -52,6 +52,17 @@ concept range_of = std::ranges::forward_range<R> && std::convertible_to<std::ran
 template <typename R, typename U>
 concept range_derived_from = std::ranges::forward_range<R> && std::derived_from<std::ranges::range_value_t<R>, U>;
 
+template <typename Container, typename Key, typename Value>
+concept associative = requires(Container const c) {
+  // query using find
+  { c.find(std::declval<Key>()) } -> std::same_as<typename Container::const_iterator>;
+  { c.end() } -> std::sentinel_for<typename Container::const_iterator>;
+} && requires(std::ranges::range_value_t<Container> v) {
+  // value type
+  { std::get<0>(v) } -> std::convertible_to<Key const &>;
+  { std::get<1>(v) } -> std::convertible_to<Value const &>;
+};
+
 // Convenience constants
 
 template <std::floating_point T>
@@ -79,38 +90,16 @@ struct str_hash {
 };
 
 template <size_t N = 6, std::uniform_random_bit_generator G>
-std::string random_string(G &gen) {
+std::string random_string(G &gen, std::string_view prefix = "") {
   std::uniform_int_distribution<size_t> dist(0, sizeof(name_chars) - 2); // Exclude null terminator
 
-  std::string str(N, '\0');
-  for (size_t i = 0; i < N; ++i) {
+  std::string str(prefix.size() + N, '\0');
+  std::copy(prefix.begin(), prefix.end(), str.begin());
+  for (size_t i = prefix.size(); i < str.size(); ++i) {
     str[i] = name_chars[dist(gen)];
   }
   return str;
 }
-
-template <size_t N = 6, std::uniform_random_bit_generator G>
-std::string random_name(std::string_view prefix, G &gen) {
-  std::uniform_int_distribution<size_t> dist(0, sizeof(name_chars) - 2); // Exclude null terminator
-
-  std::string name(prefix.size() + N, '\0');
-  std::copy(prefix.begin(), prefix.end(), name.begin());
-  for (size_t i = prefix.size(); i < name.size(); ++i) {
-    name[i] = name_chars[dist(gen)];
-  }
-  return name;
-}
-
-template <typename Container, typename Key, typename Value>
-concept associative = requires(Container const c) {
-  // query using find
-  { c.find(std::declval<Key>()) } -> std::same_as<typename Container::const_iterator>;
-  { c.end() } -> std::same_as<typename Container::const_iterator>;
-
-  // check iterator returns [key, value] pairs
-  { std::declval<typename Container::const_iterator>()->first } -> std::convertible_to<Key const &>;
-  { std::declval<typename Container::const_iterator>()->second } -> std::convertible_to<Value const &>;
-};
 
 struct strict_bool {
   bool value;
