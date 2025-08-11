@@ -5,9 +5,9 @@
 #include <span>
 #include <vector>
 
-#include "impl/iterator.hpp"
+#include "iterator.hpp"
 
-namespace opflow {
+namespace opflow::detail {
 /**
  * @brief Memory-efficient history container using ring buffer storage
  *
@@ -204,8 +204,8 @@ public:
                     std::numeric_limits<size_type>::max() / sizeof(U) / value_size);
   }
 
-  using iterator = impl::iterator_t<history_ringbuf, false>;
-  using const_iterator = impl::iterator_t<history_ringbuf, true>;
+  using iterator = detail::iterator_t<history_ringbuf, false>;
+  using const_iterator = detail::iterator_t<history_ringbuf, true>;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
@@ -277,4 +277,4 @@ private:
     head = 0; // Reset head since we linearized the data
   }
 };
-} // namespace opflow
+} // namespace opflow::detail

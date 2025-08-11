@@ -24,13 +24,9 @@ struct op_base {
    *
    * This method is only called in aggregation context to flush and initialise a new aggregate window
    *
-   * @param timestamp Current timestamp
    * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
    */
-  virtual void init(time_type timestamp, data_type const *const *in) noexcept {
-    std::ignore = timestamp; // Unused in base class
-    std::ignore = in;        // Unused in base class
-  }
+  virtual void init(data_type const *const *in) noexcept { std::ignore = in; } // Unused in base class
 
   /**
    * @brief Update operator state with new data
@@ -38,7 +34,7 @@ struct op_base {
    * @param timestamp Current timestamp
    * @param in Pointer to input data, where in[parent_id] points to the data from parent operator
    */
-  virtual void step(time_type timestamp, data_type const *const *in) noexcept = 0;
+  virtual void step(data_type const *const *in) noexcept = 0;
 
   /**
    * @brief Update operator state by removing expired data
@@ -46,10 +42,7 @@ struct op_base {
    * @param expired Timestamp of the expired data
    * @param rm Pointer to removal data, where rm[parent_id] points to the data from parent operator
    */
-  virtual void inverse(time_type expired, data_type const *const *rm) noexcept {
-    std::ignore = expired; // Unused in base class
-    std::ignore = rm;      // Unused in base class
-  };
+  virtual void inverse(data_type const *const *rm) noexcept { std::ignore = rm; } // Unused in base class;
 
   /**
    * @brief Write operator's output value to the provided buffer

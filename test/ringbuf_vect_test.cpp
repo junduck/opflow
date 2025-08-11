@@ -3,9 +3,9 @@
 #include <numeric>
 #include <vector>
 
-#include "opflow/impl/ringbuf_vect.hpp"
+#include "opflow/detail/ringbuf_vect.hpp"
 
-using namespace opflow::impl;
+using namespace opflow::detail;
 
 class RingbufVectTest : public ::testing::Test {
 protected:

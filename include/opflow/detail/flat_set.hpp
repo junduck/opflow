@@ -4,7 +4,7 @@
 
 #include "iterator.hpp"
 
-namespace opflow::impl {
+namespace opflow::detail {
 /**
  * @brief A flat set implementation using custom container as underlying storage.
  *
@@ -142,4 +142,4 @@ private:
   container_type data; ///< Underlying storage for the set
 };
 
-} // namespace opflow::impl
+} // namespace opflow::detail

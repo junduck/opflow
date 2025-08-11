@@ -37,20 +37,20 @@ protected:
     const double *const *input = &input_ptr;
 
     // Initialize with first window_size values
-    op.init(0, input);
+    op.init(input);
     for (size_t i = 1; i < window_size; ++i) {
       input_ptr = &data[i];
-      op.step(0, input);
+      op.step(input);
     }
 
     // Roll through remaining values
     for (size_t i = window_size; i < data.size(); ++i) {
       // Remove the oldest value and add the new one
       input_ptr = &data[i - window_size];
-      op.inverse(0, input);
+      op.inverse(input);
 
       input_ptr = &data[i];
-      op.step(0, input);
+      op.step(input);
     }
 
     double result;
@@ -83,7 +83,7 @@ TEST_F(EWMATest, SingleValue) {
   const double *input_ptr = &input_value;
   const double *const *input = &input_ptr;
 
-  op.init(0, input);
+  op.init(input);
 
   double result;
   op.value(&result);
@@ -101,12 +101,12 @@ TEST_F(EWMATest, TwoValues) {
   double val1 = 10.0;
   const double *input_ptr = &val1;
   const double *const *input = &input_ptr;
-  op.init(0, input);
+  op.init(input);
 
   // Second value
   double val2 = 20.0;
   input_ptr = &val2;
-  op.step(0, input);
+  op.step(input);
 
   double result;
   op.value(&result);
@@ -134,10 +134,10 @@ TEST_F(EWMATest, CompareWithNaiveImplementation) {
       const double *input_ptr = data.data();
       const double *const *input = &input_ptr;
 
-      op.init(0, input);
+      op.init(input);
       for (size_t i = 1; i < data.size(); ++i) {
         input_ptr = &data[i];
-        op.step(0, input);
+        op.step(input);
       }
 
       double incremental_result;
@@ -206,11 +206,11 @@ TEST_F(EWMATest, InverseOperation) {
 
   // Add all values
   input_ptr = &values[0];
-  op.init(0, input);
+  op.init(input);
 
   for (size_t i = 1; i < values.size(); ++i) {
     input_ptr = &values[i];
-    op.step(0, input);
+    op.step(input);
   }
 
   double result_before;
@@ -218,7 +218,7 @@ TEST_F(EWMATest, InverseOperation) {
 
   // Remove the first value
   input_ptr = &values[0];
-  op.inverse(0, input);
+  op.inverse(input);
 
   double result_after;
   op.value(&result_after);
@@ -241,11 +241,11 @@ TEST_F(EWMATest, SmallAlpha) {
   const double *const *input = &input_ptr;
 
   input_ptr = &data[0];
-  op.init(0, input);
+  op.init(input);
 
   for (size_t i = 1; i < data.size(); ++i) {
     input_ptr = &data[i];
-    op.step(0, input);
+    op.step(input);
   }
 
   double result;
@@ -267,11 +267,11 @@ TEST_F(EWMATest, LargeAlpha) {
   const double *const *input = &input_ptr;
 
   input_ptr = &data[0];
-  op.init(0, input);
+  op.init(input);
 
   for (size_t i = 1; i < data.size(); ++i) {
     input_ptr = &data[i];
-    op.step(0, input);
+    op.step(input);
   }
 
   double result;
@@ -302,9 +302,9 @@ TEST_F(EWMATest, DifferentPositions) {
     const double *const *input = &input_ptr;
 
     if (i == 0) {
-      op.init(0, input);
+      op.init(input);
     } else {
-      op.step(0, input);
+      op.step(input);
     }
   }
 

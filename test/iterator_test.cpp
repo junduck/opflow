@@ -7,9 +7,9 @@
 #include <type_traits>
 #include <vector>
 
-#include "opflow/impl/iterator.hpp"
+#include "opflow/detail/iterator.hpp"
 
-using namespace opflow::impl;
+using namespace opflow::detail;
 
 // Test container that returns references
 class RefContainer {

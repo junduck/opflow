@@ -4,8 +4,8 @@
 #include <stdexcept>
 
 #include "common.hpp"
+#include "detail/history_ringbuf.hpp"
 #include "graph.hpp"
-#include "history_ringbuf.hpp"
 #include "op_base.hpp"
 #include "topo_graph.hpp"
 
@@ -44,7 +44,7 @@ struct window_descriptor {
   /**
    * @brief Window period if node is run in tumbling pipeline
    *
-   * @details If window_period is zero, pipeline will consult op->window_period() *ONCE* on intialisation to determine
+   * @details If window_period is zero, pipeline will consult op->window_period() on each step to determine
    * window period.
    */
   size_t window_period;
@@ -81,8 +81,8 @@ public:
 
   pipeline(graph<node_type> const &g, sliding mode,
            associative<node_type, window_descriptor<time_type>> auto const &desc)
-      : nodes(g), data_offset(), data_size(), history(), window_mode(mode), window_desc(), last_removed(), step_count(),
-        all_cumulative() {
+      : g(g), nodes(g), data_offset(), data_size(), history(), window_mode(mode), window_desc(), last_removed(),
+        step_count(), all_cumulative() {
 
     validate_nodes_topo();
     validate_nodes_compat();
@@ -111,19 +111,19 @@ public:
 
     // 1.0. handle root input node
     std::vector<data_type const *> input_ptrs{input_data.data()};
-    nodes[0]->step(timestamp, input_ptrs.data());
+    nodes[0]->step(input_ptrs.data());
     nodes[0]->value(data.data()); // Store root input node data directly
 
     for (size_t i = 1; i < nodes.size(); ++i) {
       // 1.1. prepare input pointers for current node
       input_ptrs.clear();
-      for (auto dep : nodes.preds(i)) {
+      for (auto dep : nodes.pred_of(i)) {
         input_ptrs.push_back(data.data() + data_offset[dep]);
       }
       // 1.2. call step on the operator node
-      nodes[i]->step(timestamp, input_ptrs.data());
-      // 1.2.1. update step count if window is step-based
-      if (window_mode == sliding::step) {
+      nodes[i]->step(input_ptrs.data());
+      if (!window_desc[i].cumulative) {
+        // only update step_count for non cumulative nodes
         ++step_count[i];
       }
 
@@ -156,6 +156,11 @@ public:
       return;
     }
 
+    size_t max_window_period = std::ranges::max(step_count);
+    while (history.size() > max_window_period) {
+      history.pop();
+    }
+#if 0
     // TODO: we need history.flush() for side effects/observability
     switch (window_mode) {
     case sliding::time: {
@@ -174,6 +179,7 @@ public:
       }
       break;
     }
+#endif
   }
 
   // TODO: there is a disconnect between the meaningful node objects user creates and the opaque IDs the current
@@ -239,7 +245,7 @@ private:
     for (size_t i = 1; i < nodes.size(); ++i) {
       auto const &node = nodes[i];
       // collect pointers to dependencies
-      auto deps = std::views::all(nodes.preds(i)) |
+      auto deps = std::views::all(nodes.pred_of(i)) |
                   std::views::transform([this](size_t id) { return static_cast<op_type const *>(nodes[id].get()); });
       if (!node->compatible_with(deps)) {
         throw node_error("Operator node is not compatible with its dependencies.", node);
@@ -285,9 +291,11 @@ private:
     switch (window_mode) {
     case sliding::time:
       last_removed.resize(nodes.size(), min_time<time_type>());
+      step_count.resize(nodes.size(), 0);
       for (size_t i = 0; i < nodes.size(); ++i) {
         if (window_desc[i].cumulative) {
           last_removed[i] = max_time<time_type>();
+          step_count[i] = 1; // Cumulative nodes always keep last step
         }
       }
       break;
@@ -310,19 +318,39 @@ private:
     // Post: op contains data in (window_start,        timestamp]
     // Obj: remove data in       (last_removed[id], window_start], update last_removed[id]
 
+#if 0
     // 1. Calculate removal range
     auto w = window_desc[id].window_size != duration_type{} ? window_desc[id].window_size : nodes[id]->window_size();
     auto rm_start = last_removed[id];
     auto rm_end = timestamp - w;
     auto rm_last = last_removed[id];
+    // In case of an enlarged dynamic window, window_start could be older than last_removed
     if (rm_start >= rm_end) {
       return; // No data to remove
     }
+#endif
+    auto w = window_desc[id].window_size != duration_type{} ? window_desc[id].window_size : nodes[id]->window_size();
+    auto window_start = timestamp - w;
 
     // 2. Process history entries that need to be removed
     std::vector<data_type const *> rm_ptrs;
-    rm_ptrs.reserve(nodes.preds(id).size());
+    rm_ptrs.reserve(nodes.pred_of(id).size());
 
+    size_t start_idx = history.size() - step_count[id];
+
+    for (size_t i = start_idx; i < history.size(); ++i) {
+      auto [time, data] = history[i];
+      if (time > window_start)
+        break;
+      // This data point is in the range (rm_start, rm_end]
+      rm_ptrs.clear();
+      for (auto dep : nodes.pred_of(id)) {
+        rm_ptrs.push_back(data.data() + data_offset[dep]);
+      }
+      nodes[id]->inverse(rm_ptrs.data());
+      --step_count[id];
+    }
+#if 0
     for (auto const [time, data] : history) {
       if (time <= rm_start)
         continue;
@@ -330,16 +358,17 @@ private:
         break;
       // This data point is in the range (rm_start, rm_end]
       rm_ptrs.clear();
-      for (auto dep : nodes.preds(id)) {
+      for (auto dep : nodes.pred_of(id)) {
         rm_ptrs.push_back(data.data() + data_offset[dep]);
       }
-      nodes[id]->inverse(time, rm_ptrs.data());
+      nodes[id]->inverse(rm_ptrs.data());
+      --step_count[id];
       // record last removed timestamp
       rm_last = time;
     }
-
     // 3. Update last removed timestamp
     last_removed[id] = rm_last;
+#endif
   }
 
   void inverse_sliding_step(time_type timestamp, size_t id) {
@@ -365,16 +394,16 @@ private:
 
     // 3.1. prepare data for inverse
     std::vector<const data_type *> rm_ptrs;
-    rm_ptrs.reserve(nodes.preds(id).size());
+    rm_ptrs.reserve(nodes.pred_of(id).size());
 
     for (size_t i = rm_start; i < rm_end; ++i) {
       auto [time, data] = history[i];
       rm_ptrs.clear();
-      for (auto dep : nodes.preds(id)) {
+      for (auto dep : nodes.pred_of(id)) {
         size_t data_start = data_offset[dep];
         rm_ptrs.push_back(data.data() + data_start);
       }
-      nodes[id]->inverse(time, rm_ptrs.data());
+      nodes[id]->inverse(rm_ptrs.data());
       // 3.2 decrement step count
       --step_count[id];
     }
@@ -383,11 +412,12 @@ private:
   }
 
 private:
+  graph<node_type> g;
   topo_graph<node_type> nodes;
   // TODO: history provider should be a template parameter for future extensibility
-  std::vector<size_t> data_offset;               ///< I/O data offsets for each node
-  size_t data_size;                              ///< Total size of I/O data for all nodes
-  history_ringbuf<time_type, data_type> history; ///< History buffer for node I/O data
+  std::vector<size_t> data_offset;                       ///< I/O data offsets for each node
+  size_t data_size;                                      ///< Total size of I/O data for all nodes
+  detail::history_ringbuf<time_type, data_type> history; ///< History buffer for node I/O data
 
   // window management
   sliding window_mode;                                   ///< Window sliding mode

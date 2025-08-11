@@ -2,9 +2,9 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-#include "opflow/impl/flat_set.hpp"
+#include "opflow/detail/flat_set.hpp"
 
-using namespace opflow::impl;
+using namespace opflow::detail;
 
 class FlatSetCornerCasesTest : public ::testing::Test {
 protected:

@@ -1,11 +1,10 @@
 #pragma once
 
-#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <type_traits>
 
-namespace opflow::impl {
+namespace opflow::detail {
 template <typename Self, bool IsConst>
 class iterator_t {
   using self_type = Self;
@@ -19,11 +18,8 @@ public:
   using value_type = std::remove_cv_t<std::remove_reference_t<reference>>;
   using pointer = std::add_pointer_t<reference>;
 
-private:
-  self_ptr self;
-  size_type index;
+  constexpr static bool noexcept_subscript = noexcept(std::declval<self_ptr>()->operator[](std::declval<size_type>()));
 
-public:
   iterator_t() noexcept : self(nullptr), index(0) {}
   iterator_t(self_ptr p, size_type idx) noexcept : self(p), index(idx) {}
 
@@ -32,81 +28,67 @@ public:
     requires(IsConst && !OtherConst)
       : self(other.self), index(other.index) {}
 
-  reference operator*() const {
-    assert(self != nullptr && "Iterator dereferencing null pointer");
-    return self->operator[](index);
-  }
-  pointer operator->() const
-    requires(std::is_reference_v<reference>)
-  {
-    assert(self != nullptr && "Iterator dereferencing null pointer");
-    return std::addressof(**this);
-  }
+  reference operator*() const noexcept(noexcept_subscript) { return self->operator[](index); }
+  auto operator->() const noexcept { return std::addressof(**this); }
 
-  iterator_t &operator++() {
+  iterator_t &operator++() noexcept {
     ++index;
     return *this;
   }
-  iterator_t operator++(int) {
+  iterator_t operator++(int) noexcept {
     iterator_t tmp = *this;
     ++index;
     return tmp;
   }
-  iterator_t &operator--() {
-    assert(index > 0 && "Iterator decrement underflow");
+  iterator_t &operator--() noexcept {
     --index;
     return *this;
   }
-  iterator_t operator--(int) {
-    assert(index > 0 && "Iterator decrement underflow");
+  iterator_t operator--(int) noexcept {
     iterator_t tmp = *this;
     --index;
     return tmp;
   }
-  iterator_t &operator+=(difference_type n) {
+  iterator_t &operator+=(difference_type n) noexcept {
     auto new_index = static_cast<difference_type>(index) + n;
-    assert(new_index >= 0 && "Iterator index underflow");
     index = static_cast<size_type>(new_index);
     return *this;
   }
-  iterator_t &operator-=(difference_type n) {
+  iterator_t &operator-=(difference_type n) noexcept {
     auto new_index = static_cast<difference_type>(index) - n;
-    assert(new_index >= 0 && "Iterator index underflow");
     index = static_cast<size_type>(new_index);
     return *this;
   }
-  iterator_t operator+(difference_type n) const {
+  iterator_t operator+(difference_type n) const noexcept {
     iterator_t tmp = *this;
     tmp += n;
     return tmp;
   }
-  iterator_t operator-(difference_type n) const {
+  iterator_t operator-(difference_type n) const noexcept {
     iterator_t tmp = *this;
     tmp -= n;
     return tmp;
   }
-  difference_type operator-(iterator_t const &other) const {
-    assert(self == other.self && "Iterators from different containers");
+  difference_type operator-(iterator_t const &other) const noexcept {
     return static_cast<difference_type>(index) - static_cast<difference_type>(other.index);
   }
-  reference operator[](difference_type n) const {
-    assert(self != nullptr && "Iterator dereferencing null pointer");
+  reference operator[](difference_type n) const noexcept(noexcept_subscript) {
     auto new_index = static_cast<difference_type>(index) + n;
-    assert(new_index >= 0 && "Iterator index underflow");
     return self->operator[](static_cast<size_type>(new_index));
   }
-  auto operator<=>(iterator_t const &other) const {
-    assert(self == other.self && "Comparing iterators from different containers");
-    return index <=> other.index;
-  }
+  auto operator<=>(iterator_t const &other) const noexcept { return index <=> other.index; }
 
-  bool operator==(iterator_t const &other) const { return self == other.self && index == other.index; }
+  bool operator==(iterator_t const &other) const noexcept { return self == other.self && index == other.index; }
 
   // Free function operator+ for (n + iterator)
-  friend iterator_t operator+(difference_type n, iterator_t const &it) { return it + n; }
+  friend iterator_t operator+(difference_type n, iterator_t const &it) noexcept { return it + n; }
 
   template <typename, bool>
   friend class iterator_t;
+
+private:
+  self_ptr self;
+  size_type index;
 };
 
-} // namespace opflow::impl
+} // namespace opflow::detail

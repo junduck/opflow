@@ -66,10 +66,19 @@ target_link_libraries(test_sorted_vect GTest::gtest_main opflow::headers)
 add_executable(test_ringbuf_vect ringbuf_vect_test.cpp)
 target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
 
+# Aggregator pipeline tests
+add_executable(test_aggregator_pipeline aggregator_pipeline_test.cpp)
+target_link_libraries(test_aggregator_pipeline GTest::gtest_main opflow::headers)
+
+# with_time_delta tests
+add_executable(test_with_time_delta with_time_delta_test.cpp)
+target_link_libraries(test_with_time_delta GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_topo_graph)
 gtest_discover_tests(test_graph)
+gtest_discover_tests(test_with_time_delta)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)
 gtest_discover_tests(test_history_comparison)
@@ -85,3 +94,4 @@ gtest_discover_tests(test_pipeline_comprehensive)
 gtest_discover_tests(test_op_ewma)
 gtest_discover_tests(test_sorted_vect)
 gtest_discover_tests(test_ringbuf_vect)
+gtest_discover_tests(test_aggregator_pipeline)

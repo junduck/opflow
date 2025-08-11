@@ -7,7 +7,7 @@
 
 #include "iterator.hpp"
 
-namespace opflow::impl {
+namespace opflow::detail {
 
 template <typename T, typename Container = std::vector<T>>
 class flat_multivect {
@@ -162,4 +162,4 @@ public:
     index.reserve(n_vect);
   }
 };
-} // namespace opflow::impl
+} // namespace opflow::detail

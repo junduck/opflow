@@ -1,10 +1,10 @@
-#include "opflow/history_deque.hpp"
+#include "opflow/detail/history_deque.hpp"
 #include "gtest/gtest.h"
 #include <array>
 #include <numeric>
 #include <vector>
 
-using namespace opflow;
+using namespace opflow::detail;
 
 class HistoryDequeTest : public ::testing::Test {
 protected:

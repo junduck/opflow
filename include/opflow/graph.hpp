@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <functional>
-#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -12,24 +11,24 @@
 namespace opflow {
 namespace detail {
 template <std::copy_constructible T>
-struct arg_wrapper {
+struct node_arg_t {
   T node;        ///< Node data
   uint32_t port; ///< Port ID, used to connect to specific output of an operator node
 
-  arg_wrapper(T const &node, uint32_t port) : node(node), port(port) {}
-  arg_wrapper(T &&node, uint32_t port) : node(std::move(node)), port(port) {}
+  node_arg_t(T const &node, uint32_t port) : node(node), port(port) {}
+  node_arg_t(T &&node, uint32_t port) : node(std::move(node)), port(port) {}
 
-  friend bool operator==(arg_wrapper const &lhs, arg_wrapper const &rhs) noexcept = default;
+  friend bool operator==(node_arg_t const &lhs, node_arg_t const &rhs) noexcept = default;
 };
 
-struct port_t {
+struct node_port_t {
   uint32_t pos; ///< Port index, used to connect to specific output of an operator node
 };
 } // namespace detail
 
 namespace literals {
 
-constexpr auto operator"" _p(unsigned long long pos) { return opflow::detail::port_t{static_cast<uint32_t>(pos)}; }
+constexpr auto operator"" _p(unsigned long long pos) { return detail::node_port_t{static_cast<uint32_t>(pos)}; }
 
 /**
  * @brief Create an arg wrapper for a specified node and output port
@@ -42,20 +41,14 @@ constexpr auto operator"" _p(unsigned long long pos) { return opflow::detail::po
  * @endcode
  */
 template <typename T>
-auto operator|(T &&node, opflow::detail::port_t pos) {
+auto operator|(T &&node, detail::node_port_t pos) {
   using DT = std::decay_t<T>;
-  return opflow::detail::arg_wrapper<DT>{std::forward<T>(node), pos.pos};
+  return detail::node_arg_t<DT>{std::forward<T>(node), pos.pos};
 }
 
 /// @overload
-inline auto operator|(char const *node, opflow::detail::port_t pos) {
-  return opflow::detail::arg_wrapper<std::string>{std::string(node), pos.pos};
-}
-
-/// @overload
-template <size_t N>
-auto operator|(char const (&node)[N], opflow::detail::port_t pos) {
-  return opflow::detail::arg_wrapper<std::string>{std::string(node), pos.pos};
+inline auto operator|(char const *node, detail::node_port_t pos) {
+  return detail::node_arg_t<std::string>{std::string(node), pos.pos};
 }
 } // namespace literals
 
@@ -65,39 +58,29 @@ auto operator|(char const (&node)[N], opflow::detail::port_t pos) {
  * @note If node is a char literal, it will be converted to std::string
  *
  * @code
- * auto arg = make_arg("node", 1); // creates an arg_wrapper<std::string>, not arg_wrapper<char const*>
+ * auto arg = make_node_arg("node", 1); // creates an arg_wrapper<std::string>, not arg_wrapper<char const*>
  * using namespace opflow::literals;
- * auto arg2 = make_arg("node" | 1_p);
+ * auto arg2 = make_node_arg("node" | 1_p);
  * @endcode
  */
 template <typename T>
-auto make_arg(T &&node, uint32_t pos = 0) {
+auto make_node_arg(T &&node, uint32_t pos = 0) {
   using DT = std::decay_t<T>;
-  return opflow::detail::arg_wrapper<DT>{std::forward<T>(node), pos};
+  return opflow::detail::node_arg_t<DT>{std::forward<T>(node), pos};
 }
 
 /// @overload
 template <typename T>
-auto make_arg(T &&node, opflow::detail::port_t pos) {
-  return make_arg(std::forward<T>(node), pos.pos);
+auto make_node_arg(T &&node, opflow::detail::node_port_t pos) {
+  return make_node_arg(std::forward<T>(node), pos.pos);
 }
 
 /// @overload
-inline auto make_arg(char const *node, uint32_t pos = 0) { return make_arg(std::string(node), pos); }
+inline auto make_node_arg(char const *node, uint32_t pos = 0) { return make_node_arg(std::string(node), pos); }
 
 /// @overload
-inline auto make_arg(char const *node, opflow::detail::port_t pos) { return make_arg(std::string(node), pos.pos); }
-
-/// @overload
-template <size_t N>
-auto make_arg(char const (&node)[N], uint32_t pos = 0) {
-  return make_arg(std::string(node), pos);
-}
-
-/// @overload
-template <size_t N>
-auto make_arg(char const (&node)[N], opflow::detail::port_t pos) {
-  return make_arg(std::string(node), pos.pos);
+inline auto make_node_arg(char const *node, opflow::detail::node_port_t pos) {
+  return make_node_arg(std::string(node), pos.pos);
 }
 
 /**
@@ -114,13 +97,13 @@ public:
   using node_type = T;
 
   /// @brief Type alias for a node with port
-  using node_port_type = detail::arg_wrapper<T>;
+  using node_arg_type = detail::node_arg_t<T>;
 
   /// @brief Type alias for a set of nodes
   using NodeSet = std::unordered_set<node_type, Hash, Equal>;
 
   /// @brief Type alias for a list of nodes with port
-  using NodeArgsSet = std::vector<node_port_type>;
+  using NodeArgsSet = std::vector<node_arg_type>;
 
   /// @brief Type alias for a map of node -> adjacent nodes
   using NodeMap = std::unordered_map<node_type, NodeSet, Hash, Equal>;
@@ -129,32 +112,30 @@ public:
   using NodeArgsMap = std::unordered_map<node_type, NodeArgsSet, Hash, Equal>;
 
   /**
-   * @brief Add a vertex with specified predecessors
+   * @brief Add connections to the graph
    *
-   * Adds a node to the graph along with its predecessors. If the node already exists,
-   * the new predecessors are added to its existing predecessor set.
+   * Add connections between node and its predecessors to the graph. If node and preds don't
+   * exist in the graph, they will be created automatically.
    *
-   * @tparam R A forward range type containing elements of type T
    * @param node The node to add to the graph
-   * @param preds A range of predecessors that this node has
+   * @param preds [OPTIONAL] A range of predecessors that this node has
    *
-   * @note If any predecessor doesn't exist in the graph, it will be created automatically
    * @note node is copy constructed into the graph, user should consider value semantics or
    * shared ownership if needed
    *
    * Example:
    * @code
-   * g.add_vertex("mynode", {"dep1", "dep2"}); // by default connects to port 0
-   * g.add_vertex("mynode", {{"dep1", 0}, {"dep2", 1}}); // specify ports (aka output index)
+   * g.add("mynode", {"dep1", "dep2"}); // by default connects to port 0
+   * g.add("mynode", {{"dep1", 0}, {"dep2", 1}}); // specify ports (aka output index)
    * using namespace opflow::literals;
-   * g.add_vertex("mynode", {"dep1" | 0_p, "dep2" | 1_p}); // use _p literal and operator| for expression
-   * g.add_vertex("mynode"); // add node without predecessors
-   * g.add_vertex("mynode", "dep1"); // add node with single predecessor
-   * g.add_vertex("mynode", "dep1" | 0_p); // add node with single predecessor and port
+   * g.add("mynode", {"dep1" | 0_p, "dep2" | 1_p}); // use _p literal and operator| for expression
+   * g.add("mynode"); // add node without predecessors
+   * g.add("mynode", "dep1"); // add node with single predecessor
+   * g.add("mynode", "dep1" | 0_p); // add node with single predecessor and port
    * @endcode
    */
   template <range_of<node_type> R>
-  void add_vertex(node_type const &node, R &&preds) {
+  void add(node_type const &node, R &&preds) {
     ensure_node(node); // Ensure the node is added to the graph
 
     for (auto const &pred : preds) {
@@ -164,8 +145,8 @@ public:
   }
 
   /// @overload
-  template <range_of<node_port_type> R>
-  void add_vertex(node_type const &node, R &&preds) {
+  template <range_of<node_arg_type> R>
+  void add(node_type const &node, R &&preds) {
     ensure_node(node); // Ensure the node is added to the graph
 
     for (auto const &[pred, port] : preds) {
@@ -175,22 +156,22 @@ public:
   }
 
   /// @overload
-  void add_vertex(node_type const &node, std::initializer_list<node_type> preds) {
+  void add(node_type const &node, std::initializer_list<node_type> preds) {
     std::vector<node_type> preds_list(preds);
-    add_vertex(node, preds_list);
+    add(node, preds_list);
   }
 
   /// @overload
-  void add_vertex(node_type const &node, std::initializer_list<node_port_type> edges) {
-    std::vector<node_port_type> edges_list(edges);
-    add_vertex(node, edges_list);
+  void add(node_type const &node, std::initializer_list<node_arg_type> edges) {
+    std::vector<node_arg_type> edges_list(edges);
+    add(node, edges_list);
   }
 
   /// @overload
-  void add_vertex(node_type const &node) { add_vertex(node, std::vector<node_type>{}); }
+  void add(node_type const &node) { ensure_node(node); }
 
   /// @overload
-  void add_vertex(node_type const &node, node_type const &pred) {
+  void add(node_type const &node, node_type const &pred) {
     ensure_node(node); // Ensure the node is added to the graph
 
     ensure_node(pred);
@@ -198,7 +179,7 @@ public:
   }
 
   /// @overload
-  void add_vertex(node_type const &node, node_port_type const &edge) {
+  void add(node_type const &node, node_arg_type const &edge) {
     ensure_node(node); // Ensure the node is added to the graph
 
     ensure_node(edge.node);
@@ -206,17 +187,62 @@ public:
   }
 
   /**
-   * @brief Remove a vertex from the graph
+   * @brief Remove connections from the graph
    *
-   * Removes the specified node from the graph along with all edges connecting
-   * to or from this node. This includes both incoming and outgoing edges.
+   * Remove connections between node and its predecessors from the graph. If only node is specified, the node
+   * itself is removed from the graph.
    *
-   * @param node The node to remove from the graph
+   * @param node The node to remove connections from
+   * @param preds [OPTIONAL] A range of predecessors to remove connections. If not specified, node is removed.
    *
-   * @note If the node doesn't exist, this operation has no effect
-   *
+   * Example:
+   * @code
+   * g.rm("mynode", {"dep1", "dep2"}); // remove all edges to dep1:0 and dep2:0, default port is 0
+   * g.rm("mynode", "dep1" | 42_p); // remove edge to dep1:42
+   * g.rm("mynode", {{"dep1" | 0_p}, {"dep2" | 1_p}}); // remove specific edges with ports
+   * g.rm("mynode"); // remove node itself.
+   * @endcode
    */
-  void rm_vertex(node_type const &node) {
+  template <range_of<node_type> R>
+  void rm(node_type const &node, R &&preds) {
+    if (predecessor.find(node) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    for (auto const &pred : preds) {
+      rm_edge_impl(node, pred, 0); // Remove with default port 0
+    }
+  }
+
+  /// @overload
+  template <range_of<node_arg_type> R>
+  void rm(node_type const &node, R &&edges) {
+    if (predecessor.find(node) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    for (auto const &[pred, port] : edges) {
+      rm_edge_impl(node, pred, port); // Remove with specified port
+    }
+  }
+
+  /// @overload
+  void rm(node_type const &node, node_type const &pred) {
+    if (predecessor.find(node) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    rm_edge_impl(node, pred, 0); // Remove with default port 0
+  }
+
+  /// @overload
+  void rm(node_type const &node, node_arg_type const &edge) {
+    if (predecessor.find(node) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    auto const &[pred_node, pred_port] = edge;
+    rm_edge_impl(node, pred_node, pred_port); // Remove with specified port
+  }
+
+  /// @overload
+  void rm(node_type const &node) {
     if (predecessor.find(node) == predecessor.end()) {
       return; // Node doesn't exist
     }
@@ -252,7 +278,7 @@ public:
    * @param old_node The node to replace
    * @param new_node The new node to replace the old one
    */
-  void replace_vertex(node_type const &old_node, node_type const &new_node) {
+  void replace(node_type const &old_node, node_type const &new_node) {
     if (predecessor.find(old_node) == predecessor.end()) {
       return; // Old node doesn't exist
     }
@@ -294,61 +320,6 @@ public:
   }
 
   /**
-   * @brief Remove edges from a node to its predecessors
-   *
-   * @warning Since duplicate edges are allowed in node arguments, this method will remove all [pred:port] edges
-   * in the node's argument list.
-   *
-   * @tparam R A forward range type containing elements of node_type or node_port_type
-   * @param node The node to remove edges from
-   * @param preds A range of edges to remove
-   *
-   * Example:
-   * @code
-   * g.rm_edge("mynode", {"dep1", "dep2"}); // remove all edges to dep1:0 and dep2:0, default port is 0
-   * g.rm_edge("mynode", "dep1" | 42_p); // remove edge to dep1:42
-   * g.rm_edge("mynode", {{"dep1" | 0_p}, {"dep2" | 1_p}}); // remove specific edges with ports
-   * @endcode
-   */
-  template <range_of<node_type> R>
-  void rm_edge(node_type const &node, R &&preds) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
-    }
-    for (auto const &pred : preds) {
-      rm_edge_impl(node, pred, 0); // Remove with default port 0
-    }
-  }
-
-  /// @overload
-  template <range_of<node_port_type> R>
-  void rm_edge(node_type const &node, R &&edges) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
-    }
-    for (auto const &[pred, port] : edges) {
-      rm_edge_impl(node, pred, port); // Remove with specified port
-    }
-  }
-
-  /// @overload
-  void rm_edge(node_type const &node, node_type const &pred) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
-    }
-    rm_edge_impl(node, pred, 0); // Remove with default port 0
-  }
-
-  /// @overload
-  void rm_edge(node_type const &node, node_port_type const &edge) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
-    }
-    auto const &[pred_node, pred_port] = edge;
-    rm_edge_impl(node, pred_node, pred_port); // Remove with specified port
-  }
-
-  /**
    * @brief Replace an edge in the graph
    *
    * @warning Since duplicate edges are allowed in node arguments, this method will replace all [pred:port] edges
@@ -360,15 +331,15 @@ public:
    *
    * Example:
    * @code
-   * g.add_vertex("mynode", {{"dep1" | 0_p}, {"another", 2}); // post: mynode -> [dep1:0, another:2]
+   * g.add("mynode", {{"dep1" | 0_p}, {"another", 2}); // post: mynode -> [dep1:0, another:2]
    * g.replace_edge("mynode", "dep1" | 0_p, "dep2" | 1_p); // post: mynode -> [dep2:1, another:2] (order is preserved)
    *
-   * g.add_vertex("mynode", {{"dep1" | 0_p}, {"another", 2}); // post: mynode -> [dep1:0, another:2]
-   * g.rm_edge("mynode", "dep1" | 0_p); // post: mynode -> [another:2]
-   * g.add_vertex("mynode", "dep2" | 1_p); // post: mynode -> [another:2, dep2:1] (notice dep2:1 is added at the end)
+   * g.add("mynode", {{"dep1" | 0_p}, {"another", 2}); // post: mynode -> [dep1:0, another:2]
+   * g.rm("mynode", "dep1" | 0_p); // post: mynode -> [another:2]
+   * g.add("mynode", "dep2" | 1_p); // post: mynode -> [another:2, dep2:1] (notice dep2:1 is added at the end)
    * @endcode
    */
-  void replace_edge(node_type const &node, node_port_type const &old_edge, node_port_type const &new_edge) {
+  void replace(node_type const &node, node_arg_type const &old_edge, node_arg_type const &new_edge) {
     if (predecessor.find(node) == predecessor.end()) {
       return; // Node doesn't exist
     }
@@ -541,28 +512,6 @@ public:
     return leaves;
   }
 
-  /*
-  if a node has conflicting predecessors, lhs takes precedence and keep existing edges, (only new nodes are added)
-
-  Example 0:
-  A -> [B:0, C:1]
-  A -> [B:0, B:1]
-
-  after merging:
-
-  predecessor[A] = {B, C}
-  argmap[A] = [B:0, C:1] (A will still be called as A(B:0, C:1))
-
-  Example 1:
-  A -> [B:0, C:1]
-  A -> [D:0, E:0]
-
-  after merging:
-
-  predecessor[A] = {B, C} (no effect)
-  argmap[A] = [B:0, C:1] (A will be called as A(B:0, C:1))
-  */
-
   /**
    * @brief Merge another graph into this
    *
@@ -594,7 +543,7 @@ public:
 
     // Add all new nodes to the graph
     for (auto const &new_node : nodes_to_add) {
-      add_vertex(new_node, other.args_of(new_node));
+      add(new_node, other.args_of(new_node));
     }
   }
 
@@ -632,7 +581,7 @@ private:
   // remove edge node -> [pred:port]
   void rm_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
     auto &args = argmap[node];
-    auto rm = make_arg(pred, port);
+    auto rm = make_node_arg(pred, port);
 
     if (std::find(args.begin(), args.end(), rm) == args.end()) {
       return; // Edge doesn't exist, nothing to remove

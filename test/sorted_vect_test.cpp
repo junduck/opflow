@@ -3,9 +3,9 @@
 #include <random>
 #include <vector>
 
-#include "opflow/impl/sorted_vect.hpp"
+#include "opflow/detail/sorted_vect.hpp"
 
-using namespace opflow::impl;
+using namespace opflow::detail;
 
 class SortedVectTest : public ::testing::Test {
 protected:

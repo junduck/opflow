@@ -16,48 +16,48 @@ protected:
   // Helper function to create a simple linear chain: A -> B -> C
   graph<int> create_linear_chain() {
     graph<int> g;
-    g.add_vertex(1);      // A (no dependencies)
-    g.add_vertex(2, {1}); // B depends on A
-    g.add_vertex(3, {2}); // C depends on B
+    g.add(1);      // A (no dependencies)
+    g.add(2, {1}); // B depends on A
+    g.add(3, {2}); // C depends on B
     return g;
   }
 
   // Helper function to create a diamond pattern: A -> B, C; B,C -> D
   graph<int> create_diamond() {
     graph<int> g;
-    g.add_vertex(1);         // A (no dependencies)
-    g.add_vertex(2, {1});    // B depends on A
-    g.add_vertex(3, {1});    // C depends on A
-    g.add_vertex(4, {2, 3}); // D depends on B and C
+    g.add(1);         // A (no dependencies)
+    g.add(2, {1});    // B depends on A
+    g.add(3, {1});    // C depends on A
+    g.add(4, {2, 3}); // D depends on B and C
     return g;
   }
 
   // Helper function to create a complex graph
   graph<int> create_complex_graph() {
     graph<int> g;
-    g.add_vertex(1);         // Root
-    g.add_vertex(2);         // Another root
-    g.add_vertex(3, {1});    // depends on 1
-    g.add_vertex(4, {1, 2}); // depends on 1, 2
-    g.add_vertex(5, {3});    // depends on 3
-    g.add_vertex(6, {3, 4}); // depends on 3, 4
-    g.add_vertex(7, {5, 6}); // depends on 5, 6
+    g.add(1);         // Root
+    g.add(2);         // Another root
+    g.add(3, {1});    // depends on 1
+    g.add(4, {1, 2}); // depends on 1, 2
+    g.add(5, {3});    // depends on 3
+    g.add(6, {3, 4}); // depends on 3, 4
+    g.add(7, {5, 6}); // depends on 5, 6
     return g;
   }
 
   // Helper function to create a graph with cycle
   graph<int> create_cyclic_graph() {
     graph<int> g;
-    g.add_vertex(1, {{3, 0}}); // 1 depends on 3
-    g.add_vertex(2, {{1, 0}}); // 2 depends on 1
-    g.add_vertex(3, {{2, 0}}); // 3 depends on 2 (creates cycle)
+    g.add(1, {{3, 0}}); // 1 depends on 3
+    g.add(2, {{1, 0}}); // 2 depends on 1
+    g.add(3, {{2, 0}}); // 3 depends on 2 (creates cycle)
     return g;
   }
 
   // Helper function to create a self-loop graph
   graph<int> create_self_loop_graph() {
     graph<int> g;
-    g.add_vertex(1, {1}); // Self dependency
+    g.add(1, {1}); // Self dependency
     return g;
   }
 
@@ -65,11 +65,11 @@ protected:
   graph<int> create_args_test_graph() {
     using namespace opflow::literals;
     graph<int> g;
-    g.add_vertex(1);                     // Root node
-    g.add_vertex(2);                     // Another root node
-    g.add_vertex(3, {1 | 0_p});          // depends on 1:0
-    g.add_vertex(4, {1 | 1_p, 2 | 0_p}); // depends on 1:1, 2:0 (in that order)
-    g.add_vertex(5, {3 | 2_p, 4 | 1_p}); // depends on 3:2, 4:1 (in that order)
+    g.add(1);                     // Root node
+    g.add(2);                     // Another root node
+    g.add(3, {1 | 0_p});          // depends on 1:0
+    g.add(4, {1 | 1_p, 2 | 0_p}); // depends on 1:1, 2:0 (in that order)
+    g.add(5, {3 | 2_p, 4 | 1_p}); // depends on 3:2, 4:1 (in that order)
     return g;
   }
 
@@ -77,11 +77,11 @@ protected:
   graph<int> create_complex_args_graph() {
     using namespace opflow::literals;
     graph<int> g;
-    g.add_vertex(1);                              // Root
-    g.add_vertex(2);                              // Root
-    g.add_vertex(3, {1 | 0_p, 1 | 1_p});          // depends on 1:0, 1:1 (duplicate node, different ports)
-    g.add_vertex(4, {2 | 2_p, 1 | 3_p, 2 | 1_p}); // depends on 2:2, 1:3, 2:1 (mixed order)
-    g.add_vertex(5, {3 | 0_p, 4 | 0_p, 3 | 1_p}); // depends on 3:0, 4:0, 3:1 (duplicate node)
+    g.add(1);                              // Root
+    g.add(2);                              // Root
+    g.add(3, {1 | 0_p, 1 | 1_p});          // depends on 1:0, 1:1 (duplicate node, different ports)
+    g.add(4, {2 | 2_p, 1 | 3_p, 2 | 1_p}); // depends on 2:2, 1:3, 2:1 (mixed order)
+    g.add(5, {3 | 0_p, 4 | 0_p, 3 | 1_p}); // depends on 3:0, 4:0, 3:1 (duplicate node)
     return g;
   }
 
@@ -182,10 +182,10 @@ protected:
   // Helper to create a string graph
   graph<std::string> create_string_graph() {
     graph<std::string> g;
-    g.add_vertex("root");
-    g.add_vertex("child1", {"root"});
-    g.add_vertex("child2", {"root"});
-    g.add_vertex("grandchild", {"child1", "child2"});
+    g.add("root");
+    g.add("child1", {"root"});
+    g.add("child2", {"root"});
+    g.add("grandchild", {"child1", "child2"});
     return g;
   }
 
@@ -239,7 +239,7 @@ TEST_F(TopoGraphTest, ConstructFromEmptyGraph) {
 
 TEST_F(TopoGraphTest, ConstructFromSingleNode) {
   graph<int> g;
-  g.add_vertex(42);
+  g.add(42);
   topo_graph<int> tg(g);
 
   EXPECT_FALSE(tg.empty());
@@ -327,10 +327,10 @@ TEST_F(TopoGraphTest, ThrowsOnSelfLoop) {
 // Edge cases
 TEST_F(TopoGraphTest, MultipleRoots) {
   graph<int> g;
-  g.add_vertex(1);            // Root 1
-  g.add_vertex(2);            // Root 2
-  g.add_vertex(3);            // Root 3
-  g.add_vertex(4, {1, 2, 3}); // Depends on all roots
+  g.add(1);            // Root 1
+  g.add(2);            // Root 2
+  g.add(3);            // Root 3
+  g.add(4, {1, 2, 3}); // Depends on all roots
 
   topo_graph<int> tg(g);
 
@@ -349,12 +349,12 @@ TEST_F(TopoGraphTest, MultipleRoots) {
 TEST_F(TopoGraphTest, DisconnectedComponents) {
   graph<int> g;
   // Component 1: 1 -> 2
-  g.add_vertex(1);
-  g.add_vertex(2, {1});
+  g.add(1);
+  g.add(2, {1});
 
   // Component 2: 3 -> 4
-  g.add_vertex(3);
-  g.add_vertex(4, {3});
+  g.add(3);
+  g.add(4, {3});
 
   topo_graph<int> tg(g);
 
@@ -365,9 +365,9 @@ TEST_F(TopoGraphTest, DisconnectedComponents) {
 
 TEST_F(TopoGraphTest, NodesWithNoPredecessors) {
   graph<int> g;
-  g.add_vertex(1);
-  g.add_vertex(2);
-  g.add_vertex(3);
+  g.add(1);
+  g.add(2);
+  g.add(3);
 
   topo_graph<int> tg(g);
 
@@ -458,9 +458,9 @@ TEST_F(TopoGraphTest, LargeGraph) {
 
   // Create a large linear chain
   constexpr int N = 1000;
-  g.add_vertex(0);
+  g.add(0);
   for (int i = 1; i < N; ++i) {
-    g.add_vertex(i, {i - 1});
+    g.add(i, {i - 1});
   }
 
   topo_graph<int> tg(g);
@@ -485,9 +485,9 @@ TEST_F(TopoGraphTest, WideGraph) {
 
   // Create a graph with one root and many children
   constexpr int N = 100;
-  g.add_vertex(0); // Root
+  g.add(0); // Root
   for (int i = 1; i <= N; ++i) {
-    g.add_vertex(i, {0});
+    g.add(i, {0});
   }
 
   topo_graph<int> tg(g);
@@ -543,9 +543,9 @@ TEST_F(TopoGraphTest, RangeBasedForLoop) {
 // Edge case: Empty predecessor lists in complex scenarios
 TEST_F(TopoGraphTest, MixedEmptyAndNonEmptyPreds) {
   graph<int> g;
-  g.add_vertex(1);                     // No predecessors
-  g.add_vertex(2, std::vector<int>{}); // Explicitly empty predecessors
-  g.add_vertex(3, {1, 2});             // Multiple predecessors
+  g.add(1);                     // No predecessors
+  g.add(2, std::vector<int>{}); // Explicitly empty predecessors
+  g.add(3, {1, 2});             // Multiple predecessors
 
   topo_graph<int> tg(g);
 
@@ -562,13 +562,13 @@ TEST_F(TopoGraphTest, ComplexDependencyPatterns) {
   graph<int> g;
 
   // Create a more complex dependency pattern
-  g.add_vertex(1); // Root
-  g.add_vertex(2, {1});
-  g.add_vertex(3, {1});
-  g.add_vertex(4, {2, 3});
-  g.add_vertex(5, {2});
-  g.add_vertex(6, {3});
-  g.add_vertex(7, {4, 5, 6});
+  g.add(1); // Root
+  g.add(2, {1});
+  g.add(3, {1});
+  g.add(4, {2, 3});
+  g.add(5, {2});
+  g.add(6, {3});
+  g.add(7, {4, 5, 6});
 
   topo_graph<int> tg(g);
 
@@ -703,10 +703,10 @@ TEST_F(TopoGraphTest, ComplexArgsTest) {
 TEST_F(TopoGraphStringTest, StringArgsTest) {
   using namespace opflow::literals;
   graph<std::string> g;
-  g.add_vertex("root");
-  g.add_vertex("child1", {"root" | 0_p});
-  g.add_vertex("child2", {"root" | 1_p});
-  g.add_vertex("grandchild", {"child1" | 2_p, "child2" | 3_p, "root" | 4_p});
+  g.add("root");
+  g.add("child1", {"root" | 0_p});
+  g.add("child2", {"root" | 1_p});
+  g.add("grandchild", {"child1" | 2_p, "child2" | 3_p, "root" | 4_p});
 
   topo_graph<std::string> tg(g);
 
@@ -794,7 +794,7 @@ TEST_F(TopoGraphTest, EmptyGraphArgsTest) {
 // Test args in single node graph
 TEST_F(TopoGraphTest, SingleNodeArgsTest) {
   graph<int> g;
-  g.add_vertex(42);
+  g.add(42);
   topo_graph<int> tg(g);
 
   EXPECT_EQ(tg.size(), 1);

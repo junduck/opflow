@@ -4,9 +4,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "detail/flat_multivect.hpp"
+#include "detail/iterator.hpp"
 #include "graph.hpp"
-#include "impl/flat_multivect.hpp"
-#include "impl/iterator.hpp"
 
 namespace opflow {
 template <typename T>
@@ -244,14 +244,14 @@ public:
 
   // iterators
 
-  using const_iterator = impl::iterator_t<topo_graph, true>;
+  using const_iterator = detail::iterator_t<topo_graph, true>;
   const_iterator begin() const noexcept { return const_iterator{this, 0}; }
   const_iterator end() const noexcept { return const_iterator{this, size()}; }
 
 private:
-  impl::flat_multivect<size_t> pred_map;  ///< Flattened storage of predecessors: id -> [pred ids]
-  impl::flat_multivect<arg_type> arg_map; ///< Flattened storage of arguments: id -> [pred:port]
-  std::vector<T> sorted;                  ///< Sorted nodes in topological order: id -> node
+  detail::flat_multivect<size_t> pred_map;  ///< Flattened storage of predecessors: id -> [pred ids]
+  detail::flat_multivect<arg_type> arg_map; ///< Flattened storage of arguments: id -> [pred:port]
+  std::vector<T> sorted;                    ///< Sorted nodes in topological order: id -> node
 };
 
 // Deduction guide

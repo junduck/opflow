@@ -5,10 +5,10 @@
 #include <numeric>
 #include <vector>
 
-#include "opflow/impl/flat_multivect.hpp"
+#include "opflow/detail/flat_multivect.hpp"
 
 namespace {
-using namespace opflow::impl;
+using namespace opflow::detail;
 
 class FlatMultiVectTest : public ::testing::Test {
 protected:

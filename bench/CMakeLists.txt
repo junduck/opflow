@@ -21,3 +21,9 @@ target_link_libraries(inlined_trait PRIVATE benchmark::benchmark)
 # Test for sorted container access patterns
 add_executable(bench_sorted_lookup sorted_lookup.cpp)
 target_link_libraries(bench_sorted_lookup PRIVATE benchmark::benchmark)
+
+add_executable(bench_pipeline pipeline_bench.cpp)
+target_link_libraries(bench_pipeline PRIVATE benchmark::benchmark opflow::headers)
+
+add_executable(bench_vtbl vtbl_benchmark.cpp)
+target_link_libraries(bench_vtbl PRIVATE benchmark::benchmark opflow::headers)

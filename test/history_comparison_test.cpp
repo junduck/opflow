@@ -1,11 +1,11 @@
-#include "opflow/history_deque.hpp"
-#include "opflow/history_ringbuf.hpp"
+#include "opflow/detail/history_deque.hpp"
+#include "opflow/detail/history_ringbuf.hpp"
 #include "gtest/gtest.h"
 #include <array>
 #include <numeric>
 #include <vector>
 
-using namespace opflow;
+using namespace opflow::detail;
 
 class HistoryComparisonTest : public ::testing::Test {
 protected:

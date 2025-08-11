@@ -5,9 +5,9 @@
 #include <numeric>
 #include <vector>
 
-#include "opflow/history_ringbuf.hpp"
+#include "opflow/detail/history_ringbuf.hpp"
 
-using namespace opflow;
+using namespace opflow::detail;
 
 class HistoryRingbufTest : public ::testing::Test {
 protected:

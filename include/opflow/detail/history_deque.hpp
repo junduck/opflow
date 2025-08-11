@@ -5,9 +5,9 @@
 #include <span>
 #include <vector>
 
-#include "impl/iterator.hpp"
+#include "iterator.hpp"
 
-namespace opflow {
+namespace opflow::detail {
 /**
  * @brief History container implementation using std::deque for storage
  *
@@ -137,8 +137,8 @@ public:
   // Additional standard container methods
   size_type max_size() const noexcept { return std::min(tick.max_size(), value.max_size()); }
 
-  using iterator = impl::iterator_t<history_deque, false>;
-  using const_iterator = impl::iterator_t<history_deque, true>;
+  using iterator = detail::iterator_t<history_deque, false>;
+  using const_iterator = detail::iterator_t<history_deque, true>;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
@@ -156,4 +156,4 @@ public:
   const_reverse_iterator crbegin() const { return const_reverse_iterator(cend()); }
   const_reverse_iterator crend() const { return const_reverse_iterator(cbegin()); }
 };
-} // namespace opflow
+} // namespace opflow::detail

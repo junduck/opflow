@@ -1,10 +1,13 @@
+#pragma once
+
 #include <algorithm>
 #include <vector>
 
-namespace opflow::impl {
+namespace opflow::detail {
 template <typename T, size_t BIN_THRES = 100>
 class sorted_vect : public std::vector<T> {
   using base = std::vector<T>;
+  using base::push_back;
 
 public:
   using base::base;
@@ -62,8 +65,5 @@ public:
       base::erase(base::begin() + static_cast<ptrdiff_t>(rank));
     }
   }
-
-private:
-  using base::push_back;
 };
-} // namespace opflow::impl
+} // namespace opflow::detail

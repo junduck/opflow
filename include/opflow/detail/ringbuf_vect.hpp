@@ -8,7 +8,7 @@
 
 #include "iterator.hpp"
 
-namespace opflow::impl {
+namespace opflow::detail {
 template <typename T>
 class ringbuf_vect {
 public:
@@ -101,8 +101,8 @@ public:
     }
   }
 
-  using iterator = impl::iterator_t<ringbuf_vect, false>;
-  using const_iterator = impl::iterator_t<ringbuf_vect, true>;
+  using iterator = detail::iterator_t<ringbuf_vect, false>;
+  using const_iterator = detail::iterator_t<ringbuf_vect, true>;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
@@ -157,4 +157,4 @@ private:
   size_type count;
   size_type cap;
 };
-} // namespace opflow::impl
+} // namespace opflow::detail
