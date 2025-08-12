@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,40 @@ Time max_time() noexcept {
     return Time::max(); // Use max time for non-arithmetic types
   }
 }
+
+template <typename Data>
+struct static_cast_conv {
+  template <typename T>
+  auto operator()(T v) const noexcept {
+    return static_cast<Data>(v);
+  }
+};
+
+template <typename Data, typename Ratio>
+struct chrono_conv {
+  template <typename T>
+  auto operator()(T timestamp) const noexcept {
+    using target_t = std::chrono::duration<Data, Ratio>;
+    auto dur_epoch = timestamp.time_since_epoch();
+    auto dur_target = std::chrono::duration_cast<target_t>(dur_epoch);
+    return dur_target.count();
+  }
+};
+
+template <typename Data>
+using chrono_us_conv = chrono_conv<Data, std::micro>;
+
+template <typename Data>
+using chrono_ms_conv = chrono_conv<Data, std::milli>;
+
+template <typename Data>
+using chrono_s_conv = chrono_conv<Data, std::ratio<1>>;
+
+template <typename Data>
+using chrono_min_conv = chrono_conv<Data, std::chrono::minutes::period>;
+
+template <typename Data>
+using chrono_h_conv = chrono_conv<Data, std::chrono::hours::period>;
 
 // Error handling
 
