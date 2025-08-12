@@ -70,10 +70,15 @@ target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
 add_executable(test_with_time_delta with_time_delta_test.cpp)
 target_link_libraries(test_with_time_delta GTest::gtest_main opflow::headers)
 
+# tumbling window tests
+add_executable(test_tumbling_window tumbling_win_test.cpp)
+target_link_libraries(test_tumbling_window GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_topo_graph)
 gtest_discover_tests(test_graph)
+gtest_discover_tests(test_tumbling_window)
 gtest_discover_tests(test_with_time_delta)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)

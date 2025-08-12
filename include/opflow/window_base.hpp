@@ -3,8 +3,44 @@
 #include "common.hpp"
 
 namespace opflow {
+
+/**
+ * @brief Window spec
+ *
+ * @tparam Time
+ */
+template <typename Time>
+struct window_spec {
+  Time timestamp; ///< Timestamp associated with this window
+  size_t size;    ///< Size of the window in data points
+  size_t evict;   ///< Number of data points to evict from queue after window aggregation
+};
+
 /**
  * @brief Base class for window emitters
+ *
+ * Instruction for coding agent:
+ *
+ * 1. Window emitter signals when a window is emitted for an aggregator.
+ * 2. Window emitter itself does not store and process data points.
+ * 3. Aggregator will call process() to determine if a window should be emitted.
+ * 4. Aggregator will call emit() if a window is emitted.
+ * 5. Aggregator will collect data points and perform aggregation, this is NOT the concern of a window emitter.
+ * 6. Data points in the window are emitted and evicted FIFO. Following table illustrates an example.
+ *
+ * | queue      | process | emit          | window   | note                                      |
+ * |------------|---------|---------------|----------|-------------------------------------------|
+ * | 0          | false   | N/A           | N/A      | no window                                 |
+ * | 0,1        | false   | N/A           | N/A      | no window                                 |
+ * | 0,1,2      | false   | N/A           | N/A      | no window                                 |
+ * | 0,1,2,3    | true    | [T0, 3, 2]    | 0,1,2    | 2 data points will be popped after aggr   |
+ * | 2,3,4      | false   | N/A           | N/A      | no window                                 |
+ * | 2,3,4,5    | true    | [T1, 4, 4]    | 2,3,4,5  | 4 data points will be popped after aggr   |
+ *
+ * Note that the queue and window are maintained by aggregator and is for exposition only.
+ *
+ * @see opflow::win::tumbling for a reference implementation.
+ * @see opflow::win::cusum_filter for a reference implementation that inspects input data.
  *
  */
 template <typename Time, typename Data>
@@ -12,29 +48,37 @@ struct window_base {
   using time_type = Time;
   using dura_type = duration_t<time_type>;
   using data_type = Data;
+  using spec_type = window_spec<time_type>;
 
   /**
    * @brief Process a new data point
    *
    * @param t   The timestamp of the incoming data point.
-   * @param in  Pointer to the incoming data point.
-   * @return true if a window should be emitted after this data point.
+   * @param in  Pointer to the incoming data point. May not be used if impl does not inspect data.
+   * @return true if a window is emitted, false otherwise.
    * @note  This method is called for each incoming data point.
    */
   virtual bool process(time_type t, data_type const *in) noexcept = 0;
 
   /**
-   * @brief Evict data points from window after a window is emitted.
+   * @brief Force emission of the current window, if any.
    *
-   * This method is called only after process() returns true. Transformer will evict
-   * oldest elements from the window according to return value.
+   * This method is called to force a window emission (e.g., on timeout).
+   * If a window is available to emit, returns true; otherwise, returns false.
+   * After returning true, emit() should be called to get the window specification.
    *
-   * @return size_t number of data point to evict from window.
-   *                - Return 0 for cumulative window (no eviction)
-   *                - Return N for tumbling window (evict all N elements in window)
-   *                - Return 0 < K < N for sliding window (evict K elements in window)
+   * @return true if a window is emitted, false otherwise.
    */
-  virtual size_t evict() noexcept = 0;
+  virtual bool flush() noexcept = 0;
+
+  /**
+   * @brief Get current window specification
+   *
+   * This method is called only after process() returns true.
+   *
+   * @return spec_type
+   */
+  virtual spec_type emit() noexcept = 0;
 
   /**
    * @brief Reset the internal state of the window.

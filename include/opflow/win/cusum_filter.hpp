@@ -20,13 +20,16 @@ template <typename Time, std::floating_point Data>
 struct cusum_filter : window_base<Time, Data> {
   using base = window_base<Time, Data>;
   using typename base::data_type;
+  using typename base::spec_type;
   using typename base::time_type;
 
-  data_type thres;
+  data_type const thres;
+  size_t const idx;
+
   data_type lagged_log;
   data_type cusum_pos, cusum_neg;
-  size_t n;
-  size_t idx;
+  spec_type curr;
+  bool init;
 
   /**
    * @brief Construct a new cusum filter object
@@ -35,26 +38,41 @@ struct cusum_filter : window_base<Time, Data> {
    * @param inspect_index index of the data point to calculate log difference
    */
   cusum_filter(data_type log_threshold, size_t inspect_index)
-      : thres(log_threshold), lagged_log(0), cusum_pos(0), cusum_neg(0), n(0), idx(inspect_index) {}
+      : thres(log_threshold), idx(inspect_index), lagged_log(), cusum_pos(), cusum_neg(), curr(), init() {}
 
-  bool process(time_type, data_type const *in) noexcept override {
+  bool process(time_type time, data_type const *in) noexcept override {
     auto curr_log = std::log(in[idx]);
-    if (!n++) {
+    curr.timestamp = time;
+    ++curr.size;
+    if (!init) {
       lagged_log = curr_log;
+      init = true;
       return false;
     }
 
-    data_type gain = curr_log - lagged_log;
+    auto gain = curr_log - lagged_log;
     lagged_log = curr_log;
     cusum_pos = std::max(data_type{}, cusum_pos + gain);
     cusum_neg = std::min(data_type{}, cusum_neg + gain);
     return (cusum_pos > thres || cusum_neg < -thres);
   }
 
-  size_t evict() noexcept override {
+  bool flush() noexcept override {
+    if (curr.size == 0) {
+      return false;
+    }
+    return true;
+  }
+
+  spec_type emit() noexcept override {
     cusum_pos = data_type{};
     cusum_neg = data_type{};
-    return std::exchange(n, 0);
+    curr.evict = curr.size;
+    return std::exchange(curr, {});
+  }
+
+  void reset() noexcept override {
+    *this = cusum_filter(thres, idx); // Reset to a new instance with the same parameters
   }
 
   ~cusum_filter() noexcept override = default;
