@@ -1,6 +1,6 @@
 #pragma once
 
-#include "opflow/window.hpp"
+#include "opflow/window_base.hpp"
 
 namespace opflow::win {
 /**
