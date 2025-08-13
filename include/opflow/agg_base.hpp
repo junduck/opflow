@@ -6,8 +6,17 @@ namespace opflow {
 /**
  * @brief Base class for aggregators
  *
- * @note This is the base class for special batched N:1 aggregation in data transform stage, and impl should be
- * optimised for batched processing. For streaming processing is implemented by op_base.
+ * Instruction for coding agent:
+ *
+ * 1. Aggregates a window of data (n rows) into a single output row.
+ * 2. Input: in[columns][rows], i.e., in[c][r] is the r-th row of column c.
+ * 3. Output: out[output_columns]
+ * 4. Aggregator does NOT select columns; required columns are specified at registration and passed correctly.
+ * 5. n is guaranteed to be greater than 0.
+ * 6. Aggregators are not required to be thread-safe.
+ * 7. Aggregators are not required to perform pointer checks.
+ * @see opflow::agg::ohlc for a reference implementation.
+ * @see opflow::agg::sum for a reference implementation.
  *
  */
 template <typename Data>
@@ -18,8 +27,8 @@ struct agg_base {
    * @brief Process current aggregation window and write to output
    *
    * @param n number of elements (rows) in the input
-   * @param in pointer to the input data, in[col][row]
-   * @param out pointer to the output data
+   * @param in pointer to the input data, index dimension: (col, row)
+   * @param out pointer to the output data, index dimension: (col)
    */
   virtual void process(size_t n, data_type const *const *in, data_type *out) noexcept = 0;
 
@@ -37,6 +46,8 @@ struct agg_base {
 
   /**
    * @brief Reset the internal state of the aggregator.
+   *
+   * Default implementation is no-op. This is standard behaviour for pure aggregation functions.
    *
    */
   virtual void reset() noexcept {}
