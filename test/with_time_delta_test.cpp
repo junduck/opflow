@@ -21,7 +21,7 @@ struct DoubleConv {
 };
 
 TEST(LaggedDeltaT, SingleInputBasic) {
-  with_time_delta<int, int, IdentityConv> op(1);
+  with_time_delta<int> op(1);
   int in;
   int out[2];
 
@@ -48,7 +48,7 @@ TEST(LaggedDeltaT, SingleInputBasic) {
 
 TEST(LaggedDeltaT, MultipleInputsVector) {
   constexpr size_t N = 3;
-  with_time_delta<int, int, IdentityConv> op(N);
+  with_time_delta<int> op(N);
   int in[N];
   int out[N + 1];
 
@@ -81,7 +81,7 @@ TEST(LaggedDeltaT, MultipleInputsVector) {
 }
 
 TEST(LaggedDeltaT, ResetBehavior) {
-  with_time_delta<int, int, IdentityConv> op(1);
+  with_time_delta<int> op(1);
   int in;
   int out[2];
 
@@ -102,19 +102,4 @@ TEST(LaggedDeltaT, ResetBehavior) {
   EXPECT_EQ(t, 40);
   EXPECT_EQ(out[0], 10); // 40 - 30
   EXPECT_EQ(out[1], 20);
-}
-
-TEST(LaggedDeltaT, TimeConversionApplied) {
-  // With DoubleConv the stored / delta times are doubled, so delta should be 2 * (tn - t(n-1))
-  with_time_delta<int, int, DoubleConv> op(1);
-  int in;
-  int out[2];
-
-  in = 1;
-  EXPECT_FALSE(op.on_data(10, &in));
-  in = 2;
-  EXPECT_TRUE(op.on_data(16, &in));
-  op.value(out);
-  EXPECT_EQ(out[0], (16 - 10) * 2); // converted delta
-  EXPECT_EQ(out[1], 1);
 }

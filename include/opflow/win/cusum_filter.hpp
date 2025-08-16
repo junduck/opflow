@@ -16,12 +16,11 @@ namespace opflow::win {
  * @ref https://en.wikipedia.org/wiki/CUSUM
  * @ref López de Prado, M. (2018). Advances in Financial Machine Learning
  */
-template <typename Time, std::floating_point Data>
-struct cusum_filter : window_base<Time, Data> {
-  using base = window_base<Time, Data>;
+template <std::floating_point Data>
+struct cusum_filter : window_base<Data> {
+  using base = window_base<Data>;
   using typename base::data_type;
   using typename base::spec_type;
-  using typename base::time_type;
 
   data_type const thres;
   size_t const idx;
@@ -40,7 +39,7 @@ struct cusum_filter : window_base<Time, Data> {
   cusum_filter(data_type log_threshold, size_t inspect_index)
       : thres(log_threshold), idx(inspect_index), lagged_log(), cusum_pos(), cusum_neg(), curr(), init() {}
 
-  bool process(time_type time, data_type const *in) noexcept override {
+  bool process(data_type time, data_type const *in) noexcept override {
     auto curr_log = std::log(in[idx]);
     curr.timestamp = time;
     ++curr.size;

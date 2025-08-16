@@ -33,6 +33,11 @@ public:
     carry = 0;
     return *this;
   }
+
+  void reset() noexcept {
+    sum = T{};
+    carry = T{};
+  }
 };
 
 /**
@@ -57,6 +62,8 @@ public:
     val = x;
     return *this;
   }
+
+  void reset() noexcept { val = T{}; }
 };
 
 /**
@@ -71,9 +78,9 @@ public:
  */
 template <std::floating_point U>
 U smooth_factor(U alpha) noexcept {
-  if (alpha >= 1.) {
+  if (alpha >= 1) {
     // alpha is actually a period
-    return 2.0 / (alpha + 1);
+    return U(2) / (alpha + 1);
   }
   return alpha;
 }
@@ -90,9 +97,9 @@ U smooth_factor(U alpha) noexcept {
  */
 template <std::floating_point U>
 U smooth_wilders(U alpha) noexcept {
-  if (alpha >= 1.) {
+  if (alpha >= 1) {
     // alpha is actually a period
-    return 1.0 / (alpha + 1);
+    return U(1) / (alpha + 1);
   }
   return alpha;
 }

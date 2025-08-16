@@ -11,31 +11,28 @@ namespace opflow::trans {
  * t (n), data... (n) -> t (n), dT, data... (n - 1) where dT = t (n) - t (n - 1)
  * dT is PREPENDED to the output data
  *
- * @tparam Time The time type used in the transform operation.
  * @tparam Data The data type used in the transform operation.
- * @tparam ConvTime The time conversion function used in the transform operation.
  */
-template <typename Time, typename Data, typename ConvTime>
-struct with_time_delta : public transform_base<Time, Data> {
-  using base = transform_base<Time, Data>;
+template <typename Data>
+struct with_time_delta : public transform_base<Data> {
+  using base = transform_base<Data>;
   using typename base::data_type;
-  using typename base::time_type;
 
   std::vector<data_type> buf; // size: 2 * (in_size + 1)
   size_t tick;
-  time_type timestamp;
+  data_type timestamp;
   size_t const in_size;
 
   with_time_delta(size_t in_size) : buf(2 * (in_size + 1)), tick(0), timestamp(), in_size(in_size) {}
 
-  bool on_data(time_type t, data_type const *in) noexcept override {
+  bool on_data(data_type t, data_type const *in) noexcept override {
     using diff_t = std::vector<data_type>::difference_type;
     size_t const stride = in_size + 1;
     size_t const curr = (tick & 1) ? stride : 0;
     size_t const prev = (tick & 1) ? 0 : stride;
 
     timestamp = t;
-    buf[curr] = ConvTime{}(t);
+    buf[curr] = t;
     std::copy(in, in + in_size, buf.begin() + static_cast<diff_t>(curr + 1));
 
     if (tick++ == 0) {
@@ -47,7 +44,7 @@ struct with_time_delta : public transform_base<Time, Data> {
     return true; // output is ready
   }
 
-  time_type value(data_type *out) const noexcept override {
+  data_type value(data_type *out) const noexcept override {
     using diff_t = std::vector<data_type>::difference_type;
     diff_t const stride = static_cast<diff_t>(in_size) + 1;
     diff_t const ready = (tick & 1) ? stride : 0;
@@ -68,25 +65,23 @@ struct with_time_delta : public transform_base<Time, Data> {
  * t (n), data... (n) -> t (n), dX, data... (n - 1) where dX = data[i] (n) - data[i] (n - 1)
  * dX is PREPENDED to the output data
  *
- * @tparam Time The time type used in the transform operation.
  * @tparam Data The data type used in the transform operation.
  */
-template <typename Time, typename Data>
-struct with_delta : public transform_base<Time, Data> {
-  using base = transform_base<Time, Data>;
+template <typename Data>
+struct with_delta : public transform_base<Data> {
+  using base = transform_base<Data>;
   using typename base::data_type;
-  using typename base::time_type;
 
   std::vector<data_type> buf; // size: 2 * (in_size + 1)
   size_t tick;
-  time_type timestamp;
+  data_type timestamp;
   size_t const idx;
   size_t const in_size;
 
   with_delta(size_t in_size, size_t inspect_index)
       : buf(2 * (in_size + 1)), tick(0), timestamp(), idx(inspect_index), in_size(in_size) {}
 
-  bool on_data(time_type t, data_type const *in) noexcept override {
+  bool on_data(data_type t, data_type const *in) noexcept override {
     using diff_t = std::vector<data_type>::difference_type;
     size_t const stride = in_size + 1;
     size_t const curr = (tick & 1) ? stride : 0;
@@ -105,7 +100,7 @@ struct with_delta : public transform_base<Time, Data> {
     return true; // output is ready
   }
 
-  time_type value(data_type *out) const noexcept override {
+  data_type value(data_type *out) const noexcept override {
     using diff_t = std::vector<data_type>::difference_type;
     diff_t const stride = static_cast<diff_t>(in_size) + 1;
     diff_t const ready = (tick & 1) ? stride : 0;

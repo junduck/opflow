@@ -33,9 +33,9 @@ struct window_spec {
  * | 0          | false   | N/A           | N/A      | no window                                 |
  * | 0,1        | false   | N/A           | N/A      | no window                                 |
  * | 0,1,2      | false   | N/A           | N/A      | no window                                 |
- * | 0,1,2,3    | true    | [T0, 3, 2]    | 0,1,2    | 2 data points will be popped after aggr   |
- * | 2,3,4      | false   | N/A           | N/A      | no window                                 |
- * | 2,3,4,5    | true    | [T1, 4, 4]    | 2,3,4,5  | 4 data points will be popped after aggr   |
+ * | 0,1,2,3    | true    | [T0, 3, 2]    | 0,1,2    | 2 data points will be evicted after aggr  |
+ * | 2,3,4      | false   | N/A           | N/A      | no window, 0,1 evicted from queue         |
+ * | 2,3,4,5    | true    | [T1, 4, 4]    | 2,3,4,5  | 4 data points will be evicted after aggr  |
  *
  * Note that the queue and window are maintained by aggregator and is for exposition only.
  *
@@ -43,12 +43,10 @@ struct window_spec {
  * @see opflow::win::cusum_filter for a reference implementation that inspects input data.
  *
  */
-template <typename Time, typename Data>
+template <typename Data>
 struct window_base {
-  using time_type = Time;
-  using dura_type = duration_t<time_type>;
   using data_type = Data;
-  using spec_type = window_spec<time_type>;
+  using spec_type = window_spec<data_type>;
 
   /**
    * @brief Process a new data point
@@ -58,7 +56,7 @@ struct window_base {
    * @return true if a window is emitted, false otherwise.
    * @note  This method is called for each incoming data point.
    */
-  virtual bool process(time_type t, data_type const *in) noexcept = 0;
+  virtual bool process(data_type t, data_type const *in) noexcept = 0;
 
   /**
    * @brief Force emission of the current window, if any.

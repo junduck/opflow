@@ -1,57 +1,74 @@
 #pragma once
 
-#include "opflow/op/detail/accum.hpp"
-#include "opflow/op/detail/unary.hpp"
-
-#ifndef NDEBUG
-#include <numeric>
-namespace opflow::op {
-template <std::floating_point T>
-T avg_naive(std::span<const T> data) {
-  if (data.empty()) {
-    throw std::runtime_error("Cannot compute average of empty data.");
-  }
-  T sum = std::accumulate(data.begin(), data.end(), T{});
-  return sum / data.size();
-}
-} // namespace opflow::op
-#endif
+#include "detail/accum.hpp"
+#include "detail/static_win.hpp"
 
 namespace opflow::op {
-template <typename T, std::floating_point U>
-struct avg : public detail::unary_op<T, U> {
-  using base = detail::unary_op<T, U>;
-  using base::pos;
+template <std::floating_point U, window_domain WIN = window_domain::event>
+struct avg : public detail::static_win<U, WIN> {
+  using base = detail::static_win<U, WIN>;
+  using typename base::data_type;
 
   detail::smooth<U> val; ///< mean value
   size_t n;              ///< count of values processed
 
-  explicit avg(size_t avg_at = 0) noexcept : base{avg_at}, val{}, n{0} {}
+  using base::base;
 
-  void init(T, U const *const *in) noexcept override {
-    assert(in && in[0] && "NULL input data.");
-    n = 1;
-    val = in[0][pos];
-  }
-
-  void step(T, U const *const *in) noexcept override {
-    assert(in && in[0] && "NULL input data.");
+  void on_data(data_type const *in) noexcept override {
+    auto const x = in[0];
     ++n;
-    val.add(in[0][pos], 1.0 / n);
+    val.add(x, U(1) / n);
   }
 
-  void inverse(T, U const *const *rm) noexcept override {
-    assert(rm && rm[0] && "NULL removal data.");
+  void on_evict(data_type const *rm) noexcept override {
+    auto const x = rm[0];
     --n;
-    val.sub(rm[0][pos], 1.0 / n);
+    val.add(x, U(1) / n);
   }
 
-  // Currently we can not utilise rolling update due to engine design
-  void roll(U x, U x0) noexcept { val.addsub(x, x0, 1. / n); }
+  void value(data_type *out) const noexcept override { out[0] = val; }
 
-  void value(U *out) noexcept override {
-    assert(out && "NULL output buffer.");
-    *out = val;
+  void reset() noexcept override {
+    val.reset();
+    n = 0;
   }
+
+  size_t num_inputs() const noexcept override { return 1; }
+  size_t num_outputs() const noexcept override { return 1; }
+};
+
+template <std::floating_point U, window_domain WIN = window_domain::event>
+struct avg_weighted : public detail::static_win<U, WIN> {
+  using base = detail::static_win<U, WIN>;
+  using typename base::data_type;
+
+  detail::smooth<U> val;  ///< weighted mean value
+  detail::accum<U> w_sum; ///< sum of weights
+
+  using base::base;
+
+  void on_data(data_type const *in) noexcept override {
+    auto const x = in[0];
+    auto const w = in[1];
+    w_sum.add(w);
+    val.add(x, w / w_sum);
+  }
+
+  void on_evict(data_type const *rm) noexcept override {
+    auto const x = rm[0];
+    auto const w = rm[1];
+    w_sum.sub(w);
+    val.sub(x, w / w_sum);
+  }
+
+  void value(data_type *out) const noexcept override { out[0] = val; }
+
+  void reset() noexcept override {
+    val.reset();
+    w_sum.reset();
+  }
+
+  size_t num_inputs() const noexcept override { return 2; }
+  size_t num_outputs() const noexcept override { return 1; }
 };
 } // namespace opflow::op

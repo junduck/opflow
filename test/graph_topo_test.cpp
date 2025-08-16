@@ -4,11 +4,11 @@
 #include <vector>
 
 #include "opflow/graph.hpp"
-#include "opflow/topo_graph.hpp"
+#include "opflow/graph_topo.hpp"
 
 using namespace opflow;
 
-// Test fixture for topo_graph tests
+// Test fixture for graph_topo tests
 class TopoGraphTest : public ::testing::Test {
 protected:
   void SetUp() override {}
@@ -87,7 +87,7 @@ protected:
 
   // Helper function to validate topological order
   template <typename T>
-  bool is_valid_topological_order(const topo_graph<T> &tg, const graph<T> &original) {
+  bool is_valid_topological_order(const graph_topo<T> &tg, const graph<T> &original) {
     // Check that all dependencies come before dependents
     for (size_t i = 0; i < tg.size(); ++i) {
       const T &current = tg[i];
@@ -100,7 +100,7 @@ protected:
         }
       }
 
-      // Verify that the predecessors in topo_graph match original graph
+      // Verify that the predecessors in graph_topo match original graph
       auto original_preds = original.pred_of(current);
       if (preds.size() != original_preds.size()) {
         return false;
@@ -118,7 +118,7 @@ protected:
 
   // Helper to check if all nodes from original graph are present
   template <typename T>
-  bool contains_all_nodes(const topo_graph<T> &tg, const graph<T> &original) {
+  bool contains_all_nodes(const graph_topo<T> &tg, const graph<T> &original) {
     if (tg.size() != original.size()) {
       return false;
     }
@@ -139,7 +139,7 @@ protected:
 
   // Helper function to validate arguments are preserved correctly
   template <typename T>
-  bool is_valid_args_order(const topo_graph<T> &tg, const graph<T> &original) {
+  bool is_valid_args_order(const graph_topo<T> &tg, const graph<T> &original) {
     // Build a node-to-index mapping for the topological graph
     std::unordered_map<T, size_t> node_to_id;
     for (size_t i = 0; i < tg.size(); ++i) {
@@ -191,7 +191,7 @@ protected:
 
   // Helper function to validate arguments are preserved correctly for string tests
   template <typename T>
-  bool is_valid_args_order(const topo_graph<T> &tg, const graph<T> &original) {
+  bool is_valid_args_order(const graph_topo<T> &tg, const graph<T> &original) {
     // Build a node-to-index mapping for the topological graph
     std::unordered_map<T, size_t> node_to_id;
     for (size_t i = 0; i < tg.size(); ++i) {
@@ -231,7 +231,7 @@ protected:
 // Basic construction tests
 TEST_F(TopoGraphTest, ConstructFromEmptyGraph) {
   graph<int> empty_graph;
-  topo_graph<int> tg(empty_graph);
+  graph_topo<int> tg(empty_graph);
 
   EXPECT_TRUE(tg.empty());
   EXPECT_EQ(tg.size(), 0);
@@ -240,7 +240,7 @@ TEST_F(TopoGraphTest, ConstructFromEmptyGraph) {
 TEST_F(TopoGraphTest, ConstructFromSingleNode) {
   graph<int> g;
   g.add(42);
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_FALSE(tg.empty());
   EXPECT_EQ(tg.size(), 1);
@@ -256,7 +256,7 @@ TEST_F(TopoGraphTest, ConstructFromSingleNode) {
 
 TEST_F(TopoGraphTest, ConstructFromLinearChain) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 3);
   EXPECT_TRUE(contains_all_nodes(tg, g));
@@ -278,7 +278,7 @@ TEST_F(TopoGraphTest, ConstructFromLinearChain) {
 
 TEST_F(TopoGraphTest, ConstructFromDiamondPattern) {
   auto g = create_diamond();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 4);
   EXPECT_TRUE(contains_all_nodes(tg, g));
@@ -299,7 +299,7 @@ TEST_F(TopoGraphTest, ConstructFromDiamondPattern) {
 
 TEST_F(TopoGraphTest, ConstructFromComplexGraph) {
   auto g = create_complex_graph();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 7);
   EXPECT_TRUE(contains_all_nodes(tg, g));
@@ -316,12 +316,12 @@ TEST_F(TopoGraphTest, ConstructFromComplexGraph) {
 // Cycle detection tests
 TEST_F(TopoGraphTest, ThrowsOnCyclicGraph) {
   auto g = create_cyclic_graph();
-  EXPECT_THROW(topo_graph<int> tg(g), std::runtime_error);
+  EXPECT_THROW(graph_topo<int> tg(g), std::runtime_error);
 }
 
 TEST_F(TopoGraphTest, ThrowsOnSelfLoop) {
   auto g = create_self_loop_graph();
-  EXPECT_THROW(topo_graph<int> tg(g), std::runtime_error);
+  EXPECT_THROW(graph_topo<int> tg(g), std::runtime_error);
 }
 
 // Edge cases
@@ -332,7 +332,7 @@ TEST_F(TopoGraphTest, MultipleRoots) {
   g.add(3);            // Root 3
   g.add(4, {1, 2, 3}); // Depends on all roots
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 4);
   EXPECT_TRUE(is_valid_topological_order(tg, g));
@@ -356,7 +356,7 @@ TEST_F(TopoGraphTest, DisconnectedComponents) {
   g.add(3);
   g.add(4, {3});
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 4);
   EXPECT_TRUE(contains_all_nodes(tg, g));
@@ -369,7 +369,7 @@ TEST_F(TopoGraphTest, NodesWithNoPredecessors) {
   g.add(2);
   g.add(3);
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 3);
   EXPECT_TRUE(contains_all_nodes(tg, g));
@@ -383,7 +383,7 @@ TEST_F(TopoGraphTest, NodesWithNoPredecessors) {
 // String-based tests
 TEST_F(TopoGraphStringTest, StringNodes) {
   auto g = create_string_graph();
-  topo_graph<std::string> tg(g);
+  graph_topo<std::string> tg(g);
 
   EXPECT_EQ(tg.size(), 4);
   EXPECT_TRUE(tg.contains_node("root"));
@@ -402,7 +402,7 @@ TEST_F(TopoGraphStringTest, StringNodes) {
 // Accessor tests
 TEST_F(TopoGraphTest, ContainsByIndex) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_TRUE(tg.contains_id(0));
   EXPECT_TRUE(tg.contains_id(1));
@@ -413,7 +413,7 @@ TEST_F(TopoGraphTest, ContainsByIndex) {
 
 TEST_F(TopoGraphTest, ContainsByValue) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_TRUE(tg.contains_node(1));
   EXPECT_TRUE(tg.contains_node(2));
@@ -424,7 +424,7 @@ TEST_F(TopoGraphTest, ContainsByValue) {
 
 TEST_F(TopoGraphTest, IndexOperator) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   // Test that we can access all elements
   for (size_t i = 0; i < tg.size(); ++i) {
@@ -437,7 +437,7 @@ TEST_F(TopoGraphTest, IndexOperator) {
 
 TEST_F(TopoGraphTest, PredsMethod) {
   auto g = create_diamond();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   // Test that preds returns spans with correct sizes
   for (size_t i = 0; i < tg.size(); ++i) {
@@ -463,7 +463,7 @@ TEST_F(TopoGraphTest, LargeGraph) {
     g.add(i, {i - 1});
   }
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), N);
   EXPECT_TRUE(is_valid_topological_order(tg, g));
@@ -490,7 +490,7 @@ TEST_F(TopoGraphTest, WideGraph) {
     g.add(i, {0});
   }
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), N + 1);
   EXPECT_TRUE(is_valid_topological_order(tg, g));
@@ -509,7 +509,7 @@ TEST_F(TopoGraphTest, WideGraph) {
         break;
       }
     }
-    EXPECT_NE(idx, static_cast<size_t>(-1)) << "Node " << i << " not found in topo_graph";
+    EXPECT_NE(idx, static_cast<size_t>(-1)) << "Node " << i << " not found in graph_topo";
     EXPECT_EQ(tg.pred_of(idx).size(), 1);
     EXPECT_EQ(tg.pred_of(idx)[0], 0);
   }
@@ -518,16 +518,16 @@ TEST_F(TopoGraphTest, WideGraph) {
 // Template deduction guide test
 TEST_F(TopoGraphTest, DeductionGuide) {
   auto g = create_linear_chain();
-  auto tg = topo_graph(g); // Should deduce topo_graph<int>
+  auto tg = graph_topo(g); // Should deduce graph_topo<int>
 
   EXPECT_EQ(tg.size(), 3);
-  static_assert(std::is_same_v<decltype(tg), topo_graph<int>>);
+  static_assert(std::is_same_v<decltype(tg), graph_topo<int>>);
 }
 
 // Iteration tests (if iterators are added in the future)
 TEST_F(TopoGraphTest, RangeBasedForLoop) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   std::vector<int> collected;
   for (size_t i = 0; i < tg.size(); ++i) {
@@ -547,7 +547,7 @@ TEST_F(TopoGraphTest, MixedEmptyAndNonEmptyPreds) {
   g.add(2, std::vector<int>{}); // Explicitly empty predecessors
   g.add(3, {1, 2});             // Multiple predecessors
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 3);
   EXPECT_TRUE(is_valid_topological_order(tg, g));
@@ -570,7 +570,7 @@ TEST_F(TopoGraphTest, ComplexDependencyPatterns) {
   g.add(6, {3});
   g.add(7, {4, 5, 6});
 
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 7);
   EXPECT_TRUE(is_valid_topological_order(tg, g));
@@ -590,7 +590,7 @@ TEST_F(TopoGraphTest, ComplexDependencyPatterns) {
 // Test with duplicate node values (should not happen in practice, but test robustness)
 TEST_F(TopoGraphTest, NodeValueUniqueness) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   std::unordered_set<int> seen_values;
   for (size_t i = 0; i < tg.size(); ++i) {
@@ -604,7 +604,7 @@ TEST_F(TopoGraphTest, NodeValueUniqueness) {
 // Test basic args functionality
 TEST_F(TopoGraphTest, BasicArgsTest) {
   auto g = create_args_test_graph();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 5);
   EXPECT_TRUE(is_valid_args_order(tg, g));
@@ -655,7 +655,7 @@ TEST_F(TopoGraphTest, BasicArgsTest) {
 // Test complex args with duplicate nodes and mixed order
 TEST_F(TopoGraphTest, ComplexArgsTest) {
   auto g = create_complex_args_graph();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 5);
   EXPECT_TRUE(is_valid_args_order(tg, g));
@@ -708,7 +708,7 @@ TEST_F(TopoGraphStringTest, StringArgsTest) {
   g.add("child2", {"root" | 1_p});
   g.add("grandchild", {"child1" | 2_p, "child2" | 3_p, "root" | 4_p});
 
-  topo_graph<std::string> tg(g);
+  graph_topo<std::string> tg(g);
 
   EXPECT_EQ(tg.size(), 4);
   EXPECT_TRUE(is_valid_args_order(tg, g));
@@ -734,7 +734,7 @@ TEST_F(TopoGraphStringTest, StringArgsTest) {
 // Test args preservation in linear chain
 TEST_F(TopoGraphTest, LinearChainArgsTest) {
   auto g = create_linear_chain();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_TRUE(is_valid_args_order(tg, g));
 
@@ -755,7 +755,7 @@ TEST_F(TopoGraphTest, LinearChainArgsTest) {
 // Test args preservation in diamond pattern
 TEST_F(TopoGraphTest, DiamondArgsTest) {
   auto g = create_diamond();
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_TRUE(is_valid_args_order(tg, g));
 
@@ -785,7 +785,7 @@ TEST_F(TopoGraphTest, DiamondArgsTest) {
 // Test args in empty graph
 TEST_F(TopoGraphTest, EmptyGraphArgsTest) {
   graph<int> empty_graph;
-  topo_graph<int> tg(empty_graph);
+  graph_topo<int> tg(empty_graph);
 
   EXPECT_TRUE(tg.empty());
   EXPECT_TRUE(is_valid_args_order(tg, empty_graph));
@@ -795,7 +795,7 @@ TEST_F(TopoGraphTest, EmptyGraphArgsTest) {
 TEST_F(TopoGraphTest, SingleNodeArgsTest) {
   graph<int> g;
   g.add(42);
-  topo_graph<int> tg(g);
+  graph_topo<int> tg(g);
 
   EXPECT_EQ(tg.size(), 1);
   EXPECT_TRUE(is_valid_args_order(tg, g));

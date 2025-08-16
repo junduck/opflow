@@ -1,37 +1,42 @@
 #pragma once
 
-#include "opflow/op/detail/accum.hpp"
-#include "opflow/op/detail/unary.hpp"
+#include "detail/accum.hpp"
+#include "detail/static_win.hpp"
 
 namespace opflow::op {
-template <typename T, std::floating_point U>
-struct sum : public detail::unary_op<T, U> {
-  using base = detail::unary_op<T, U>;
-  using base::pos;
+template <std::floating_point U, window_domain WIN = window_domain::event>
+struct sum : public detail::static_win<U, WIN> {
+  using base = detail::static_win<U, WIN>;
+  using typename base::data_type;
 
-  detail::accum<U> val; ///< Accumulated value
+  detail::accum<U> val; ///< accumulated value
 
-  explicit sum(size_t sum_at = 0) : base{sum_at}, val{} {}
+  using base::base;
 
-  void init(T, U const *const *in) noexcept override {
-    assert(in && in[0] && "NULL input data.");
-    val = in[0][pos]; // Initialize with the first value
-  }
+  void on_data(data_type const *in) noexcept override { val.add(in[0]); }
+  void on_evict(data_type const *rm) noexcept override { val.sub(rm[0]); }
+  void value(data_type *out) const noexcept override { out[0] = val; }
+  void reset() noexcept override { val.reset(); }
 
-  void step(T, U const *const *in) noexcept override {
-    assert(in && in[0] && "NULL input data.");
-    val.add(in[0][pos]);
-  }
-
-  void inverse(T, U const *const *rm) noexcept override {
-    assert(rm && rm[0] && "NULL removal data.");
-    val.sub(rm[0][pos]);
-  }
-
-  void value(U *out) noexcept override {
-    assert(out && "NULL output buffer.");
-    *out = val;
-  }
+  size_t num_inputs() const noexcept override { return 1; }
+  size_t num_outputs() const noexcept override { return 1; }
 };
 
+// for testing
+template <std::floating_point U>
+struct add2 : op_base<U> {
+  using base = op_base<U>;
+  using typename base::data_type;
+
+  double val; ///< in[0] + in[2]
+
+  using base::base;
+
+  void on_data(data_type const *in) noexcept override { val = in[0] + in[1]; }
+  void value(data_type *out) const noexcept override { out[0] = val; }
+  void reset() noexcept override { val = 0; }
+
+  size_t num_inputs() const noexcept override { return 2; }
+  size_t num_outputs() const noexcept override { return 1; }
+};
 } // namespace opflow::op

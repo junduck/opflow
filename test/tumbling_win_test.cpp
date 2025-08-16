@@ -6,13 +6,8 @@
 using namespace opflow;
 using namespace opflow::win;
 
-namespace {
-template <typename Time>
-using Win = tumbling<Time, int>; // Data type is unused by window; choose int
-}
-
 TEST(TumblingWindow_IntTime, BasicEmissionAndAlignment) {
-  Win<int> w(10); // window size 10
+  tumbling<int> w(10); // window size 10
 
   // Initial points 1,2,3 accumulate in [0,10) no emit
   EXPECT_FALSE(w.process(1, nullptr));
@@ -61,7 +56,7 @@ TEST(TumblingWindow_IntTime, BasicEmissionAndAlignment) {
 }
 
 TEST(TumblingWindow_IntTime, MultipleWindowSkipNoDataInBetween) {
-  Win<int> w(5);
+  tumbling<int> w(5);
   // First datum aligns next_tick to 5
   EXPECT_FALSE(w.process(0, nullptr)); // size=1
 
@@ -84,7 +79,7 @@ TEST(TumblingWindow_IntTime, MultipleWindowSkipNoDataInBetween) {
 }
 
 TEST(TumblingWindow_IntTime, BoundaryAtExactTick) {
-  Win<int> w(10);
+  tumbling<int> w(10);
   // First tick at 10: next_tick will be 20 (aligned_next_window_begin returns tick+window when aligned)
   // But process() considers tick < next_tick for accumulation, else emits.
   EXPECT_FALSE(w.process(10, nullptr)); // tick=10 < next_tick=20 -> accumulate
@@ -97,7 +92,7 @@ TEST(TumblingWindow_IntTime, BoundaryAtExactTick) {
 }
 
 TEST(TumblingWindow_IntTime, ExactBoundaryJumping) {
-  Win<int> w(10);
+  tumbling<int> w(10);
 
   EXPECT_FALSE(w.process(10, nullptr));
 
@@ -121,7 +116,7 @@ TEST(TumblingWindow_IntTime, ExactBoundaryJumping) {
 }
 
 TEST(TumblingWindow_DoubleTime, FloatingPointTimeFmodPath) {
-  Win<double> w(0.5); // window 0.5
+  tumbling<double> w(0.5); // window 0.5
   EXPECT_FALSE(w.process(0.1, nullptr));
   EXPECT_FALSE(w.process(0.2, nullptr));
   EXPECT_FALSE(w.process(0.49, nullptr));
@@ -140,34 +135,8 @@ TEST(TumblingWindow_DoubleTime, FloatingPointTimeFmodPath) {
   EXPECT_EQ(s1.evict, 3u); // 0.5, 0.51, 0.99
 }
 
-TEST(TumblingWindow_ChronoTime, UsingChronoMilliseconds) {
-  using clock = std::chrono::system_clock;
-  using time_point = clock::time_point;
-  using dura = std::chrono::milliseconds;
-  tumbling<time_point, int> w(dura{100});
-
-  time_point t0{}; // epoch
-  // next_tick will align to 100ms
-  EXPECT_FALSE(w.process(t0 + dura{10}, nullptr));
-  EXPECT_FALSE(w.process(t0 + dura{20}, nullptr));
-  EXPECT_FALSE(w.process(t0 + dura{99}, nullptr));
-  ASSERT_TRUE(w.process(t0 + dura{100}, nullptr));
-  auto s0 = w.emit();
-  EXPECT_EQ(s0.timestamp, t0 + dura{100});
-  EXPECT_EQ(s0.size, 3u);
-  EXPECT_EQ(s0.evict, 3u); // 10, 20, 99
-
-  EXPECT_FALSE(w.process(t0 + dura{101}, nullptr));
-  EXPECT_FALSE(w.process(t0 + dura{150}, nullptr));
-  ASSERT_TRUE(w.process(t0 + dura{200}, nullptr));
-  auto s1 = w.emit();
-  EXPECT_EQ(s1.timestamp, t0 + dura{200});
-  EXPECT_EQ(s1.size, 3u);
-  EXPECT_EQ(s1.evict, 3u); // 100, 101, 150
-}
-
 TEST(TumblingWindow_Reset, ClearsState) {
-  Win<int> w(10);
+  tumbling<int> w(10);
   EXPECT_FALSE(w.process(1, nullptr));
   EXPECT_FALSE(w.process(2, nullptr));
   w.reset();

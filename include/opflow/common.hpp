@@ -87,6 +87,9 @@ concept range_of = std::ranges::forward_range<R> && std::convertible_to<std::ran
 template <typename R, typename U>
 concept range_derived_from = std::ranges::forward_range<R> && std::derived_from<std::ranges::range_value_t<R>, U>;
 
+template <typename T>
+concept arithmetic = std::is_arithmetic_v<T>;
+
 template <typename Container, typename Key, typename Value>
 concept associative = requires(Container const c) {
   // query using find

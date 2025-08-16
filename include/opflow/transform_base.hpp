@@ -8,12 +8,10 @@ namespace opflow {
  *
  * Abstracts 1:1 transformation and N:1 transformation (aggregation)
  *
- * @tparam Time The time type used in the transform operation.
  * @tparam Data The data type used in the transform operation.
  */
-template <typename Time, typename Data>
+template <typename Data>
 struct transform_base {
-  using time_type = Time;
   using data_type = Data;
 
   /**
@@ -23,7 +21,17 @@ struct transform_base {
    * @param in The input data to process.
    * @return true if an output is ready to be produced, false otherwise.
    */
-  virtual bool on_data(time_type t, data_type const *in) noexcept = 0;
+  virtual bool on_data(data_type t, data_type const *in) noexcept = 0;
+
+  /**
+   * @brief Flush the transform state.
+   *
+   * This function is called to flush any remaining output from the transform. Default implementation always returns
+   * false this is standard behaviour for a streaming (1:1) transform.
+   *
+   * @return true if output was produced, false otherwise.
+   */
+  virtual bool flush() noexcept { return false; }
 
   /**
    * @brief Get the output value.
@@ -31,9 +39,9 @@ struct transform_base {
    * This function is called to retrieve the output value after on_data() returns true.
    *
    * @param out The output buffer to fill.
-   * @return time_type The time associated with the output.
+   * @return The timestamp associated with the output.
    */
-  virtual time_type value(data_type *out) const noexcept = 0;
+  virtual data_type value(data_type *out) const noexcept = 0;
 
   /**
    * @brief Reset the transform state.

@@ -10,7 +10,7 @@
 
 namespace opflow {
 template <typename T>
-class topo_graph {
+class graph_topo {
 public:
   using node_type = T;
 
@@ -25,7 +25,7 @@ public:
    * @param g a directed graph
    */
   template <typename H, typename E>
-  topo_graph(graph<T, H, E> const &g) : pred_map(), sorted() {
+  graph_topo(graph<T, H, E> const &g) : pred_map(), sorted() {
     // Perform a topological sort on the input graph
     // and populate the sorted vector and preds structure
 
@@ -244,7 +244,7 @@ public:
 
   // iterators
 
-  using const_iterator = detail::iterator_t<topo_graph, true>;
+  using const_iterator = detail::iterator_t<graph_topo, true>;
   const_iterator begin() const noexcept { return const_iterator{this, 0}; }
   const_iterator end() const noexcept { return const_iterator{this, size()}; }
 
@@ -256,6 +256,6 @@ private:
 
 // Deduction guide
 template <typename T, typename Hash, typename Equal>
-topo_graph(graph<T, Hash, Equal> const &g) -> topo_graph<T>;
+graph_topo(graph<T, Hash, Equal> const &g) -> graph_topo<T>;
 
 } // namespace opflow

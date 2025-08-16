@@ -1,5 +1,6 @@
 #pragma once
 
+#include "opflow/common.hpp"
 #include "opflow/window_base.hpp"
 
 namespace opflow::win {
@@ -30,50 +31,40 @@ namespace opflow::win {
  *   - At t=70: window emitted for points at t=60,62, associated timestamp 70. i.e. [60, 70)
  *
  */
-template <typename Time, typename Data>
-struct tumbling : window_base<Time, Data> {
-  using base = window_base<Time, Data>;
+template <arithmetic Data>
+struct tumbling : window_base<Data> {
+  using base = window_base<Data>;
   using typename base::data_type;
-  using typename base::dura_type;
   using typename base::spec_type;
-  using typename base::time_type;
 
-  dura_type const window_size; ///< Size of the tumbling window
-  time_type next_tick;         ///< Next tick time point for the tumbling window
+  data_type const window_size; ///< Size of the tumbling window
+  data_type next_tick;         ///< Next tick time point for the tumbling window
   spec_type curr;              ///< Current window specification
 
-  time_type aligned_next_window_begin(time_type tick) const noexcept {
-    if constexpr (std::integral<time_type>) {
+  data_type aligned_next_window_begin(data_type tick) const noexcept {
+    if constexpr (std::integral<data_type>) {
       auto remainder = tick % window_size;
-      if (remainder == dura_type{}) {
+      if (remainder == data_type{}) {
         return tick + window_size; // Already aligned
       } else {
         return tick - remainder + window_size; // Align to the next window start
       }
-    } else if constexpr (std::floating_point<time_type>) {
+    } else if constexpr (std::floating_point<data_type>) {
       auto remainder = std::fmod(tick, window_size);
-      if (remainder == dura_type{}) {
+      if (remainder == data_type{}) {
         return tick + window_size; // Already aligned
       } else {
         return tick - remainder + window_size; // Align to the next window start
       }
-    } else {
-      // TODO: this may be inefficient
-      // our typename T only requires comparison and basic arithmetic
-      time_type t{};
-      while (t <= tick) {
-        t += window_size;
-      }
-      return t; // Align to the next window start
     }
   }
 
-  explicit tumbling(dura_type window) noexcept : window_size(window), next_tick(), curr() {}
+  explicit tumbling(data_type window) noexcept : window_size(window), next_tick(), curr() {}
 
-  bool process(time_type tick, data_type const *) noexcept override {
+  bool process(data_type tick, data_type const *) noexcept override {
 
-    // Case 1: Initialization state - next_tick is T{} (default constructed)
-    if (next_tick == time_type{}) {
+    // Case 1: Initialization state - next_tick is data_type{} (default constructed)
+    if (next_tick == data_type{}) {
       next_tick = aligned_next_window_begin(tick);
     }
 
@@ -108,11 +99,11 @@ struct tumbling : window_base<Time, Data> {
 
   spec_type emit() noexcept override {
     // size initialised to 1 due to last data point that triggered the emit belongs to new window
-    return std::exchange(curr, {.timestamp = {}, .size = 1, .evict = 0});
+    return std::exchange(curr, {.timestamp = data_type{}, .size = 1, .evict = 0});
   }
 
   void reset() noexcept override {
-    next_tick = time_type{};
+    next_tick = data_type{};
     curr = {};
   }
 };

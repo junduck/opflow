@@ -357,8 +357,8 @@ public:
     ensure_node(new_edge.node);
 
     // Update adjacency maps
-    predecessor[node].insert(new_edge.node);
-    successor[new_edge.node].insert(node);
+    predecessor[node].emplace(new_edge.node);
+    successor[new_edge.node].emplace(node);
 
     // Replace old_pred with new_pred in argmap
     for (auto &arg : args) {
@@ -537,7 +537,7 @@ public:
     NodeSet nodes_to_add{};
     for (auto const &[other_node, _] : other.predecessor) {
       if (!contains(other_node)) {
-        nodes_to_add.insert(other_node); // Collect new nodes to add
+        nodes_to_add.emplace(other_node); // Collect new nodes to add
       }
     }
 
@@ -573,9 +573,9 @@ private:
 
   // add edge node -> [pred:port]
   void add_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
-    predecessor[node].insert(pred);
+    predecessor[node].emplace(pred);
     argmap[node].emplace_back(pred, port); // Add with port information
-    successor[pred].insert(node);
+    successor[pred].emplace(node);
   }
 
   // remove edge node -> [pred:port]

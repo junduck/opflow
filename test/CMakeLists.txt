@@ -2,8 +2,8 @@ add_executable(test_main main.cpp)
 target_link_libraries(test_main GTest::gtest_main private_headers opflow::headers)
 
 # Topo graph tests
-add_executable(test_topo_graph topo_graph_test.cpp)
-target_link_libraries(test_topo_graph GTest::gtest_main opflow::headers)
+add_executable(test_graph_topo graph_topo_test.cpp)
+target_link_libraries(test_graph_topo GTest::gtest_main opflow::headers)
 
 add_executable(test_graph graph_test.cpp)
 target_link_libraries(test_graph GTest::gtest_main opflow::headers)
@@ -38,25 +38,13 @@ target_link_libraries(test_flat_set_edge_cases GTest::gtest_main opflow::headers
 add_executable(test_flat_set_corner_cases flat_set_corner_cases_test.cpp)
 target_link_libraries(test_flat_set_corner_cases GTest::gtest_main opflow::headers)
 
-# OHLC operator tests
-add_executable(test_ohlc ohlc_test.cpp)
-target_link_libraries(test_ohlc GTest::gtest_main opflow::headers)
-
 # Chrono tests
 add_executable(test_chrono chrono_test.cpp)
 target_link_libraries(test_chrono GTest::gtest_main opflow::headers)
 
-# Pipeline tests
-add_executable(test_pipeline pipeline_test.cpp)
-target_link_libraries(test_pipeline GTest::gtest_main opflow::headers)
-
-# Pipeline comprehensive tests
-add_executable(test_pipeline_comprehensive pipeline_comprehensive_test.cpp)
-target_link_libraries(test_pipeline_comprehensive GTest::gtest_main opflow::headers)
-
-# EWMA operator tests
-add_executable(test_op_ewma op_ewma_test.cpp)
-target_link_libraries(test_op_ewma GTest::gtest_main opflow::headers private_headers)
+# Graph executor tests
+add_executable(test_graph_exec graph_exec_test.cpp)
+target_link_libraries(test_graph_exec GTest::gtest_main opflow::headers)
 
 # sorted_vect tests
 add_executable(test_sorted_vect sorted_vect_test.cpp)
@@ -76,7 +64,7 @@ target_link_libraries(test_tumbling_window GTest::gtest_main opflow::headers)
 
 include(GoogleTest)
 gtest_discover_tests(test_main)
-gtest_discover_tests(test_topo_graph)
+gtest_discover_tests(test_graph_topo)
 gtest_discover_tests(test_graph)
 gtest_discover_tests(test_tumbling_window)
 gtest_discover_tests(test_with_time_delta)
@@ -88,10 +76,7 @@ gtest_discover_tests(test_flat_multivect)
 gtest_discover_tests(test_flat_set)
 gtest_discover_tests(test_flat_set_edge_cases)
 gtest_discover_tests(test_flat_set_corner_cases)
-gtest_discover_tests(test_ohlc)
 gtest_discover_tests(test_chrono)
-gtest_discover_tests(test_pipeline)
-gtest_discover_tests(test_pipeline_comprehensive)
-gtest_discover_tests(test_op_ewma)
+gtest_discover_tests(test_graph_exec)
 gtest_discover_tests(test_sorted_vect)
 gtest_discover_tests(test_ringbuf_vect)
