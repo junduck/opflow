@@ -1,197 +1,178 @@
 #pragma once
 
-#include <cstddef>
+#include <cassert>
 #include <tuple>
+#include <variant>
+
+#include "common.hpp"
 
 namespace opflow {
-
-/*
-seperating window management from op node sounds cool but it will be a disaster for per op windowing.
-*/
-
-enum class window_domain {
+enum class win_type {
   event, ///< Event-based window
   time,  ///< Time-based window
 };
 
-struct event_domain_tag {};
-struct time_domain_tag {};
-constexpr inline event_domain_tag event_domain{};
-constexpr inline time_domain_tag time_domain{};
+struct event_window_tag {};
+struct time_window_tag {};
+constexpr inline event_window_tag event_window{};
+constexpr inline time_window_tag time_window{};
 
-template <typename Data>
+/**
+ * @brief Base class for online operators
+ *
+ * Instruction for coding agent:
+ *
+ * - This is the base class for all online (streaming) operators.
+ * - When new data is available, on_data() is called with an array of T to update state: T const* in.
+ * - When old data is expired (out of window), on_evict() is called with an array of T to remove: T const* rm.
+ * - To retrieve the current result, value() is called with an array of T to write: T* out.
+ * - Number of input elements is given by num_inputs().
+ * - Number of output elements is given by num_outputs().
+ * - reset() restores the functor to its initial state if the functor is stateful.
+ * - Execution engine guarantees valid pointers and correct array sizes.
+ * - Operator should avoid buffering window data.
+ * - Operator should aim for O(1) space and time online algorithms.
+ * - Execution engine calls is_cumulative() once on init to determine if the operator is cumulative.
+ * - If operator is cumulative, on_evict() won't be called. e.g. EMA, CMA
+ * - If operator is non-cumulative
+ *    - Execution engine calls window_type() once on init to determine the window type.
+ *    - Execution engine calls is_dynamic() once on init to determine if the operator has dynamic windowing.
+ *        - static window: engine calls window_size() once on init to determine the window size.
+ *        - dynamic window: engine calls window_size() after every on_data() to determine the window size.
+ * - Refer to @see opflow::op::avg @see opflow::op::dynwin_avg for example implementations.
+ * - Important checklist:
+ *    - Implement on_evict() for non-cumulative operators.
+ *    - Do not buffer window data unnecessarily.
+ *
+ * @tparam T data type
+ */
+template <typename T>
 struct op_base {
-  using data_type = Data;
+  using data_type = T;
 
-  /**
-   * @brief Update operator state with new data
-   *
-   * If op node is a root node, output from previous pipeline stage will be passed to in pointer.
-   *
-   * @param in Pointer to input data.
-   */
   virtual void on_data(data_type const *in) noexcept = 0;
-
-  /**
-   * @brief Update operator state by removing expired data
-   *
-   * @param rm Pointer to the data being evicted.
-   */
   virtual void on_evict(data_type const *rm) noexcept { std::ignore = rm; }
-
-  /**
-   * @brief Write operator's output value to the provided buffer
-   *
-   * @param out Pointer to the output buffer.
-   */
   virtual void value(data_type *out) const noexcept = 0;
-
-  /**
-   * @brief Reset operator state.
-   *
-   */
   virtual void reset() noexcept = 0;
 
-  /**
-   * @brief Get the number of input data streams.
-   *
-   */
   virtual size_t num_inputs() const noexcept = 0;
-
-  /**
-   * @brief Get the number of output data streams.
-   *
-   */
   virtual size_t num_outputs() const noexcept = 0;
 
-  /**
-   * @brief Check if the operator is cumulative.
-   *
-   * This method is called once on pipeline init. If the operator is cumulative, on_evict() won't be called. e.g. EMA,
-   * CMA
-   */
-  virtual bool is_cumulative() const noexcept { return true; } //
+  virtual bool is_cumulative() const noexcept { return true; }
+  virtual bool is_dynamic() const noexcept { return false; }
 
-  /**
-   * @brief Check if the operator has dynamic windowing.
-   *
-   * This method is called once on pipeline init. If the operator has dynamic windowing, window_size() is called after
-   * on_data() to determine size of the window. Overload is chosen based on window domain.
-   */
-  virtual bool is_dynamic() const noexcept { return false; } // called once on pipeline init
+  virtual win_type window_type() const noexcept { return win_type::event; }
+  virtual size_t window_size(event_window_tag) const noexcept { return 0; }
+  virtual data_type window_size(time_window_tag) const noexcept { return data_type{}; }
 
-  /**
-   * @brief Get the windowing domain of the operator.
-   *
-   */
-  virtual window_domain domain() const noexcept { return window_domain::event; } // called once on pipeline init
-
-  // dynamic: called after on_data()
-  // not dynamic: called once on pipeline init
-
-  /**
-   * @brief Get the size of dynamic window for event-based windowing.
-   *
-   * @return number of events (ticks) required
-   */
-  virtual size_t window_size(event_domain_tag) const noexcept { return 0; }
-
-  /**
-   * @brief Get the size of dynamic window for time-based windowing.
-   *
-   * @return duration required
-   */
-  virtual data_type window_size(time_domain_tag) const noexcept { return data_type{}; }
+  op_base const *observer() const noexcept { return this; }
 
   virtual ~op_base() noexcept = default;
 };
 
-#if STATIC_COMPOSABLE
-namespace detail {
-template <typename T, typename U>
-concept has_on_evict = requires(T t) {
-  { t.on_evict(std::declval<U const *>()) };
-};
-template <typename T>
-concept has_is_cumulative = requires(T t) {
-  { t.is_cumulative() };
-};
-template <typename T>
-concept has_is_dynamic = requires(T t) {
-  { t.is_dynamic() };
-};
-template <typename T>
-concept has_domain = requires(T t) {
-  { t.domain() };
-};
-template <typename T>
-concept has_window_size = requires(T t) {
-  { t.window_size(event_domain) };
-  { t.window_size(time_domain) };
-};
-} // namespace detail
-
-template <template <typename> typename Impl, typename Data>
-  requires(!std::derived_from<Impl<Data>, op_base<Data>>)
-struct op_wrapper : public op_base<Data>, public Impl<Data> {
-  using base = op_base<Data>;
-  using impl = Impl<Data>;
-
+/**
+ * @brief Simple windowed operator base class
+ *
+ * The default implementation:
+ * - Takes a single constructor argument for the window size.
+ * - is_dynamic() returns false, derived class should override it if needed.
+ * - is_cumulative() returns true if the window size is zero.
+ * - window_size() returns this->win_event or this->win_time depending on the window type.
+ *
+ * @tparam T data type
+ * @tparam WIN window type
+ */
+template <typename T, win_type WIN>
+struct win_base : public op_base<T> {
+  using base = op_base<T>;
   using typename base::data_type;
 
-  void on_data(data_type const *in, data_type const *root) noexcept override { impl::on_data(in, root); }
-  void value(data_type *out) const noexcept override { impl::value(out); }
-  void reset() noexcept override { impl::reset(); }
-  size_t num_inputs() const noexcept override { return impl::num_inputs(); }
-  size_t num_outputs() const noexcept override { return impl::num_outputs(); }
+  union {
+    size_t win_event;
+    data_type win_time;
+  };
 
-  void on_evict(data_type const *rm, data_type const *root) noexcept override {
-    if constexpr (detail::has_on_evict<impl, data_type>) {
-      impl::on_evict(rm, root);
-    } else {
-      base::on_evict(rm, root); // Default behavior if on_evict is not implemented
-    }
-  }
+  explicit win_base(size_t win_event) noexcept
+    requires(WIN == win_type::event)
+      : win_event(win_event) {}
+
+  explicit win_base(data_type win_time) noexcept
+    requires(WIN == win_type::time)
+      : win_time(win_time) {}
 
   bool is_cumulative() const noexcept override {
-    if constexpr (detail::has_is_cumulative<impl>) {
-      return impl::is_cumulative();
+    if constexpr (WIN == win_type::event) {
+      return win_event == 0;
     } else {
-      return base::is_cumulative();
+      return win_time == data_type{};
     }
   }
 
-  bool is_dynamic() const noexcept override {
-    if constexpr (detail::has_is_dynamic<impl>) {
-      return impl::is_dynamic();
+  win_type window_type() const noexcept override { return WIN; }
+
+  size_t window_size(event_window_tag) const noexcept override {
+    if constexpr (WIN == win_type::event) {
+      return win_event;
     } else {
-      return base::is_dynamic();
+      assert(false && "[BUG] Graph executor calls window_size(event_window_tag) on time-based window op.");
+      // std::unreachable();
+      return {};
     }
   }
 
-  window_domain domain() const noexcept override {
-    if constexpr (detail::has_domain<impl>) {
-      return impl::domain();
+  data_type window_size(time_window_tag) const noexcept override {
+    if constexpr (WIN == win_type::time) {
+      return win_time;
     } else {
-      return base::domain();
-    }
-  }
-
-  size_t window_size(event_domain_tag) const noexcept override {
-    if constexpr (detail::has_window_size<impl>) {
-      return impl::window_size(event_domain);
-    } else {
-      return base::window_size(event_domain);
-    }
-  }
-
-  data_type window_size(time_domain_tag) const noexcept override {
-    if constexpr (detail::has_window_size<impl>) {
-      return impl::window_size(time_domain);
-    } else {
-      return base::window_size(time_domain);
+      assert(false && "[BUG] Graph executor calls window_size(time_window_tag) on event-based window op.");
+      // std::unreachable();
+      return {};
     }
   }
 };
-#endif
+
+/**
+ * @brief Simple windowed operator base class, with erased window type
+ *
+ * The default implementation:
+ * - Has same behaviour as @see opflow::win_base
+ * - Erases the window type so implementations can be agnostic of the window type.
+ * - Constructor overload determines the window type: data_type for time-based window, size_t for event-based window.
+ *
+ * @tparam T data type
+ * @tparam WIN window type
+ */
+template <typename T>
+struct win_erased_base : public op_base<T> {
+  using data_type = T;
+  using base = op_base<T>;
+
+  std::variant<size_t, data_type> win_size;
+
+  explicit win_erased_base(size_t win_event) noexcept : win_size(win_event) {}
+
+  explicit win_erased_base(data_type win_time) noexcept : win_size(win_time) {}
+
+  bool is_cumulative() const noexcept override {
+    auto visitor = overload{[](size_t arg) { return arg == 0; }, [](data_type arg) { return arg == data_type{}; }};
+    return std::visit(visitor, win_size);
+  }
+
+  win_type window_type() const noexcept override {
+    auto visitor = overload{[](size_t) { return win_type::event; }, [](data_type) { return win_type::time; }};
+    return std::visit(visitor, win_size);
+  }
+
+  size_t window_size(event_window_tag) const noexcept override {
+    assert(std::holds_alternative<size_t>(win_size) &&
+           "[BUG] Graph executor calls window_size(event_window_tag) on time-based window op.");
+    return std::get<size_t>(win_size);
+  }
+
+  data_type window_size(time_window_tag) const noexcept override {
+    assert(std::holds_alternative<data_type>(win_size) &&
+           "[BUG] Graph executor calls window_size(time_window_tag) on event-based window op.");
+    return std::get<data_type>(win_size);
+  }
+};
 } // namespace opflow

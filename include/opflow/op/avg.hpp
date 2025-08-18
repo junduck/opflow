@@ -1,29 +1,29 @@
 #pragma once
 
 #include "detail/accum.hpp"
-#include "detail/static_win.hpp"
+#include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <std::floating_point U, window_domain WIN = window_domain::event>
-struct avg : public detail::static_win<U, WIN> {
-  using base = detail::static_win<U, WIN>;
+template <typename T, win_type WIN = win_type::event>
+struct avg : public win_base<T, WIN> {
+  using base = win_base<T, WIN>;
   using typename base::data_type;
 
-  detail::smooth<U> val; ///< mean value
-  size_t n;              ///< count of values processed
+  detail::smooth<data_type> val; ///< mean value
+  size_t n;                      ///< count of values processed
 
   using base::base;
 
   void on_data(data_type const *in) noexcept override {
     auto const x = in[0];
     ++n;
-    val.add(x, U(1) / n);
+    val.add(x, data_type(1) / n);
   }
 
   void on_evict(data_type const *rm) noexcept override {
     auto const x = rm[0];
     --n;
-    val.add(x, U(1) / n);
+    val.add(x, data_type(1) / n);
   }
 
   void value(data_type *out) const noexcept override { out[0] = val; }
@@ -37,13 +37,13 @@ struct avg : public detail::static_win<U, WIN> {
   size_t num_outputs() const noexcept override { return 1; }
 };
 
-template <std::floating_point U, window_domain WIN = window_domain::event>
-struct avg_weighted : public detail::static_win<U, WIN> {
-  using base = detail::static_win<U, WIN>;
+template <typename T, win_type WIN = win_type::event>
+struct avg_weighted : public win_base<T, WIN> {
+  using base = win_base<T, WIN>;
   using typename base::data_type;
 
-  detail::smooth<U> val;  ///< weighted mean value
-  detail::accum<U> w_sum; ///< sum of weights
+  detail::smooth<data_type> val;  ///< weighted mean value
+  detail::accum<data_type> w_sum; ///< sum of weights
 
   using base::base;
 

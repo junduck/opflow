@@ -6,18 +6,21 @@
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <std::floating_point U>
-struct ema : public op_base<U> {
-  detail::smooth<U> val; ///< Current EMA value
-  U alpha;               ///< Smoothing factor
-  bool initialised;      ///< Whether the first value has been processed
+template <typename T>
+struct ema : public op_base<T> {
+  using base = op_base<T>;
+  using typename base::data_type;
 
-  explicit ema(U alpha) noexcept : val{}, alpha{detail::smooth_factor(alpha)}, initialised{false} {
+  detail::smooth<data_type> val; ///< Current EMA value
+  data_type alpha;               ///< Smoothing factor
+  bool initialised;              ///< Whether the first value has been processed
+
+  explicit ema(data_type alpha) noexcept : val{}, alpha{detail::smooth_factor(alpha)}, initialised{false} {
     assert(alpha > 0. && "alpha/period must be positive.");
   }
 
-  void on_data(U const *in) noexcept override {
-    U const x = in[0];
+  void on_data(data_type const *in) noexcept override {
+    data_type const x = in[0];
     if (!initialised) {
       val = x;
       initialised = true;
@@ -26,7 +29,7 @@ struct ema : public op_base<U> {
     val.add(x, alpha);
   }
 
-  void value(U *out) noexcept override { out[0] = val; }
+  void value(data_type *out) noexcept override { out[0] = val; }
 
   void reset() noexcept override {
     val.reset();
@@ -37,17 +40,20 @@ struct ema : public op_base<U> {
   size_t num_outputs() const noexcept override { return 1; }
 };
 
-template <std::floating_point U>
-struct ema_time : public op_base<U> {
-  detail::smooth<U> val; ///< Current EMA value
-  U inv_tau;             ///< 1. / Time constant
-  bool initialised;      ///< Whether the first value has been processed
+template <typename T>
+struct ema_time : public op_base<T> {
+  using base = op_base<T>;
+  using typename base::data_type;
 
-  explicit ema_time(U tau) noexcept : val{}, inv_tau{U(1) / tau}, initialised{false} {
+  detail::smooth<data_type> val; ///< Current EMA value
+  data_type inv_tau;             ///< 1. / Time constant
+  bool initialised;              ///< Whether the first value has been processed
+
+  explicit ema_time(data_type tau) noexcept : val{}, inv_tau{data_type(1) / tau}, initialised{false} {
     assert(tau > 0. && "Time constant must be positive.");
   }
 
-  void on_data(U const *in) noexcept override {
+  void on_data(data_type const *in) noexcept override {
     auto const x = in[0];
     auto const dt = in[1];
 
@@ -56,11 +62,11 @@ struct ema_time : public op_base<U> {
       initialised = true;
       return;
     }
-    U const alpha = U(1) - std::exp(-dt * inv_tau);
+    data_type const alpha = data_type(1) - std::exp(-dt * inv_tau);
     val.add(x, alpha);
   }
 
-  void value(U *out) noexcept override { out[0] = val; }
+  void value(data_type *out) noexcept override { out[0] = val; }
 
   void reset() noexcept override {
     val.reset();

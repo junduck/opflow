@@ -1,15 +1,15 @@
 #pragma once
 
 #include "detail/accum.hpp"
-#include "detail/static_win.hpp"
+#include "opflow/op_base.hpp"
 
 namespace opflow::op {
-template <std::floating_point U, window_domain WIN = window_domain::event>
-struct sum : public detail::static_win<U, WIN> {
-  using base = detail::static_win<U, WIN>;
+template <typename T, win_type WIN = win_type::event>
+struct sum : public win_base<T, WIN> {
+  using base = win_base<T, WIN>;
   using typename base::data_type;
 
-  detail::accum<U> val; ///< accumulated value
+  detail::accum<data_type> val; ///< accumulated value
 
   using base::base;
 
