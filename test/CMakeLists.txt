@@ -43,8 +43,8 @@ add_executable(test_chrono chrono_test.cpp)
 target_link_libraries(test_chrono GTest::gtest_main opflow::headers)
 
 # Graph executor tests
-add_executable(test_graph_exec graph_exec_test.cpp)
-target_link_libraries(test_graph_exec GTest::gtest_main opflow::headers)
+add_executable(test_op_dag_exec op_dag_exec_test.cpp)
+target_link_libraries(test_op_dag_exec GTest::gtest_main opflow::headers)
 
 # sorted_vect tests
 add_executable(test_sorted_vect sorted_vect_test.cpp)
@@ -53,10 +53,6 @@ target_link_libraries(test_sorted_vect GTest::gtest_main opflow::headers)
 # ringbuf_vect tests
 add_executable(test_ringbuf_vect ringbuf_vect_test.cpp)
 target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
-
-# with_time_delta tests
-add_executable(test_with_time_delta with_time_delta_test.cpp)
-target_link_libraries(test_with_time_delta GTest::gtest_main opflow::headers)
 
 # tumbling window tests
 add_executable(test_tumbling_window tumbling_win_test.cpp)
@@ -67,7 +63,6 @@ gtest_discover_tests(test_main)
 gtest_discover_tests(test_graph_topo)
 gtest_discover_tests(test_graph)
 gtest_discover_tests(test_tumbling_window)
-gtest_discover_tests(test_with_time_delta)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)
 gtest_discover_tests(test_history_comparison)
@@ -77,6 +72,6 @@ gtest_discover_tests(test_flat_set)
 gtest_discover_tests(test_flat_set_edge_cases)
 gtest_discover_tests(test_flat_set_corner_cases)
 gtest_discover_tests(test_chrono)
-gtest_discover_tests(test_graph_exec)
+gtest_discover_tests(test_op_dag_exec)
 gtest_discover_tests(test_sorted_vect)
 gtest_discover_tests(test_ringbuf_vect)
