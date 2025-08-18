@@ -156,4 +156,11 @@ struct strict_bool {
 
   friend constexpr bool operator==(strict_bool const &lhs, strict_bool const &rhs) = default;
 };
+
+template <typename... Ts>
+struct overload : Ts... {
+  using Ts::operator()...;
+};
+template <typename... Ts>
+overload(Ts...) -> overload<Ts...>;
 } // namespace opflow
