@@ -127,6 +127,17 @@ public:
   T const &operator[](size_t id) const noexcept { return sorted[id]; }
 
   /**
+   * @brief Get the ID of a node by value
+   *
+   * @param node The node to look up
+   * @return size_t The ID of the node, of size() if not found
+   */
+  size_t id_of(T const &node) const {
+    auto const it = std::ranges::find(sorted, node);
+    return static_cast<size_t>(std::distance(sorted.begin(), it));
+  }
+
+  /**
    * @brief Get the predecessors of a node by index
    *
    * @param id The index of the node whose predecessors to retrieve
