@@ -1,5 +1,6 @@
 #pragma once
 
+#include "opflow/common.hpp"
 #include "opflow/window_base.hpp"
 
 namespace opflow::win {
@@ -16,9 +17,9 @@ namespace opflow::win {
  * @ref https://en.wikipedia.org/wiki/CUSUM
  * @ref López de Prado, M. (2018). Advances in Financial Machine Learning
  */
-template <std::floating_point Data>
-struct cusum_filter : window_base<Data> {
-  using base = window_base<Data>;
+template <arithmetic T>
+struct cusum_filter : public window_base<T> {
+  using base = window_base<T>;
   using typename base::data_type;
   using typename base::spec_type;
 
@@ -73,7 +74,5 @@ struct cusum_filter : window_base<Data> {
   void reset() noexcept override {
     *this = cusum_filter(thres, idx); // Reset to a new instance with the same parameters
   }
-
-  ~cusum_filter() noexcept override = default;
 };
 } // namespace opflow::win

@@ -7,7 +7,7 @@ template <typename Data>
 struct count : public agg_base<Data> {
   using data_type = Data;
 
-  void process(size_t n, data_type const *const *, data_type *out) noexcept override {
+  void on_data(size_t n, data_type const *const *, data_type *out) noexcept override {
     *out = static_cast<data_type>(n);
   }
 

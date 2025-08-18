@@ -15,6 +15,7 @@ namespace opflow {
  * 5. n is guaranteed to be greater than 0.
  * 6. Aggregators are not required to be thread-safe.
  * 7. Aggregators are not required to perform pointer checks.
+ * 8. Exec engine guarantees non-aliased in and out pointers.
  * @see opflow::agg::ohlc for a reference implementation.
  * @see opflow::agg::sum for a reference implementation.
  *
@@ -30,27 +31,13 @@ struct agg_base {
    * @param in pointer to the input data, index dimension: (col, row)
    * @param out pointer to the output data, index dimension: (col)
    */
-  virtual void process(size_t n, data_type const *const *in, data_type *out) noexcept = 0;
+  virtual void on_data(size_t n, data_type const *const *in, data_type *out) noexcept = 0;
+  virtual void reset() noexcept {}
 
-  /**
-   * @brief Get the number of input columns expected by the aggregator
-   *
-   */
   virtual size_t num_inputs() const noexcept = 0;
-
-  /**
-   * @brief Get the number of output columns produced by the aggregator
-   *
-   */
   virtual size_t num_outputs() const noexcept = 0;
 
-  /**
-   * @brief Reset the internal state of the aggregator.
-   *
-   * Default implementation is no-op. This is standard behaviour for pure aggregation functions.
-   *
-   */
-  virtual void reset() noexcept {}
+  agg_base const *observer() const noexcept { return this; }
 
   virtual ~agg_base() noexcept = default;
 };

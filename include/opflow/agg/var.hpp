@@ -19,7 +19,7 @@ struct stddev : public agg_base<Data> {
   explicit stddev(size_t num_columns, size_t degrees_of_freedom = 1)
       : input_cols(num_columns), ddof(degrees_of_freedom) {}
 
-  void process(size_t n, data_type const *const *in, data_type *out) noexcept override {
+  void on_data(size_t n, data_type const *const *in, data_type *out) noexcept override {
     for (size_t i = 0; i < input_cols; ++i) {
       if (n == 1) {
         out[i] = data_type{0};

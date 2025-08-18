@@ -16,7 +16,7 @@ struct sum : public agg_base<Data> {
   // Constructor: specify number of input columns (averages each column independently)
   explicit sum(size_t num_columns) : input_cols(num_columns) {}
 
-  void process(size_t n, data_type const *const *in, data_type *out) noexcept override {
+  void on_data(size_t n, data_type const *const *in, data_type *out) noexcept override {
     for (size_t i = 0; i < input_cols; ++i) {
       std::span<data_type const> col(in[i], n);
       out[i] = std::accumulate(col.begin(), col.end(), data_type{});

@@ -31,9 +31,9 @@ namespace opflow::win {
  *   - At t=70: window emitted for points at t=60,62, associated timestamp 70. i.e. [60, 70)
  *
  */
-template <arithmetic Data>
-struct tumbling : window_base<Data> {
-  using base = window_base<Data>;
+template <arithmetic T>
+struct tumbling : window_base<T> {
+  using base = window_base<T>;
   using typename base::data_type;
   using typename base::spec_type;
 
