@@ -20,10 +20,10 @@ public:
 
   template <range_of<node_type> R>
   fn_dag_exec(graph<node_type> const &g, R &&outputs)
-      : nodes(g),                                  // topo
-        data_offset(), data_size(), mem(), time(), // data
-        output_nodes(), output_sizes(),            // output
-        curr_args()                                // temp
+      : nodes(g),                          // topo
+        data_offset(), data_size(), mem(), // data
+        output_nodes(), output_sizes(),    // output
+        curr_args()                        // temp
   {
     validate_nodes();
     validate_nodes_compat();
@@ -39,22 +39,20 @@ public:
     }
   }
 
-  void on_data(data_type timestamp, data_type const *in) {
+  void on_data(data_type const *in) {
     // Handle root
-    time = timestamp;
     nodes[0]->on_data(in, out_ptr(0));
     // Handle subsequent nodes
     commit_input_buffer();
   }
 
-  data_type value(data_type *OPFLOW_RESTRICT out) const noexcept {
+  void value(data_type *OPFLOW_RESTRICT out) const noexcept {
     size_t i = 0;
     for (auto id : output_nodes) {
       for (size_t port = 0; port < output_sizes[id]; ++port) {
         out[i++] = mem[data_offset[id] + port];
       }
     }
-    return time;
   }
   size_t num_inputs() const noexcept { return nodes[0]->num_inputs(); }
   size_t num_outputs() const noexcept { return std::accumulate(output_sizes.begin(), output_sizes.end(), size_t(0)); }
@@ -62,15 +60,12 @@ public:
   // LEAKY interface to avoid extra copy on_data at input node
 
   // upstream:
-  // prev.value(curr.input_buffer());
-  // curr.commit_input_buffer(timestamp);
-  // curr.value(next.input_buffer());
+  // prev.value(curr.get_input_buffer());
+  // curr.commit_input_buffer();
+  // curr.value(next.get_input_buffer());
   // ...
 
-  data_type *input_buffer(data_type timestamp) noexcept {
-    time = timestamp;
-    return mem.data();
-  }
+  data_type *get_input_buffer() noexcept { return mem.data(); }
 
   void commit_input_buffer() {
     // Root input is already written
@@ -135,7 +130,6 @@ private:
   std::vector<size_t> data_offset; ///< Data offsets for each node
   size_t data_size;                ///< Total size
   std::vector<data_type> mem;      ///< Data buffer
-  data_type time;                  ///< Timestamp for the current execution
 
   std::vector<size_t> output_nodes; ///< Output node indices
   std::vector<size_t> output_sizes; ///< Output sizes for each output node
