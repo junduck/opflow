@@ -40,7 +40,7 @@ struct cusum_filter : public window_base<T> {
   cusum_filter(data_type log_threshold, size_t inspect_index)
       : thres(log_threshold), idx(inspect_index), lagged_log(), cusum_pos(), cusum_neg(), curr(), init() {}
 
-  bool process(data_type time, data_type const *in) noexcept override {
+  bool on_data(data_type time, data_type const *in) noexcept override {
     auto curr_log = std::log(in[idx]);
     curr.timestamp = time;
     ++curr.size;

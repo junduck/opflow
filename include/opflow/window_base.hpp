@@ -12,6 +12,7 @@ namespace opflow {
 template <typename Time>
 struct window_spec {
   Time timestamp; ///< Timestamp associated with this window
+  size_t offset;  ///< Offset of the window in the input data
   size_t size;    ///< Size of the window in data points
   size_t evict;   ///< Number of data points to evict from queue after window aggregation
 };
@@ -23,7 +24,7 @@ struct window_spec {
  *
  * 1. Window emitter signals when a window is emitted for an aggregator.
  * 2. Window emitter itself does not store and process data points.
- * 3. Aggregator will call process() to determine if a window should be emitted.
+ * 3. Aggregator will call on_data() to determine if a window should be emitted.
  * 4. Aggregator will call emit() if a window is emitted.
  * 5. Aggregator will collect data points and perform aggregation, this is NOT the concern of a window emitter.
  * 6. Data points in the window are emitted and evicted FIFO. Following table illustrates an example.
@@ -33,9 +34,10 @@ struct window_spec {
  * | 0          | false   | N/A           | N/A      | no window                                 |
  * | 0,1        | false   | N/A           | N/A      | no window                                 |
  * | 0,1,2      | false   | N/A           | N/A      | no window                                 |
- * | 0,1,2,3    | true    | [T0, 3, 2]    | 0,1,2    | 2 data points will be evicted after aggr  |
+ * | 0,1,2,3    | true    | [T0, 0, 3, 2] | 0,1,2    | offset 0, size 3, evict/pop 2 from queue  |
  * | 2,3,4      | false   | N/A           | N/A      | no window, 0,1 evicted from queue         |
- * | 2,3,4,5    | true    | [T1, 4, 4]    | 2,3,4,5  | 4 data points will be evicted after aggr  |
+ * | 2,3,4,5    | true    | [T1, 1, 3, 4] | 3,4,5    | offset 3, size 3, evict/pop 4 from queue  |
+ * | 6          | false   | N/A           | N/A      | no window, 2,3,4,5 evicted from queue     |
  *
  * Note that the queue and window are maintained by aggregator and is for exposition only.
  *
@@ -56,7 +58,7 @@ struct window_base {
    * @return true if a window is emitted, false otherwise.
    * @note  This method is called for each incoming data point.
    */
-  virtual bool process(data_type t, data_type const *in) noexcept = 0;
+  virtual bool on_data(data_type t, data_type const *in) noexcept = 0;
 
   /**
    * @brief Force emission of the current window, if any.
@@ -72,7 +74,7 @@ struct window_base {
   /**
    * @brief Get current window specification
    *
-   * This method is called only after process() returns true.
+   * This method is called only after on_data() returns true.
    *
    * @return spec_type
    */

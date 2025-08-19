@@ -61,7 +61,7 @@ struct tumbling : window_base<T> {
 
   explicit tumbling(data_type window) noexcept : window_size(window), next_tick(), curr() {}
 
-  bool process(data_type tick, data_type const *) noexcept override {
+  bool on_data(data_type tick, data_type const *) noexcept override {
 
     // Case 1: Initialization state - next_tick is data_type{} (default constructed)
     if (next_tick == data_type{}) {
@@ -99,7 +99,7 @@ struct tumbling : window_base<T> {
 
   spec_type emit() noexcept override {
     // size initialised to 1 due to last data point that triggered the emit belongs to new window
-    return std::exchange(curr, {.timestamp = data_type{}, .size = 1, .evict = 0});
+    return std::exchange(curr, {.timestamp = data_type{}, .offset = 0, .size = 1, .evict = 0});
   }
 
   void reset() noexcept override {
