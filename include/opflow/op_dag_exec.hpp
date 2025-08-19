@@ -52,15 +52,14 @@ public:
     commit_input_buffer();
   }
 
-  data_type value(data_type *OPFLOW_RESTRICT out) const noexcept {
-    auto [time, mem] = history.back();
+  void value(data_type *OPFLOW_RESTRICT out) const noexcept {
+    auto [_, mem] = history.back();
     size_t i = 0;
     for (auto id : output_nodes) {
       for (size_t port = 0; port < output_sizes[id]; ++port) {
         out[i++] = mem[data_offset[id] + port];
       }
     }
-    return time;
   }
   size_t num_inputs() const noexcept { return nodes[0]->num_inputs(); }
   size_t num_outputs() const noexcept { return std::accumulate(output_sizes.begin(), output_sizes.end(), size_t(0)); }
@@ -68,9 +67,9 @@ public:
   // LEAKY interface to avoid extra copy on_data at input node
 
   // upstream:
-  // prev.value(curr.input_buffer());
-  // curr.commit_input_buffer(timestamp);
-  // curr.value(next.input_buffer());
+  // prev.value(curr.input_buffer(timestamp));
+  // curr.commit_input_buffer();
+  // curr.value(next.input_buffer(timestamp));
   // ...
 
   data_type *input_buffer(data_type timestamp) noexcept {
