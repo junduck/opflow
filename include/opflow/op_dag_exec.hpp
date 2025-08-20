@@ -20,13 +20,13 @@ public:
   using node_type = std::shared_ptr<op_type>;
 
   template <range_of<node_type> R>
-  explicit op_dag_exec(graph<node_type> const &g, R &&outputs)
+  op_dag_exec(graph<node_type> const &g, R &&outputs)
       : nodes(g),                                   // topo
         all_cumulative(), win_desc(), step_count(), // window state
         data_offset(), data_size(), history(),      // data
         output_nodes(), output_sizes(),             // output
-        curr_args()                                 // temp
-  {
+        curr_args() {
+
     validate_nodes();
     validate_nodes_compat();
     init_win_desc();
@@ -41,6 +41,9 @@ public:
       output_sizes.push_back(node->num_outputs());
     }
   }
+
+  op_dag_exec(graph<node_type> const &g, std::initializer_list<node_type> outputs)
+      : op_dag_exec(g, std::vector<node_type>(outputs)) {}
 
   void on_data(data_type timestamp, data_type const *input_data) {
     auto [_, mem] = history.push(timestamp);

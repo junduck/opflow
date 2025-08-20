@@ -23,8 +23,8 @@ public:
       : nodes(g),                          // topo
         data_offset(), data_size(), mem(), // data
         output_nodes(), output_sizes(),    // output
-        curr_args()                        // temp
-  {
+        curr_args() {
+
     validate_nodes();
     validate_nodes_compat();
     init_data();
@@ -38,6 +38,9 @@ public:
       output_sizes.push_back(node->num_outputs());
     }
   }
+
+  fn_dag_exec(graph<node_type> const &g, std::initializer_list<node_type> outputs)
+      : fn_dag_exec(g, std::vector<node_type>(outputs)) {}
 
   void on_data(data_type const *in) {
     // Handle root
