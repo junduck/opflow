@@ -101,7 +101,11 @@ concept associative = requires(Container const c) {
   { std::get<1>(v) } -> std::convertible_to<Value const &>;
 };
 
-// Convenience constants
+template <typename T>
+concept dag_node_base = requires(T t) {
+  { t->observer() } -> std::same_as<typename T::element_type const *>;
+  typename T::element_type::data_type;
+};
 
 template <std::floating_point T>
 constexpr inline T feps = std::numeric_limits<T>::epsilon(); ///< Epsilon constant

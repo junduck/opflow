@@ -18,6 +18,7 @@ protected:
   using add2_type = op::add2<double>;
 
   void SetUp() override {
+#if 0
     root = std::make_shared<root_type>(1);
     sum_left = std::make_shared<sum_type>(2);  // 2-period rolling sum
     sum_right = std::make_shared<sum_type>(5); // 5-period rolling sum
@@ -29,6 +30,13 @@ protected:
     g.add(add2, {sum_left | 0_p, sum_right | 0_p});
     std::vector<node_type> outputs = {sum_left, sum_right, add2};
 
+#else
+    root = g.root<op::graph_root>(1);
+    sum_left = g.add<op::sum>(root | 0_p, 2);
+    sum_right = g.add<sum_type>(root | 0_p, 5);
+    add2 = g.add<add2_type>({sum_left | 0_p, sum_right | 0_p});
+    std::vector<node_type> outputs = {sum_left, sum_right, add2};
+#endif
     exec = std::make_unique<exec_type>(g, outputs);
   }
 

@@ -187,6 +187,156 @@ public:
   }
 
   /**
+   * @brief Add a new node to the graph, make shared in-place
+   *
+   * Example:
+   * @code
+   graph<ob_base<double>> g{};
+   auto root = g.add<op::graph_root<double>>(2);
+   auto ma = g.add<op::ema<double>>(root | 1_p, 0.5); // depend on root port 1
+   auto sum = g.add<op::sum<double>>(root); // default port 0
+   auto add = g.add<op::add2>({sum, ma});  // overload instantiates op::add2<double> properly
+   * @endcode
+   *
+   * @tparam U The type of the new node
+   * @param preds A range of predecessors for the new node
+   * @param args args passed to the new node's constructor
+   * @return node_type a shared pointer to the newly created node
+   */
+  template <typename U, range_of<node_type> R, typename... Args>
+  node_type add(R &&preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node, std::forward<R>(preds));
+    return node; // Return the created node
+  }
+
+  template <typename U, range_of<node_arg_type> R, typename... Args>
+  node_type add(R &&preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node, std::forward<R>(preds));
+    return node; // Return the created node
+  }
+
+  template <typename U, typename... Args>
+  node_type add(std::initializer_list<node_type> preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node, preds);
+    return node; // Return the created node
+  }
+
+  template <typename U, typename... Args>
+  node_type add(std::initializer_list<node_arg_type> preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node, preds);
+    return node; // Return the created node
+  }
+
+  template <typename U, typename... Args>
+  node_type add(node_type const &pred, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node, pred);
+    return node; // Return the created node
+  }
+
+  template <typename U, typename... Args>
+  node_type add(node_arg_type const &pred, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node, pred);
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, range_of<node_type> R, typename... Args>
+  node_type add(R &&preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node, std::forward<R>(preds));
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, range_of<node_arg_type> R, typename... Args>
+  node_type add(R &&preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node, std::forward<R>(preds));
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, typename... Args>
+  node_type add(std::initializer_list<node_type> preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node, preds);
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, typename... Args>
+  node_type add(std::initializer_list<node_arg_type> preds, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node, preds);
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, typename... Args>
+  node_type add(node_type const &pred, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node, pred);
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, typename... Args>
+  node_type add(node_arg_type const &pred, Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node, pred);
+    return node; // Return the created node
+  }
+
+  template <typename U, typename... Args>
+  node_type root(Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
+    add(node);
+    return node; // Return the created node
+  }
+
+  template <template <typename> typename U, typename... Args>
+  node_type root(Args &&...args)
+    requires(dag_node_base<node_type>)
+  {
+    using data_type = typename node_type::element_type::data_type;
+    node_type node = std::make_shared<U<data_type>>(std::forward<Args>(args)...);
+    add(node);
+    return node; // Return the created node
+  }
+
+  /**
    * @brief Remove connections from the graph
    *
    * Remove connections between node and its predecessors from the graph. If only node is specified, the node
