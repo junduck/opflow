@@ -115,7 +115,8 @@ concept dag_node = requires(T const *t) {
   { t->observer() };
   // special in-place clone for arena/object pool
   { t->clone_at(std::declval<void *>()) };
-  { t->clone_size() };
+  { t->clone_size() } -> std::convertible_to<size_t>;
+  { t->clone_align() } -> std::convertible_to<size_t>;
 };
 
 template <typename T>
@@ -136,6 +137,8 @@ template <std::floating_point T>
 constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
 
 // Utilities
+
+constexpr inline size_t aligned_size(size_t size, size_t align) noexcept { return (size + align - 1) & ~(align - 1); }
 
 constexpr inline char name_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
 

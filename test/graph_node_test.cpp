@@ -17,6 +17,7 @@ struct dummy_node {
 
   void clone_at(void *) const {};
   size_t clone_size() const noexcept { return sizeof(dummy_node); };
+  size_t clone_align() const noexcept { return alignof(dummy_node); }
   dummy_node const *observer() const noexcept { return this; }
 
   std::string name;
