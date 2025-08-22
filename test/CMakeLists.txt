@@ -58,10 +58,15 @@ target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
 add_executable(test_tumbling_window tumbling_win_test.cpp)
 target_link_libraries(test_tumbling_window GTest::gtest_main opflow::headers)
 
+# graph_node tests
+add_executable(test_graph_node graph_node_test.cpp)
+target_link_libraries(test_graph_node GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_graph_topo)
 gtest_discover_tests(test_graph)
+gtest_discover_tests(test_graph_node)
 gtest_discover_tests(test_tumbling_window)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)

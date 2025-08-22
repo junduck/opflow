@@ -102,10 +102,25 @@ concept associative = requires(Container const c) {
 };
 
 template <typename T>
-concept dag_node_base = requires(T t) {
-  { t->observer() } -> std::same_as<typename T::element_type const *>;
-  typename T::element_type::data_type;
+concept smart_ptr = requires(T t) {
+  typename std::remove_cvref_t<T>::element_type;
+  { t.get() } -> std::same_as<typename std::remove_cvref_t<T>::element_type *>;
+  { t.operator->() } -> std::same_as<typename std::remove_cvref_t<T>::element_type *>;
 };
+
+template <typename T>
+concept dag_node = requires(T const *t) {
+  typename T::data_type;
+  // observer, should return base const pointer, don't have type here yet
+  { t->observer() };
+  // special in-place clone for arena/object pool
+  { t->clone_at(std::declval<void *>()) };
+  { t->clone_size() };
+};
+
+template <typename T>
+concept dag_node_ptr = (std::is_pointer_v<T> && dag_node<std::remove_pointer_t<T>>) ||
+                       (smart_ptr<T> && dag_node<typename std::remove_cvref_t<T>::element_type>);
 
 template <std::floating_point T>
 constexpr inline T feps = std::numeric_limits<T>::epsilon(); ///< Epsilon constant

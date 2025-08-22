@@ -9,3 +9,9 @@
 #define OPFLOW_RESTRICT
 #endif
 #endif
+
+#ifndef OPFLOW_CLONEABLE
+#define OPFLOW_CLONEABLE(Type)                                                                                         \
+  Type *clone_at(void *mem) const override { return new (mem) Type(*this); }                                           \
+  size_t clone_size() const noexcept override { return sizeof(Type); }
+#endif
