@@ -113,6 +113,8 @@ concept dag_node = requires(T const *t) {
   typename T::data_type;
   // observer, should return base const pointer, don't have type here yet
   { t->observer() };
+  { t->num_inputs() } -> std::convertible_to<size_t>;
+  { t->num_outputs() } -> std::convertible_to<size_t>;
   // special in-place clone for arena/object pool
   { t->clone_at(std::declval<void *>()) };
   { t->clone_size() } -> std::convertible_to<size_t>;
