@@ -23,7 +23,7 @@ add_executable(test_iterator iterator_test.cpp)
 target_link_libraries(test_iterator GTest::gtest_main opflow::headers)
 
 # Flat multivect tests
-add_executable(test_flat_multivect flat_multivect_test.cpp)
+add_executable(test_flat_multivect flat_multivect_test.cpp flat_multivect_pmr_test.cpp)
 target_link_libraries(test_flat_multivect GTest::gtest_main opflow::headers)
 
 # Flat set tests

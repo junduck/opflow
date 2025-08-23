@@ -8,16 +8,16 @@
 #include "iterator.hpp"
 
 namespace opflow::detail {
-
-template <typename T, typename Container = std::vector<T>>
+template <typename T, typename Alloc = std::allocator<T>>
 class flat_multivect {
   struct idx_t {
     size_t offset; ///< Offset in the flat data
     size_t length; ///< Length of the vector at this position
   };
+  using idx_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<idx_t>;
 
-  using flat_container = Container;
-  using idx_container = std::vector<idx_t>;
+  using flat_container = std::vector<T, Alloc>;
+  using idx_container = std::vector<idx_t, idx_alloc>;
 
   flat_container flat_data; ///< Flattened storage for all vectors
   idx_container index;      ///< Offsets and lengths for each vector
@@ -31,6 +31,25 @@ public:
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   flat_multivect() = default;
+  flat_multivect(Alloc const &alloc) : flat_data(alloc), index(alloc) {}
+
+  template <typename OtherAlloc>
+  flat_multivect(flat_multivect<T, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
+      : flat_data(alloc), index(alloc) {
+    // Reserve exact capacity to avoid any growth
+    flat_data.reserve(other.total_size());
+    auto other_flat = other.flat();
+    flat_data.assign(other_flat.begin(), other_flat.end());
+
+    // Reconstruct index information from public accessors (size and size(i)).
+    index.reserve(other.size());
+    size_t offset = 0;
+    for (size_t i = 0; i < other.size(); ++i) {
+      size_t len = other.size(i);
+      index.push_back({offset, len});
+      offset += len;
+    }
+  }
 
   template <std::ranges::forward_range R>
   size_t push_back(R &&range) {
@@ -110,16 +129,8 @@ public:
   value_type flat() noexcept { return value_type(flat_data); }
   const_value_type flat() const noexcept { return const_value_type(flat_data); }
 
-  T *data() noexcept
-    requires requires { std::declval<Container>().data(); }
-  {
-    return flat_data.data();
-  }
-  T const *data() const noexcept
-    requires requires { std::declval<Container const>().data(); }
-  {
-    return flat_data.data();
-  }
+  T *data() noexcept { return flat_data.data(); }
+  T const *data() const noexcept { return flat_data.data(); }
 
   // iterator interface
   iterator begin() { return iterator(this, 0); }
