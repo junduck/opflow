@@ -85,6 +85,9 @@ template <typename R, typename U>
 concept range_of = std::ranges::forward_range<R> && std::convertible_to<std::ranges::range_value_t<R>, U>;
 
 template <typename R, typename U>
+concept sized_range_of = range_of<R, U> && std::ranges::sized_range<R>;
+
+template <typename R, typename U>
 concept range_derived_from = std::ranges::forward_range<R> && std::derived_from<std::ranges::range_value_t<R>, U>;
 
 template <typename T>
@@ -187,4 +190,71 @@ struct overload : Ts... {
 };
 template <typename... Ts>
 overload(Ts...) -> overload<Ts...>;
+
+// Cacheline
+
+#if defined(__cpp_lib_hardware_interference_size) && __cpp_lib_hardware_interference_size >= 201703L
+// std::hardware_destructive_interference_size reports 64 for Apple Silicon as of Apple clang version 17.0.0
+// (clang-1700.0.13.5), but 128 should be used as reported by sysctl: hw.cachelinesize: 128
+#if defined(__APPLE__) && defined(__arm64__)
+constexpr inline size_t cacheline_size = 128;
+#else
+constexpr inline size_t cacheline_size = std::hardware_destructive_interference_size;
+#endif
+#else
+constexpr inline size_t cacheline_size = 64; // Default to 64 bytes
+#endif
+
+template <typename T, std::size_t Alignment>
+struct aligned_allocator {
+  static_assert(Alignment && (Alignment & (Alignment - 1)) == 0, "Alignment must be a power of two");
+
+  using value_type = T;
+  using pointer = T *;
+  using const_pointer = T const *;
+  using size_type = std::size_t;
+  using difference_type = std::ptrdiff_t;
+
+  template <class U>
+  struct rebind {
+    using other = aligned_allocator<U, Alignment>;
+  };
+
+  constexpr aligned_allocator() noexcept = default;
+
+  template <typename U>
+  constexpr aligned_allocator(aligned_allocator<U, Alignment> const &) noexcept {}
+
+  pointer allocate(size_type n) {
+    if (n == 0)
+      return nullptr;
+
+    // std::aligned_alloc requires size to be a multiple of alignment
+    size_type aligned_bytes = aligned_size(n * sizeof(T), Alignment);
+    return static_cast<pointer>(std::aligned_alloc(Alignment, aligned_bytes));
+  }
+
+  void deallocate(pointer ptr, size_type) noexcept {
+    if (ptr == nullptr)
+      return;
+
+    std::free(ptr);
+  }
+
+  size_type max_size() const noexcept { return (std::numeric_limits<size_type>::max)() / sizeof(T); }
+
+  template <typename U>
+  constexpr bool operator==(aligned_allocator<U, Alignment> const &) const noexcept {
+    return true;
+  }
+
+  template <typename U>
+  constexpr bool operator!=(aligned_allocator<U, Alignment> const &) const noexcept {
+    return false;
+  }
+};
+
+template <typename T>
+using cacheline_aligned_alloc = aligned_allocator<T, cacheline_size>;
+
 } // namespace opflow
