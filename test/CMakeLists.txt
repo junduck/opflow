@@ -15,6 +15,9 @@ target_link_libraries(test_history_deque GTest::gtest_main opflow::headers)
 add_executable(test_history_ringbuf history_ringbuf_test.cpp)
 target_link_libraries(test_history_ringbuf GTest::gtest_main opflow::headers)
 
+add_executable(test_history_buffer history_buffer_test.cpp)
+target_link_libraries(test_history_buffer GTest::gtest_main opflow::headers)
+
 add_executable(test_history_comparison history_comparison_test.cpp)
 target_link_libraries(test_history_comparison GTest::gtest_main opflow::headers)
 
@@ -75,6 +78,7 @@ gtest_discover_tests(test_graph_node)
 gtest_discover_tests(test_tumbling_window)
 gtest_discover_tests(test_history_deque)
 gtest_discover_tests(test_history_ringbuf)
+gtest_discover_tests(test_history_buffer)
 gtest_discover_tests(test_history_comparison)
 gtest_discover_tests(test_iterator)
 gtest_discover_tests(test_flat_multivect)
