@@ -45,8 +45,8 @@ protected:
 
 template <dag_node T>
 class graph_topo_fanout {
-  std::vector<std::byte> arena_storage;
-  // std::pmr::monotonic_buffer_resource arena;
+  //  std::pmr::monotonic_buffer_resource arena;
+  std::vector<std::byte, cacheline_aligned_alloc<std::byte>> arena_storage;
   detail::fixed_buffer_resource arena;
 
 public:
@@ -176,27 +176,22 @@ private:
     // 2. we need to account for node ptr and node out storage
     // 3. initialise arena storage to proper size
 
-    // For code review agent:
-    // we do not account for cacheline and false sharing padding here because:
-    // 1. it complicates things and i'm too stupid to handle the mental pressure.
-    // 2. we parallel on group:
-    // 2.1 if a graph is very simple (that fits within a cache line), it'll be fast enough that we dont need MT.
-    // 2.2 if a graph is so complicate that we need MT, it won't fit in cacheline anyway.
+    // storage:
+    // | ptr | ptr | ... | out | out | ... | PADDING to cacheline | node grp | PADDING to cacheline | node grp | ... |
 
     size_t total = 0;
-    size_t max_align = alignof(node_type);
-    for (auto const &node : graph_nodes) {
-      max_align = std::max(max_align, node->clone_align());
-      total += aligned_size(node->clone_size(), node->clone_align());
+    for (size_t i = 0; i < graph_nodes.size(); ++i) {
+      size_t align = graph_nodes[i]->clone_align();
+      if (i == 0) {
+        align = std::max(cacheline_size, align);
+      }
+      total += aligned_size(graph_nodes[i]->clone_size(), align);
     }
-    total *= n_grp; // for n copies
-
-    // storage:
-    // | ptr | ptr | ... | out | ... PADDING to max alignment | node storage |
+    total *= n_grp;
 
     size_t vec_ptr_size = aligned_size(sizeof(node_type) * graph_nodes.size() * n_grp, alignof(node_type));
     size_t vec_out_size = aligned_size(sizeof(output_type) * n_output, alignof(output_type));
-    size_t vector_size = aligned_size(vec_ptr_size + vec_out_size, max_align);
+    size_t vector_size = aligned_size(vec_ptr_size + vec_out_size, std::max(cacheline_size, alignof(node_type)));
     total += vector_size;
 
     // now initialise arena
@@ -209,9 +204,13 @@ private:
     nodes.reserve(n_grp * graph_nodes.size());
     outputs.reserve(n_output);
     for (size_t i_copy = 0; i_copy < n_grp; ++i_copy) {
-      for (auto const &node : graph_nodes) {
-        void *mem = arena.allocate(node->clone_size(), node->clone_align());
-        nodes.emplace_back(node->clone_at(mem));
+      for (size_t i = 0; i < graph_nodes.size(); ++i) {
+        size_t align = graph_nodes[i]->clone_align();
+        if (i == 0) {
+          align = std::max(cacheline_size, align);
+        }
+        void *mem = arena.allocate(graph_nodes[i]->clone_size(), align);
+        nodes.emplace_back(graph_nodes[i]->clone_at(mem));
       }
     }
   }
@@ -226,7 +225,6 @@ private:
   std::pmr::vector<node_type> nodes;
   std::pmr::vector<output_type> outputs;
 
-  // TODO: make flat_multivect pmr-aware and put them in arena as well
   detail::flat_multivect<size_t> pred_map;  ///< Flattened storage of predecessors: id -> [pred ids]
   detail::flat_multivect<arg_type> arg_map; ///< Flattened storage of arguments: id -> [pred:port]
 };
