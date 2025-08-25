@@ -5,7 +5,8 @@
 
 #include "common.hpp"
 #include "def.hpp"
-#include "detail/history_ringbuf.hpp"
+#include "detail/flat_multivect.hpp"
+#include "detail/history_buffer.hpp"
 #include "graph.hpp"
 #include "graph_topo.hpp"
 #include "op/root.hpp"
@@ -21,10 +22,10 @@ public:
 
   template <range_of<node_type> R>
   op_dag_exec(graph<node_type> const &g, R &&outputs)
-      : nodes(g),                                   // topo
-        all_cumulative(), win_desc(), step_count(), // window state
-        data_offset(), data_size(), history(),      // data
-        output_nodes(), output_sizes(),             // output
+      : nodes(g),                                             // topo
+        all_cumulative(), win_desc(), step_count(),           // window state
+        data_offset(), data_size(), args_offset(), history(), // data
+        output_nodes(), output_sizes(),                       // output
         curr_args() {
 
     validate_nodes();
@@ -110,11 +111,10 @@ public:
 private:
   data_type *out_ptr(auto base, size_t node_id) noexcept { return base.data() + data_offset[node_id]; }
 
-  data_type const *in_ptr(auto base, size_t node_id) const {
+  data_type const *in_ptr(auto base, size_t node_id) {
     curr_args.clear();
-    for (auto [pred, port] : nodes.args_of(node_id)) {
-      auto val = base[data_offset[pred] + port];
-      curr_args.push_back(val);
+    for (auto i : args_offset[node_id]) {
+      curr_args.push_back(base[i]);
     }
     return curr_args.data();
   }
@@ -133,20 +133,17 @@ private:
     }
   }
 
-  void validate_nodes_compat() const {
+  void validate_nodes_compat() {
     if (!dynamic_cast<op::graph_root<data_type> *>(nodes[0].get())) {
       throw node_error("Root node must be of type fn::graph_root", nodes[0]);
     }
-    size_t max_port = 0;
     for (size_t i = 1; i < nodes.size(); ++i) {
       for (auto [pred, port] : nodes.args_of(i)) {
-        max_port = std::max<size_t>(max_port, port);
         if (port >= nodes[pred]->num_outputs()) {
           throw node_error("Incompatible node connections", nodes[i]);
         }
       }
     }
-    curr_args.resize(max_port + 1);
   }
 
   void init_data() {
@@ -155,7 +152,23 @@ private:
       data_offset.push_back(data_size);
       data_size += nodes[i]->num_outputs();
     }
-    history.init(data_size);
+    history = detail::history_buffer<data_type>(data_size, 2);
+
+    std::vector<size_t> args{};
+    args_offset.reserve(nodes.size(), nodes.size_edge());
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      args.clear();
+      for (auto [pred, port] : nodes.args_of(i)) {
+        args.push_back(data_offset[pred] + port);
+      }
+      args_offset.push_back(args);
+    }
+
+    size_t max_input = 0;
+    for (auto const &node : nodes) {
+      max_input = std::max(max_input, node->num_inputs());
+    }
+    curr_args.reserve(max_input);
   }
 
   void init_win_desc() {
@@ -258,13 +271,14 @@ private:
   std::vector<win_desc_t> win_desc; ///< Window descriptors for each node
   std::vector<size_t> step_count;   ///< Step count for each node, used in step sliding mode
 
-  std::vector<size_t> data_offset;                       ///< I/O data offsets for each node
-  size_t data_size;                                      ///< Total size of I/O data for all nodes
-  detail::history_ringbuf<data_type, data_type> history; ///< History buffer for node I/O data
+  std::vector<size_t> data_offset;            ///< I/O data offsets for each node
+  size_t data_size;                           ///< Total size of I/O data for all nodes
+  detail::flat_multivect<size_t> args_offset; ///< Argument offsets for each node
+  detail::history_buffer<data_type> history;  ///< History buffer for node I/O data
 
   std::vector<size_t> output_nodes; ///< Output node IDs for each node
   std::vector<size_t> output_sizes; ///< Output sizes for each node
 
-  mutable std::vector<data_type> curr_args; ///< Reused for current node arguments
+  std::vector<data_type> curr_args; ///< Reused for current node arguments
 };
 } // namespace opflow
