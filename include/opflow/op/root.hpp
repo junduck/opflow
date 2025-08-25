@@ -29,5 +29,7 @@ struct graph_root : op_base<T> {
 
   size_t num_inputs() const noexcept override { return input_size; }
   size_t num_outputs() const noexcept override { return input_size; }
+
+  OPFLOW_CLONEABLE(graph_root)
 };
 } // namespace opflow::op

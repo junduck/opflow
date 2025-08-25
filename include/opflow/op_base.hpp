@@ -67,6 +67,10 @@ struct op_base {
 
   op_base const *observer() const noexcept { return this; }
 
+  virtual op_base *clone_at(void *mem) const noexcept = 0;
+  virtual size_t clone_size() const noexcept = 0;
+  virtual size_t clone_align() const noexcept = 0;
+
   virtual ~op_base() noexcept = default;
 };
 

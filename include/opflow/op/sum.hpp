@@ -1,6 +1,7 @@
 #pragma once
 
 #include "detail/accum.hpp"
+#include "opflow/def.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
@@ -20,6 +21,8 @@ struct sum : public win_base<T, WIN> {
 
   size_t num_inputs() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(sum)
 };
 
 // for testing
@@ -38,5 +41,7 @@ struct add2 : op_base<U> {
 
   size_t num_inputs() const noexcept override { return 2; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(add2)
 };
 } // namespace opflow::op

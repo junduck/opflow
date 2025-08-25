@@ -1,5 +1,6 @@
 #pragma once
 
+#include "opflow/def.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
@@ -60,5 +61,7 @@ struct dynwin_avg : public win_base<T, WIN> {
   bool is_dynamic() const noexcept override { return true; }
   size_t num_inputs() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(dynwin_avg)
 };
 } // namespace opflow::op
