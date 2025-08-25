@@ -10,7 +10,7 @@
 
 namespace opflow::detail {
 template <typename T, typename Alloc = std::allocator<T>>
-class history_buffer {
+class alignas(cacheline_size) history_buffer {
 public:
   using value_type = std::pair<T, std::span<T>>;
   using const_value_type = std::pair<T, std::span<T const>>;
