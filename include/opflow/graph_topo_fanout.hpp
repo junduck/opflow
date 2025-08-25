@@ -35,9 +35,8 @@ protected:
     return aligned;
   }
 
-  void do_deallocate(void *, std::size_t, std::size_t) override {
-    // No-op: monotonic, no deallocation
-  }
+  // No-op: monotonic, no deallocation
+  void do_deallocate(void *, std::size_t, std::size_t) noexcept override {}
 
   bool do_is_equal(std::pmr::memory_resource const &other) const noexcept override { return this == &other; }
 };
@@ -58,8 +57,8 @@ public:
     }
   };
 
-  using node_ptr = base_type const *;
   using node_type = std::unique_ptr<base_type, arena_deleter>;
+  using shared_node_type = std::shared_ptr<base_type>;
 
   struct output_type {
     uint32_t id;   ///< output node id
@@ -68,14 +67,18 @@ public:
     friend bool operator==(output_type const &lhs, output_type const &rhs) noexcept = default;
   };
 
-  graph_topo_fanout(graph_node<base_type> const &g, std::vector<node_ptr> const &out_nodes, size_t n_group = 1)
+  graph_topo_fanout(graph_node<base_type> const &g, std::initializer_list<shared_node_type> output_nodes,
+                    size_t n_group = 1)
+      : graph_topo_fanout(g, std::vector<shared_node_type>(output_nodes), n_group) {}
+
+  template <sized_range_of<shared_node_type> R>
+  graph_topo_fanout(graph_node<base_type> const &g, R &&output_nodes, size_t n_group = 1)
       : arena_storage(), arena(nullptr, 0), n_grp(n_group), n_nodes(), nodes(), outputs(), pred_map(), arg_map() {
     assert(n_group > 0 && "[BUG] Number of groups must be greater than 0.");
 
-    using g_node_type = typename graph_node<base_type>::node_type;
-    std::unordered_map<g_node_type, size_t, detail::ptr_hash<base_type>, std::equal_to<>> in_degree, sorted_id;
-    std::queue<g_node_type> ready;
-    std::vector<g_node_type> sorted;
+    std::unordered_map<shared_node_type, size_t, detail::ptr_hash<base_type>, std::equal_to<>> in_degree, sorted_id;
+    std::queue<shared_node_type> ready;
+    std::vector<shared_node_type> sorted;
 
     in_degree.reserve(g.size());
     sorted_id.reserve(g.size());
@@ -133,14 +136,15 @@ public:
     }
 
     // prepare arena and copy nodes
-    init_arena(sorted, out_nodes.size());
+    size_t n_output_nodes = std::ranges::size(output_nodes);
+    init_arena(sorted, n_output_nodes);
     nodes = std::pmr::vector<node_type>(&arena);
     outputs = std::pmr::vector<output_type>(&arena);
-    copy_nodes(sorted, out_nodes.size());
+    copy_nodes(sorted, n_output_nodes);
     n_nodes = sorted.size();
 
-    for (auto const &node : out_nodes) {
-      auto it = std::find_if(sorted.begin(), sorted.end(), [&](auto const &np) { return np.get() == node; });
+    for (auto const &node : output_nodes) {
+      auto it = std::find(sorted.begin(), sorted.end(), node);
       assert(it != sorted.end() && "[BUG] Output node not found in sorted nodes.");
       // this is safe anyway id == size() -> invalid
       output_type out{.id = static_cast<uint32_t>(std::distance(sorted.begin(), it)),
@@ -157,9 +161,11 @@ public:
 
   auto args_of(size_t id) const noexcept { return arg_map[id]; }
 
-  auto const &nodes_out() const noexcept { return outputs; }
+  auto nodes_out() const noexcept { return std::span<output_type const>(outputs); }
 
   size_t size() const noexcept { return n_nodes; }
+
+  size_t size_edge() const noexcept { return arg_map.total_size(); }
 
   size_t num_nodes() const noexcept { return n_nodes; }
 

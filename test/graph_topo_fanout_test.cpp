@@ -88,7 +88,7 @@ protected:
     g.add(nodeB, nodeA);
     g.add(nodeC, nodeB);
 
-    out_nodes = {nodeC.get()};
+    out_nodes = {nodeC};
   }
 
   // Helper to create diamond graph: A -> B, A -> C, B -> D, C -> D
@@ -103,7 +103,7 @@ protected:
     g.add(nodeC, nodeA);
     g.add(nodeD, {nodeB, nodeC});
 
-    out_nodes = {nodeD.get()};
+    out_nodes = {nodeD};
   }
 
   // Helper to create complex graph with multiple outputs
@@ -122,11 +122,11 @@ protected:
     g.add(nodeE, nodeB);
     g.add(nodeF, {nodeC, nodeE});
 
-    out_nodes = {nodeD.get(), nodeF.get()};
+    out_nodes = {nodeD, nodeF};
   }
 
   std::shared_ptr<dummy_node> nodeA, nodeB, nodeC, nodeD;
-  std::vector<dummy_node const *> out_nodes;
+  std::vector<std::shared_ptr<dummy_node>> out_nodes;
 };
 
 // Basic functionality tests
@@ -144,7 +144,7 @@ TEST_F(GraphTopoFanoutTest, SingleNodeGraph) {
   auto node = make_node("single", 42);
   g.add(node);
 
-  std::vector<dummy_node const *> out_nodes = {node.get()};
+  std::vector<std::shared_ptr<dummy_node>> out_nodes = {node};
   graph_topo_fanout<dummy_node> topo(g, out_nodes, 1);
 
   EXPECT_FALSE(topo.empty());
@@ -260,7 +260,7 @@ TEST_F(GraphTopoFanoutTest, MemoryAlignmentCorrectness) {
   aligned_g.add(nodeA);
   aligned_g.add(nodeB, nodeA);
 
-  std::vector<aligned_dummy_node const *> out_nodes = {nodeB.get()};
+  std::vector<std::shared_ptr<aligned_dummy_node>> out_nodes = {nodeB};
 
   graph_topo_fanout<aligned_dummy_node> topo(aligned_g, out_nodes, 3);
 
@@ -317,7 +317,7 @@ TEST_F(GraphTopoFanoutTest, LargeGraphStressTest) {
     nodes.push_back(node);
   }
 
-  std::vector<dummy_node const *> out_nodes = {nodes.back().get()};
+  std::vector<std::shared_ptr<dummy_node>> out_nodes = {nodes.back()};
 
   constexpr size_t num_groups = 10;
   graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
@@ -351,7 +351,7 @@ TEST_F(GraphTopoFanoutTest, CyclicGraphHandling) {
   // Create cycle by making A depend on C (this creates a cycle)
   g.add(nodeA, nodeC);
 
-  std::vector<dummy_node const *> out_nodes = {nodeC.get()};
+  std::vector<std::shared_ptr<dummy_node>> out_nodes = {nodeC};
   std::vector<size_t> out_ids;
 
   graph_topo_fanout<dummy_node> topo(g, out_nodes);
@@ -449,7 +449,7 @@ TEST_F(GraphTopoFanoutTest, ArenaMemoryAlignmentEdgeCases) {
     nodes.push_back(node);
   }
 
-  std::vector<aligned_dummy_node const *> out_nodes = {nodes.back().get()};
+  std::vector<std::shared_ptr<aligned_dummy_node>> out_nodes = {nodes.back()};
 
   // Test with multiple groups to stress arena allocation
   graph_topo_fanout<aligned_dummy_node> topo(mixed_g, out_nodes, 5);
@@ -568,7 +568,7 @@ TEST_F(GraphTopoFanoutTest, ComplexCyclicGraphDetection) {
   // Create cycle: A -> B -> C -> D, and then make A depend on E
   g.add(nodeA, nodeE); // This creates a cycle
 
-  std::vector<dummy_node const *> out_nodes = {nodeE.get()};
+  std::vector<std::shared_ptr<dummy_node>> out_nodes = {nodeE};
 
   graph_topo_fanout<dummy_node> topo(g, out_nodes);
 
@@ -602,10 +602,10 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
   }
 
   // Use leaf nodes as outputs
-  std::vector<dummy_node const *> out_nodes;
+  std::vector<std::shared_ptr<dummy_node>> out_nodes;
   size_t first_leaf = (1ULL << (depth - 1)) - 1;
   for (size_t i = first_leaf; i < nodes.size(); ++i) {
-    out_nodes.push_back(nodes[i].get());
+    out_nodes.push_back(nodes[i]);
   }
 
   std::vector<size_t> out_ids;
@@ -683,7 +683,7 @@ TEST_F(GraphTopoFanoutTest, NodeGroupIsolation) {
 TEST_F(GraphTopoFanoutTest, EmptyOutputNodesList) {
   create_linear_graph();
 
-  std::vector<dummy_node const *> empty_out_nodes;
+  std::vector<std::shared_ptr<dummy_node>> empty_out_nodes;
   std::vector<size_t> out_ids;
 
   graph_topo_fanout<dummy_node> topo(g, empty_out_nodes);
@@ -697,7 +697,7 @@ TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
   create_linear_graph();
 
   // Add the same output node multiple times
-  std::vector<dummy_node const *> duplicate_out_nodes = {nodeC.get(), nodeC.get(), nodeB.get(), nodeC.get()};
+  std::vector<std::shared_ptr<dummy_node>> duplicate_out_nodes = {nodeC, nodeC, nodeB, nodeC};
 
   graph_topo_fanout<dummy_node> topo(g, duplicate_out_nodes);
 
