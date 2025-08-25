@@ -89,6 +89,7 @@ protected:
     g.add(nodeC, nodeB);
 
     out_nodes = {nodeC};
+    g.set_output(out_nodes);
   }
 
   // Helper to create diamond graph: A -> B, A -> C, B -> D, C -> D
@@ -104,6 +105,7 @@ protected:
     g.add(nodeD, {nodeB, nodeC});
 
     out_nodes = {nodeD};
+    g.set_output(out_nodes);
   }
 
   // Helper to create complex graph with multiple outputs
@@ -123,35 +125,23 @@ protected:
     g.add(nodeF, {nodeC, nodeE});
 
     out_nodes = {nodeD, nodeF};
+    g.set_output(out_nodes);
   }
 
   std::shared_ptr<dummy_node> nodeA, nodeB, nodeC, nodeD;
   std::vector<std::shared_ptr<dummy_node>> out_nodes;
 };
 
-// Basic functionality tests
-TEST_F(GraphTopoFanoutTest, EmptyGraph) {
-  graph_topo_fanout<dummy_node> topo(g, {});
-
-  EXPECT_TRUE(topo.empty());
-  EXPECT_EQ(topo.size(), 0);
-  EXPECT_EQ(topo.num_nodes(), 0);
-  EXPECT_EQ(topo.num_groups(), 1);
-  EXPECT_FALSE(static_cast<bool>(topo));
-}
-
 TEST_F(GraphTopoFanoutTest, SingleNodeGraph) {
   auto node = make_node("single", 42);
   g.add(node);
+  g.add_output(node);
 
-  std::vector<std::shared_ptr<dummy_node>> out_nodes = {node};
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, 1);
+  graph_topo_fanout<dummy_node> topo(g, 1);
 
-  EXPECT_FALSE(topo.empty());
   EXPECT_EQ(topo.size(), 1);
   EXPECT_EQ(topo.num_nodes(), 1);
   EXPECT_EQ(topo.num_groups(), 1);
-  EXPECT_TRUE(static_cast<bool>(topo));
 
   ASSERT_EQ(topo.nodes_out().size(), 1);
   EXPECT_EQ(topo.nodes_out()[0].id, 0);
@@ -165,7 +155,7 @@ TEST_F(GraphTopoFanoutTest, SingleNodeGraph) {
 TEST_F(GraphTopoFanoutTest, LinearGraphTopologicalOrder) {
   create_linear_graph();
 
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.size(), 3);
   EXPECT_EQ(topo.nodes_out().size(), 1);
@@ -199,7 +189,7 @@ TEST_F(GraphTopoFanoutTest, LinearGraphTopologicalOrder) {
 TEST_F(GraphTopoFanoutTest, DiamondGraphCorrectPredecessors) {
   create_diamond_graph();
 
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.size(), 4);
 
@@ -227,7 +217,7 @@ TEST_F(GraphTopoFanoutTest, MultipleGroupsCorrectCopies) {
   create_linear_graph();
 
   constexpr size_t num_groups = 5;
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
+  graph_topo_fanout<dummy_node> topo(g, num_groups);
 
   EXPECT_EQ(topo.num_groups(), num_groups);
   EXPECT_EQ(topo.size(), 3);
@@ -259,10 +249,9 @@ TEST_F(GraphTopoFanoutTest, MemoryAlignmentCorrectness) {
 
   aligned_g.add(nodeA);
   aligned_g.add(nodeB, nodeA);
+  aligned_g.add_output(nodeB);
 
-  std::vector<std::shared_ptr<aligned_dummy_node>> out_nodes = {nodeB};
-
-  graph_topo_fanout<aligned_dummy_node> topo(aligned_g, out_nodes, 3);
+  graph_topo_fanout<aligned_dummy_node> topo(aligned_g, 3);
 
   // Verify all nodes are properly aligned
   for (size_t grp = 0; grp < 3; ++grp) {
@@ -280,7 +269,7 @@ TEST_F(GraphTopoFanoutTest, PMRArenaMemoryManagement) {
   constexpr size_t num_groups = 3;
 
   {
-    graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
+    graph_topo_fanout<dummy_node> topo(g, num_groups);
 
     // Verify nodes were cloned for each group
     EXPECT_EQ(topo.size(), g.size());
@@ -316,11 +305,10 @@ TEST_F(GraphTopoFanoutTest, LargeGraphStressTest) {
     }
     nodes.push_back(node);
   }
-
-  std::vector<std::shared_ptr<dummy_node>> out_nodes = {nodes.back()};
+  g.add_output(nodes.back());
 
   constexpr size_t num_groups = 10;
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
+  graph_topo_fanout<dummy_node> topo(g, num_groups);
 
   EXPECT_EQ(topo.size(), graph_size);
   EXPECT_EQ(topo.num_groups(), num_groups);
@@ -350,21 +338,15 @@ TEST_F(GraphTopoFanoutTest, CyclicGraphHandling) {
   g.add(nodeC, nodeB);
   // Create cycle by making A depend on C (this creates a cycle)
   g.add(nodeA, nodeC);
+  g.add_output(nodeC);
 
-  std::vector<std::shared_ptr<dummy_node>> out_nodes = {nodeC};
-  std::vector<size_t> out_ids;
-
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
-
-  // Should handle cyclic graph gracefully (return empty)
-  EXPECT_TRUE(topo.empty());
-  EXPECT_EQ(topo.size(), 0);
+  EXPECT_THROW(graph_topo_fanout<dummy_node> topo(g, 1), std::runtime_error);
 }
 
 TEST_F(GraphTopoFanoutTest, MultipleOutputNodes) {
   create_complex_graph();
 
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.nodes_out().size(), 2);                     // We have 2 output nodes
   EXPECT_NE(topo.nodes_out()[0].id, topo.nodes_out()[1].id); // They should be at different indices
@@ -383,15 +365,13 @@ TEST_F(GraphTopoFanoutTest, MultipleOutputNodes) {
 TEST_F(GraphTopoFanoutTest, ConstCorrectness) {
   create_linear_graph();
 
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
   graph_topo_fanout<dummy_node> const &const_topo = topo;
 
   // Test const methods
   EXPECT_EQ(const_topo.size(), 3);
   EXPECT_EQ(const_topo.num_nodes(), 3);
   EXPECT_EQ(const_topo.num_groups(), 1);
-  EXPECT_FALSE(const_topo.empty());
-  EXPECT_TRUE(static_cast<bool>(const_topo));
 
   // Test const nodes access
   auto const_nodes = const_topo.nodes_of(0);
@@ -409,7 +389,7 @@ TEST_F(GraphTopoFanoutTest, MemoryEfficiencyMultipleGroups) {
 
   // Test that pred_map and arg_map are shared across groups
   constexpr size_t num_groups = 100;
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
+  graph_topo_fanout<dummy_node> topo(g, num_groups);
 
   EXPECT_EQ(topo.num_groups(), num_groups);
 
@@ -448,11 +428,10 @@ TEST_F(GraphTopoFanoutTest, ArenaMemoryAlignmentEdgeCases) {
     }
     nodes.push_back(node);
   }
-
-  std::vector<std::shared_ptr<aligned_dummy_node>> out_nodes = {nodes.back()};
+  mixed_g.add_output(nodes.back());
 
   // Test with multiple groups to stress arena allocation
-  graph_topo_fanout<aligned_dummy_node> topo(mixed_g, out_nodes, 5);
+  graph_topo_fanout<aligned_dummy_node> topo(mixed_g, 5);
 
   // Verify all nodes maintain proper alignment
   for (size_t grp = 0; grp < 5; ++grp) {
@@ -468,7 +447,7 @@ TEST_F(GraphTopoFanoutTest, TopoOrderConsistencyAcrossGroups) {
   create_diamond_graph();
 
   constexpr size_t num_groups = 3;
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
+  graph_topo_fanout<dummy_node> topo(g, num_groups);
 
   // Get topological order from first group
   auto group0 = topo.nodes_of(0);
@@ -492,7 +471,7 @@ TEST_F(GraphTopoFanoutTest, TopoOrderConsistencyAcrossGroups) {
 TEST_F(GraphTopoFanoutTest, PredecessorAndArgumentMapping) {
   create_diamond_graph();
 
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
   auto nodes_span = topo.nodes_of(0);
 
   // Find indices of each node
@@ -538,20 +517,6 @@ TEST_F(GraphTopoFanoutTest, PredecessorAndArgumentMapping) {
   EXPECT_EQ(actual_preds, expected_preds);
 }
 
-TEST_F(GraphTopoFanoutTest, ZeroGroupsAssertionFailure) {
-  create_linear_graph();
-
-  // Note: This test verifies the assertion behavior
-  // In debug builds, this should trigger an assertion
-  // We can't easily test assertion failures in unit tests without special setup
-  // So we'll just document the expected behavior
-  EXPECT_NO_THROW({
-    if (false) { // This branch won't execute, but shows expected usage
-      graph_topo_fanout<dummy_node> topo(g, out_nodes, 0);
-    }
-  });
-}
-
 TEST_F(GraphTopoFanoutTest, ComplexCyclicGraphDetection) {
   // Create a more complex cyclic graph
   nodeA = make_node("A", 1);
@@ -568,14 +533,9 @@ TEST_F(GraphTopoFanoutTest, ComplexCyclicGraphDetection) {
   // Create cycle: A -> B -> C -> D, and then make A depend on E
   g.add(nodeA, nodeE); // This creates a cycle
 
-  std::vector<std::shared_ptr<dummy_node>> out_nodes = {nodeE};
+  g.add_output(nodeE);
 
-  graph_topo_fanout<dummy_node> topo(g, out_nodes);
-
-  // Should detect cycle and return empty
-  EXPECT_TRUE(topo.empty());
-  EXPECT_EQ(topo.size(), 0);
-  EXPECT_FALSE(static_cast<bool>(topo));
+  EXPECT_THROW(graph_topo_fanout<dummy_node> topo(g, 1), std::runtime_error);
 }
 
 TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
@@ -607,12 +567,11 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
   for (size_t i = first_leaf; i < nodes.size(); ++i) {
     out_nodes.push_back(nodes[i]);
   }
-
-  std::vector<size_t> out_ids;
+  g.set_output(out_nodes);
 
   // Measure construction time (basic performance check)
   auto start = std::chrono::high_resolution_clock::now();
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, 2);
+  graph_topo_fanout<dummy_node> topo(g, 2);
   auto end = std::chrono::high_resolution_clock::now();
 
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -644,7 +603,7 @@ TEST_F(GraphTopoFanoutTest, NodeGroupIsolation) {
   create_linear_graph();
 
   constexpr size_t num_groups = 3;
-  graph_topo_fanout<dummy_node> topo(g, out_nodes, num_groups);
+  graph_topo_fanout<dummy_node> topo(g, num_groups);
 
   // Modify state of nodes in one group and verify other groups are unaffected
   auto group0 = topo.nodes_of(0);
@@ -684,13 +643,11 @@ TEST_F(GraphTopoFanoutTest, EmptyOutputNodesList) {
   create_linear_graph();
 
   std::vector<std::shared_ptr<dummy_node>> empty_out_nodes;
-  std::vector<size_t> out_ids;
+  g.set_output(empty_out_nodes);
 
-  graph_topo_fanout<dummy_node> topo(g, empty_out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
 
-  EXPECT_FALSE(topo.empty());
   EXPECT_EQ(topo.size(), 3);
-  EXPECT_TRUE(out_ids.empty());
 }
 
 TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
@@ -698,8 +655,9 @@ TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
 
   // Add the same output node multiple times
   std::vector<std::shared_ptr<dummy_node>> duplicate_out_nodes = {nodeC, nodeC, nodeB, nodeC};
+  g.set_output(duplicate_out_nodes);
 
-  graph_topo_fanout<dummy_node> topo(g, duplicate_out_nodes);
+  graph_topo_fanout<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.nodes_out().size(), 4);
   EXPECT_EQ(topo.nodes_out()[0], topo.nodes_out()[1]); // Same node should have same index

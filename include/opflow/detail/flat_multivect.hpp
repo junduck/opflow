@@ -14,9 +14,10 @@ class flat_multivect {
     size_t offset; ///< Offset in the flat data
     size_t length; ///< Length of the vector at this position
   };
+  using T_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
   using idx_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<idx_t>;
 
-  using flat_container = std::vector<T, Alloc>;
+  using flat_container = std::vector<T, T_alloc>;
   using idx_container = std::vector<idx_t, idx_alloc>;
 
   flat_container flat_data; ///< Flattened storage for all vectors

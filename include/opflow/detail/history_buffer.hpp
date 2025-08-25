@@ -19,11 +19,12 @@ public:
   using difference_type = std::ptrdiff_t;
 
 private:
-  std::vector<T, Alloc> buffer; ///< Circular buffer for storing records: record = [time, data...]
-  size_type record_size;        ///< Size of each record
-  size_type capacity;           ///< Current capacity of the buffer (in records)
-  size_type head;               ///< Index of the head element
-  size_type count;              ///< Number of valid elements
+  using alloc_type = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+  std::vector<T, alloc_type> buffer; ///< Circular buffer for storing records: record = [time, data...]
+  size_type record_size;             ///< Size of each record
+  size_type capacity;                ///< Current capacity of the buffer (in records)
+  size_type head;                    ///< Index of the head element
+  size_type count;                   ///< Number of valid elements
 
   static constexpr size_t next_pow2(size_type n) noexcept { return n == 0 ? 1 : std::bit_ceil(n); }
 
@@ -31,7 +32,7 @@ public:
   history_buffer() = default;
 
   history_buffer(size_type val_size, size_type init_cap, Alloc const &alloc = Alloc())
-      : buffer(alloc), record_size(val_size + 1), capacity(next_pow2(init_cap ? init_cap : 1)), head(0), count(0) {
+      : buffer(alloc_type(alloc)), record_size(val_size + 1), capacity(next_pow2(init_cap)), head(), count() {
     // Check for potential overflow in value allocation
     if (record_size == 0 || capacity > std::numeric_limits<size_type>::max() / record_size) {
       throw std::bad_alloc();
@@ -86,17 +87,17 @@ public:
     --count;
   }
 
-  value_type operator[](size_type idx) { return get_record(idx); }
-  const_value_type operator[](size_type idx) const { return get_record(idx); }
+  value_type operator[](size_type idx) noexcept { return get_record(idx); }
+  const_value_type operator[](size_type idx) const noexcept { return get_record(idx); }
 
-  value_type from_back(size_type back_idx) { return operator[](count - 1 - back_idx); }
-  const_value_type from_back(size_type back_idx) const { return operator[](count - 1 - back_idx); }
+  value_type from_back(size_type back_idx) noexcept { return operator[](count - 1 - back_idx); }
+  const_value_type from_back(size_type back_idx) const noexcept { return operator[](count - 1 - back_idx); }
 
-  value_type front() { return get_record(0); }
-  const_value_type front() const { return get_record(0); }
+  value_type front() noexcept { return get_record(0); }
+  const_value_type front() const noexcept { return get_record(0); }
 
-  value_type back() { return get_record(count - 1); }
-  const_value_type back() const { return get_record(count - 1); }
+  value_type back() noexcept { return get_record(count - 1); }
+  const_value_type back() const noexcept { return get_record(count - 1); }
 
   size_type size() const noexcept { return count; }
 
