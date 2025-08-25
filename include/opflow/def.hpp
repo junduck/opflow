@@ -12,7 +12,7 @@
 
 #ifndef OPFLOW_CLONEABLE
 #define OPFLOW_CLONEABLE(Type)                                                                                         \
-  Type *clone_at(void *mem_) const override { return new (mem_) Type(*this); }                                         \
+  Type *clone_at(void *mem_) const noexcept override { return new (mem_) Type(*this); }                                \
   size_t clone_size() const noexcept override { return sizeof(Type); }                                                 \
   size_t clone_align() const noexcept override { return alignof(Type); }
 #endif
