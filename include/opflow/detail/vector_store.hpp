@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cassert>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -20,9 +22,10 @@ namespace opflow::detail {
  * |<-- cacheline aligned -->|         |<-- cacheline aligned -->|
  *
  * @tparam T The element type to store
+ * @tparam Allocator The allocator type for the underlying storage
  */
-template <typename T>
-  requires(std::is_trivial_v<T>)
+template <typename T, typename Allocator = std::allocator<T>>
+  requires(std::is_trivial_v<T>) // Requires trivial type so we can default copy/move storage
 class vector_store {
 public:
   using value_type = T;
@@ -33,7 +36,14 @@ public:
   using const_reference = const T &;
 
 private:
-  std::vector<std::byte, cacheline_aligned_alloc<std::byte>> storage;
+  struct alignas(cacheline_size) cacheline_chunk {
+    std::array<std::byte, cacheline_size> data;
+  };
+
+  // Rebind allocator to work with cacheline_chunk instead of std::byte
+  using chunk_allocator_type = typename std::allocator_traits<Allocator>::template rebind_alloc<cacheline_chunk>;
+
+  std::vector<cacheline_chunk, chunk_allocator_type> storage;
   size_type grp_size;
   size_type grp_num;
   size_type grp_stride; // Bytes between start of consecutive groups
@@ -57,8 +67,10 @@ private:
    */
   pointer group_data(size_type grp_id) noexcept {
     assert(grp_id < grp_num && "Group ID out of bounds");
-    auto byte_offset = grp_id * grp_stride;
-    return reinterpret_cast<pointer>(storage.data() + byte_offset);
+    auto total_byte_offset = grp_id * grp_stride;
+    auto chunk_offset = total_byte_offset >> cacheline_shift;
+    auto byte_offset = total_byte_offset & cacheline_mask;
+    return reinterpret_cast<pointer>(storage[chunk_offset].data.data() + byte_offset);
   }
 
   /**
@@ -69,8 +81,10 @@ private:
    */
   const_pointer group_data(size_type grp_id) const noexcept {
     assert(grp_id < grp_num && "Group ID out of bounds");
-    auto byte_offset = grp_id * grp_stride;
-    return reinterpret_cast<const_pointer>(storage.data() + byte_offset);
+    auto total_byte_offset = grp_id * grp_stride;
+    auto chunk_offset = total_byte_offset >> cacheline_shift;
+    auto byte_offset = total_byte_offset & cacheline_mask;
+    return reinterpret_cast<const_pointer>(storage[chunk_offset].data.data() + byte_offset);
   }
 
 public:
@@ -79,16 +93,19 @@ public:
    *
    * @param group_size Number of elements per group (m)
    * @param num_groups Number of groups (n)
+   * @param alloc Allocator instance for the underlying storage
    */
-  vector_store(size_type group_size, size_type num_groups)
-      : storage(), grp_size(group_size), grp_num(num_groups), grp_stride(calculate_group_stride(group_size)) {
+  explicit vector_store(size_type group_size, size_type num_groups, const Allocator &alloc = Allocator{})
+      : storage(chunk_allocator_type{alloc}), grp_size(group_size), grp_num(num_groups),
+        grp_stride(calculate_group_stride(group_size)) {
 
     assert(group_size > 0 && "Group size must be greater than 0");
     assert(num_groups > 0 && "Number of groups must be greater than 0");
 
-    // Total storage needed: num_groups * aligned_group_size
+    // Calculate how many cacheline chunks we need
     size_type total_bytes = grp_num * grp_stride;
-    storage.resize(total_bytes);
+    size_type num_chunks = (total_bytes + cacheline_size - 1) / cacheline_size;
+    storage.resize(num_chunks);
 
     // Initialize all elements using placement new
     for (size_type grp = 0; grp < grp_num; ++grp) {
@@ -99,11 +116,6 @@ public:
     }
   }
 
-  vector_store(const vector_store &) = delete;
-  vector_store &operator=(const vector_store &) = delete;
-  vector_store(vector_store &&) = delete;
-  vector_store &operator=(vector_store &&) = delete;
-
   /**
    * @brief Get a span view of a specific group
    *
@@ -112,6 +124,9 @@ public:
    */
   std::span<T> get(size_type grp_id) noexcept { return {group_data(grp_id), grp_size}; }
   std::span<const T> get(size_type grp_id) const noexcept { return {group_data(grp_id), grp_size}; }
+
+  std::span<T> operator[](size_type grp_id) noexcept { return get(grp_id); }
+  std::span<const T> operator[](size_type grp_id) const noexcept { return get(grp_id); }
 
   /**
    * @brief Get the number of elements per group

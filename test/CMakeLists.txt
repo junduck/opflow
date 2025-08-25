@@ -69,10 +69,15 @@ target_link_libraries(test_graph_node GTest::gtest_main opflow::headers)
 add_executable(test_graph_topo_fanout graph_topo_fanout_test.cpp)
 target_link_libraries(test_graph_topo_fanout GTest::gtest_main opflow::headers)
 
+# vector store tests
+add_executable(test_vector_store vector_store_test.cpp)
+target_link_libraries(test_vector_store GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_graph_topo)
 gtest_discover_tests(test_graph)
+gtest_discover_tests(test_vector_store)
 gtest_discover_tests(test_graph_topo_fanout)
 gtest_discover_tests(test_graph_node)
 gtest_discover_tests(test_tumbling_window)

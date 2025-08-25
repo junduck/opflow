@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <chrono>
 #include <limits>
 #include <stdexcept>
@@ -205,6 +206,10 @@ constexpr inline size_t cacheline_size = std::hardware_destructive_interference_
 constexpr inline size_t cacheline_size = 64; // Default to 64 bytes
 #endif
 
+// Fast bit operations for cacheline size (which is always a power of 2)
+constexpr inline size_t cacheline_shift = std::countr_zero(cacheline_size);
+constexpr inline size_t cacheline_mask = cacheline_size - 1;
+
 template <typename T, std::size_t Alignment>
 struct aligned_allocator {
   static_assert(Alignment && (Alignment & (Alignment - 1)) == 0, "Alignment must be a power of two");
@@ -256,5 +261,18 @@ struct aligned_allocator {
 
 template <typename T>
 using cacheline_aligned_alloc = aligned_allocator<T, cacheline_size>;
+
+// Sync
+
+/**
+ * @brief Synchronisation point for non-concurrent access
+ *
+ */
+struct alignas(cacheline_size) sync_point {
+  std::atomic<size_t> seq;
+
+  void enter() noexcept { seq.load(std::memory_order::acquire); }
+  void exit() noexcept { seq.fetch_add(1, std::memory_order::release); }
+};
 
 } // namespace opflow
