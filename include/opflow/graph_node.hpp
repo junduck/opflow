@@ -54,14 +54,15 @@ class graph_node {
 public:
   using node_type = std::shared_ptr<T>;                                ///< node type, shared_ptr to T
   using edge_type = detail::graph_edge<node_type>;                     ///< edge type, represents an arg passed to node
-  using NodeSet = std::unordered_set<node_type, Hash, Equal>;          ///< set of node observer
+  using NodeSet = std::unordered_set<node_type, Hash, Equal>;          ///< set of nodes
   using NodeArgsSet = std::vector<edge_type>;                          ///< set of node arguments
   using NodeMap = std::unordered_map<node_type, NodeSet, Hash, Equal>; ///< node -> adjacent nodes
   using NodeArgsMap = std::unordered_map<node_type, NodeArgsSet, Hash, Equal>; ///< node -> call arguments
-  using NodeStorage = std::vector<node_type>;                                  ///< storage for all nodes
 
   template <range_of<node_type> R>
   void add(node_type const &node, R &&preds) {
+    if (!node)
+      return;
     ensure_node(node);
 
     for (auto pred : preds) {
@@ -72,6 +73,8 @@ public:
 
   template <range_of<edge_type> R>
   void add(node_type const &node, R &&preds) {
+    if (!node)
+      return;
     ensure_node(node);
 
     for (auto const &[pred, port] : preds) {
@@ -91,6 +94,8 @@ public:
   }
 
   void add(node_type const &node, node_type const &pred) {
+    if (!node)
+      return;
     ensure_node(node);
 
     ensure_node(pred);
@@ -98,13 +103,19 @@ public:
   }
 
   void add(node_type const &node, edge_type const &pred) {
+    if (!node)
+      return;
     ensure_node(node);
 
     ensure_node(pred.node);
     add_edge_impl(node, pred.node, pred.port);
   }
 
-  void add(node_type const &node) { ensure_node(node); }
+  void add(node_type const &node) {
+    if (!node)
+      return;
+    ensure_node(node);
+  }
 
   // In-place construction
 
@@ -355,19 +366,51 @@ public:
     cleanup_adj(node, old_pred.node); // Check if old_pred is still needed
   }
 
+  // Output
+
+  template <range_of<node_type> R>
+  void set_output(R &&outputs) {
+    output.clear();
+    for (auto const &node : outputs) {
+      output.push_back(node);
+    }
+  }
+
+  void set_output(std::initializer_list<node_type> outputs) { output = std::vector<node_type>(outputs); }
+
+  void set_output(node_type const &node) { output = {node}; }
+
+  template <range_of<node_type> R>
+  void add_output(R &&outputs) {
+    for (auto const &node : outputs) {
+      output.push_back(node);
+    }
+  }
+
+  void add_output(std::initializer_list<node_type> outputs) {
+    for (auto const &node : outputs) {
+      output.push_back(node);
+    }
+  }
+
+  void add_output(node_type const &node) { output.push_back(node); }
+
   // Utilities
 
-  size_t size() const { return predecessor.size(); }
+  size_t size() const noexcept { return predecessor.size(); }
 
-  bool empty() const { return predecessor.empty(); }
+  bool empty() const noexcept { return predecessor.empty(); }
 
-  void clear() {
+  void clear() noexcept {
     predecessor.clear();
     argmap.clear();
     successor.clear();
+    output.clear();
   }
 
-  bool contains(node_type const &node) const { return predecessor.find(node) != predecessor.end(); }
+  void clear_output() noexcept { output.clear(); }
+
+  bool contains(node_type const &node) const noexcept { return predecessor.find(node) != predecessor.end(); }
 
   NodeSet const &pred_of(node_type const &node) const {
     static NodeSet empty_set{};
@@ -375,7 +418,7 @@ public:
     return (it != predecessor.end()) ? it->second : empty_set;
   }
 
-  NodeMap const &get_pred() const { return predecessor; }
+  NodeMap const &get_pred() const noexcept { return predecessor; }
 
   NodeArgsSet const &args_of(node_type const &node) const {
     static NodeArgsSet empty_set{};
@@ -383,7 +426,7 @@ public:
     return (it != argmap.end()) ? it->second : empty_set;
   }
 
-  NodeArgsMap const &get_args() const { return argmap; }
+  NodeArgsMap const &get_args() const noexcept { return argmap; }
 
   NodeSet const &succ_of(node_type const &node) const {
     static NodeSet empty_set{};
@@ -391,7 +434,9 @@ public:
     return (it != successor.end()) ? it->second : empty_set;
   }
 
-  NodeMap const &get_succ() const { return successor; }
+  NodeMap const &get_succ() const noexcept { return successor; }
+
+  auto const &get_output() const noexcept { return output; }
 
   bool is_root(node_type const &node) const {
     auto it = predecessor.find(node);
@@ -470,6 +515,7 @@ private:
     successor[pred].emplace(node);
   }
 
+  // remove all edges node -> [pred:port]
   void rm_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
     auto &args = argmap[node];
     auto rm = make_edge(pred, port);
@@ -482,12 +528,12 @@ private:
     std::erase(args, rm);
 
     // Cleanup adjacency maps
-    cleanup_adj(node, rm.node);
+    cleanup_adj(node, pred);
   }
 
   void cleanup_adj(node_type const &node, node_type const &pred) {
     auto const &args = argmap[node];
-    bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &np) { return np.node == pred; });
+    bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &arg) { return arg.node == pred; });
     if (!has_conn) {
       assert(predecessor[node].find(pred) != predecessor[node].end() &&
              "[BUG] Inconsistent graph state: predecessor not found in adj map.");
@@ -500,8 +546,9 @@ private:
   }
 
 protected:
-  NodeMap predecessor; ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  NodeArgsMap argmap;  ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;   ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  NodeMap predecessor;           ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  NodeArgsMap argmap;            ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  NodeMap successor;             ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  std::vector<node_type> output; ///< Output nodes
 };
 } // namespace opflow

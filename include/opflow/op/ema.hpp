@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include "detail/accum.hpp"
+#include "opflow/def.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
@@ -38,6 +39,8 @@ struct ema : public op_base<T> {
 
   size_t num_inputs() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(ema)
 };
 
 template <typename T>
@@ -75,5 +78,7 @@ struct ema_time : public op_base<T> {
 
   size_t num_inputs() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(ema_time)
 };
 } // namespace opflow::op

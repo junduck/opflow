@@ -1,6 +1,7 @@
 #pragma once
 
 #include "detail/accum.hpp"
+#include "opflow/def.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
@@ -35,6 +36,8 @@ struct avg : public win_base<T, WIN> {
 
   size_t num_inputs() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(avg)
 };
 
 template <typename T, win_type WIN = win_type::event>
@@ -70,5 +73,7 @@ struct avg_weighted : public win_base<T, WIN> {
 
   size_t num_inputs() const noexcept override { return 2; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(avg_weighted)
 };
 } // namespace opflow::op

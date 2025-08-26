@@ -95,6 +95,8 @@ public:
    */
   size_t size() const noexcept { return sorted.size(); }
 
+  size_t num_edges() const noexcept { return arg_map.total_size(); }
+
   /**
    * @brief Check if the graph is empty
    *
