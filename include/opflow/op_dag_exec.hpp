@@ -7,7 +7,6 @@
 #include "detail/vector_store.hpp"
 #include "graph_node.hpp"
 #include "graph_topo_fanout.hpp"
-#include "op/root.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow {
@@ -31,7 +30,7 @@ public:
         // window
         all_cumulative(), win_desc(alloc), step_count(graph.size(), ngrp, alloc),
         // tmp
-        curr_args(max_nargs(), ngrp, alloc) {
+        curr_args(0, ngrp, alloc) {
     validate();
     std::vector<size_t> size_hints(ngrp, history_size_hint);
     init_data(size_hints);
@@ -47,7 +46,7 @@ public:
         // window
         all_cumulative(), win_desc(alloc), step_count(graph.size(), ngrp),
         // tmp
-        curr_args(max_nargs(), ngrp) {
+        curr_args(0, ngrp, alloc) {
     if (std::ranges::size(hints_by_grp) != ngrp) {
       throw std::runtime_error("History size hints must match number of groups.");
     }
@@ -57,37 +56,37 @@ public:
   }
 
   void on_data(data_type timestamp, data_type const *input_data, size_t igrp) {
-    auto [_, mem] = history[igrp].push(timestamp);
+    auto [_, record] = history[igrp].push(timestamp);
 
-    auto grp = graph.nodes_of(igrp);
-    grp[0]->on_data(input_data);
-    grp[0]->value(out_ptr(mem, 0));
+    auto nodes = graph.nodes_of(igrp);
+    nodes[0]->on_data(input_data);
+    nodes[0]->value(out_ptr(record, 0));
 
     commit_input_buffer(igrp);
   }
 
   void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
-    auto [_, mem] = history[igrp].back();
+    auto [_, record] = history[igrp].back();
     size_t i = 0;
     for (auto [id, size] : graph.nodes_out()) {
       for (size_t port = 0; port < size; ++port) {
-        out[i++] = mem[record_offset[id] + port];
+        out[i++] = record[record_offset[id] + port];
       }
     }
   }
 
   data_type *input_buffer(data_type timestamp, size_t igrp) {
-    auto [_, mem] = history[igrp].push(timestamp);
-    return mem.data();
+    auto [_, record] = history[igrp].push(timestamp);
+    return record.data();
   }
 
   void commit_input_buffer(size_t igrp) noexcept {
-    auto [timestamp, mem] = history[igrp].back();
+    auto [timestamp, record] = history[igrp].back();
     auto nodes = graph[igrp];
 
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
-      nodes[i]->on_data(in_ptr(mem, i, igrp));
+      nodes[i]->on_data(in_ptr(record, i, igrp));
       // handle eviction for non-cumulative nodes
       if (!win_desc[i].cumulative) {
         // update step_count
@@ -103,7 +102,7 @@ public:
         }
       }
       // store output data
-      nodes[i]->value(out_ptr(mem, i));
+      nodes[i]->value(out_ptr(record, i));
     }
 
     cleanup_history(igrp);
@@ -126,6 +125,7 @@ public:
 
 private:
   data_type *out_ptr(auto record, size_t node_id) noexcept { return record.data() + record_offset[node_id]; }
+
   data_type const *in_ptr(auto record, size_t node_id, size_t grp_id) noexcept {
     auto args = curr_args[grp_id];
     auto offsets = args_offset[node_id];
@@ -139,7 +139,7 @@ private:
   void validate() {
     auto nodes = graph[0];
     // validate root
-    if (!dynamic_cast<op::graph_root<data_type> *>(nodes[0].get())) {
+    if (!dynamic_cast<op_root<data_type> *>(nodes[0].get())) {
       throw std::runtime_error("Wrong root node type in graph.");
     }
     for (size_t i = 1; i < graph.size(); ++i) {
@@ -162,16 +162,19 @@ private:
     // we only need to test group 0
     auto nodes = graph[0];
 
+    size_t max_inputs = 0;
     size_t total_size = 0;
     record_offset.reserve(graph.size());
     for (size_t i = 0; i < graph.size(); ++i) {
       record_offset.push_back(total_size);
       total_size += nodes[i]->num_outputs();
+      max_inputs = std::max(max_inputs, graph.args_of(i).size());
     }
     history.reserve(ngrp);
     for (size_t hint : history_size_hints) {
       history.emplace_back(total_size, hint, history.get_allocator());
     }
+    curr_args.ensure_group_capacity(max_inputs);
 
     std::vector<size_t> args{};
     args_offset.reserve(graph.size(), graph.num_edges());
@@ -215,14 +218,6 @@ private:
       win_desc.push_back(desc);
     }
     all_cumulative = n_cumulative == graph.size();
-  }
-
-  size_t max_nargs() const noexcept {
-    size_t max_inputs = 0;
-    for (size_t i = 1; i < graph.size(); ++i) {
-      max_inputs = std::max(max_inputs, graph.args_of(i).size());
-    }
-    return max_inputs;
   }
 
   void evict_event(data_type timestamp, size_t id, size_t igrp) noexcept {
@@ -311,7 +306,6 @@ private:
 
   bool all_cumulative;                                 ///< True if all nodes are in cumulative mode, shared
   std::vector<win_desc_type, win_desc_alloc> win_desc; ///< Window descriptors for each node, shared
-  // TODO: redesign vector_store to use allocator
   detail::vector_store<size_t, size_alloc> step_count; ///< Step count for each node, used in step sliding mode
 
   detail::vector_store<data_type, data_alloc> curr_args; ///< Reused for current node arguments

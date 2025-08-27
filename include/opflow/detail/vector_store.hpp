@@ -99,8 +99,11 @@ public:
       : storage(chunk_allocator_type{alloc}), grp_size(group_size), grp_num(num_groups),
         grp_stride(calculate_group_stride(group_size)) {
 
-    assert(group_size > 0 && "Group size must be greater than 0");
     assert(num_groups > 0 && "Number of groups must be greater than 0");
+    if (group_size == 0) {
+      // to be allocated later via ensure_group_capacity()
+      return;
+    }
 
     // Calculate how many cacheline chunks we need
     size_type total_bytes = grp_num * grp_stride;
