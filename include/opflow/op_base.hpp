@@ -5,6 +5,7 @@
 #include <variant>
 
 #include "common.hpp"
+#include "def.hpp"
 
 namespace opflow {
 enum class win_type {
@@ -179,4 +180,37 @@ struct win_erased_base : public op_base<T> {
     return std::get<data_type>(win_size);
   }
 };
+
+template <typename T>
+struct op_root : op_base<T> {
+  using base = op_base<T>;
+  using typename base::data_type;
+
+  data_type const *mem;
+  size_t const input_size;
+
+  explicit op_root(size_t n) : mem(nullptr), input_size(n) {}
+
+  void on_data(data_type const *in) noexcept override { mem = in; }
+  void value(data_type *out) const noexcept override {
+    data_type *OPFLOW_RESTRICT cast = out;
+    for (size_t i = 0; i < input_size; ++i) {
+      cast[i] = mem[i];
+    }
+  }
+  void reset() noexcept override {}
+
+  size_t num_inputs() const noexcept override { return input_size; }
+  size_t num_outputs() const noexcept override { return input_size; }
+
+  OPFLOW_CLONEABLE(op_root)
+};
+
+static_assert(dag_node<op_root<int>>);
+
+template <typename T>
+struct dag_root<op_base<T>> {
+  using type = op_root<T>;
+};
+
 } // namespace opflow
