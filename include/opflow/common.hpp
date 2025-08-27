@@ -192,6 +192,12 @@ struct overload : Ts... {
 template <typename... Ts>
 overload(Ts...) -> overload<Ts...>;
 
+template <dag_node T>
+struct dag_root;
+
+template <dag_node T>
+using dag_root_type = typename dag_root<T>::type;
+
 // Cacheline
 
 #if defined(__cpp_lib_hardware_interference_size) && __cpp_lib_hardware_interference_size >= 201703L

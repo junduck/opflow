@@ -3,7 +3,6 @@
 #include <vector>
 
 #include "opflow/graph_node.hpp"
-#include "opflow/op/root.hpp"
 #include "opflow/op/sum.hpp"
 #include "opflow/op_dag_exec.hpp"
 
@@ -15,13 +14,12 @@ protected:
   using exec_type = op_dag_exec<double>;
   using op_type = typename exec_type::op_type;
   using graph_node_type = typename exec_type::graph_node_type;
-  using root_type = op::graph_root<double>;
   using sum_type = op::sum<double>;
   using add2_type = op::add2<double>;
 
   void SetUp() override {
     // Create a simple DAG: root -> sum_left, sum_right -> add2
-    root = g.root<op::graph_root>(1);
+    root = g.root(1);
     sum_left = g.add<op::sum>(root | 0, 2);   // 2-period rolling sum
     sum_right = g.add<sum_type>(root | 0, 5); // 5-period rolling sum
     add2 = g.add<add2_type>({sum_left | 0, sum_right | 0});

@@ -198,6 +198,12 @@ public:
     return node;
   }
 
+  node_type root(size_t root_input_size) {
+    node_type node = std::make_shared<dag_root_type<T>>(root_input_size);
+    add(node);
+    return node;
+  }
+
   template <typename U, typename... Args>
   node_type root(Args &&...args) {
     node_type node = std::make_shared<U>(std::forward<Args>(args)...);
