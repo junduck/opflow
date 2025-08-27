@@ -7,20 +7,10 @@
 #include <vector>
 
 #include "common.hpp"
+#include "detail/utils.hpp"
 
 namespace opflow {
 namespace detail {
-// transparent hashing for pointer pointing to T
-template <typename T>
-struct ptr_hash {
-  using is_transparent = void;
-
-  std::size_t operator()(T *ptr) const noexcept { return std::hash<T const *>()(ptr); }
-  std::size_t operator()(T const *ptr) const noexcept { return std::hash<T const *>()(ptr); }
-  std::size_t operator()(std::shared_ptr<T> const &ptr) const noexcept { return std::hash<T const *>()(ptr.get()); }
-  std::size_t operator()(std::unique_ptr<T> const &ptr) const noexcept { return std::hash<T const *>()(ptr.get()); }
-};
-
 template <typename T>
 struct graph_edge {
   T node;

@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-#include "../common.hpp"
+#include "utils.hpp"
 
 namespace opflow::detail {
 

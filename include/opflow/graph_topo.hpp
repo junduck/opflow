@@ -2,62 +2,28 @@
 
 #include <algorithm>
 #include <memory>
-#include <memory_resource>
 #include <queue>
 #include <span>
 #include <unordered_map>
 #include <vector>
 
 #include "common.hpp"
+#include "detail/aligned_allocator.hpp"
+#include "detail/fixed_buffer_resource.hpp"
 #include "detail/flat_multivect.hpp"
 #include "graph_node.hpp"
 
 namespace opflow {
-namespace detail {
-class fixed_buffer_resource : public std::pmr::memory_resource {
-  std::byte *buffer_;
-  std::byte *curr_;
-  std::byte *end_;
-
-public:
-  fixed_buffer_resource(void *buffer, std::size_t capacity)
-      : buffer_(static_cast<std::byte *>(buffer)), curr_(buffer_), end_(buffer_ + capacity) {}
-
-protected:
-  void *do_allocate(std::size_t bytes, std::size_t alignment) override {
-    auto uptr = reinterpret_cast<uintptr_t>(curr_);
-    auto aligned = reinterpret_cast<std::byte *>(aligned_size(uptr, alignment));
-    auto new_curr = aligned + bytes;
-    if (new_curr > end_) {
-      throw std::bad_alloc(); // Out of memory
-    }
-    curr_ = new_curr;
-    return aligned;
-  }
-
-  // No-op: monotonic, no deallocation
-  void do_deallocate(void *, std::size_t, std::size_t) noexcept override {}
-
-  bool do_is_equal(std::pmr::memory_resource const &other) const noexcept override { return this == &other; }
-};
-} // namespace detail
-
 template <dag_node T>
 class graph_topo {
   //  std::pmr::monotonic_buffer_resource arena;
-  std::vector<std::byte, cacheline_aligned_alloc<std::byte>> arena_storage;
+  std::vector<std::byte, detail::cacheline_aligned_alloc<std::byte>> arena_storage;
   detail::fixed_buffer_resource arena;
 
 public:
   using base_type = T;
-  struct arena_deleter {
-    void operator()(base_type *ptr) const noexcept {
-      // memory is reclaimed when arena is destroyed, no dealloc needed
-      ptr->~base_type();
-    }
-  };
 
-  using node_type = std::unique_ptr<base_type, arena_deleter>;
+  using node_type = std::unique_ptr<base_type, detail::arena_deleter<base_type>>;
   using shared_node_type = std::shared_ptr<base_type>;
 
   struct output_type {
@@ -141,14 +107,11 @@ public:
     n_nodes = sorted.size();
 
     for (auto const &node : output_nodes) {
-      auto it = std::find(sorted.begin(), sorted.end(), node);
-      if (it == sorted.end()) {
+      auto it = sorted_id.find(node);
+      if (it == sorted_id.end()) {
         throw std::runtime_error("Output node not found in graph.");
       }
-      // this is safe anyway id == size() -> invalid
-      output_type out{.id = static_cast<uint32_t>(std::distance(sorted.begin(), it)),
-                      .size = static_cast<uint32_t>(node->num_outputs())};
-      outputs.push_back(out);
+      outputs.emplace_back(static_cast<uint32_t>(it->second), static_cast<uint32_t>(node->num_outputs()));
     }
   }
 
@@ -186,15 +149,16 @@ private:
     for (size_t i = 0; i < graph_nodes.size(); ++i) {
       size_t align = graph_nodes[i]->clone_align();
       if (i == 0) {
-        align = std::max(cacheline_size, align);
+        align = std::max(detail::cacheline_size, align);
       }
-      total += aligned_size(graph_nodes[i]->clone_size(), align);
+      total += detail::aligned_size(graph_nodes[i]->clone_size(), align);
     }
     total *= n_grp;
 
-    size_t vec_ptr_size = aligned_size(sizeof(node_type) * graph_nodes.size() * n_grp, alignof(node_type));
-    size_t vec_out_size = aligned_size(sizeof(output_type) * n_output, alignof(output_type));
-    size_t vector_size = aligned_size(vec_ptr_size + vec_out_size, std::max(cacheline_size, alignof(node_type)));
+    size_t vec_ptr_size = detail::aligned_size(sizeof(node_type) * graph_nodes.size() * n_grp, alignof(node_type));
+    size_t vec_out_size = detail::aligned_size(sizeof(output_type) * n_output, alignof(output_type));
+    size_t vector_size =
+        detail::aligned_size(vec_ptr_size + vec_out_size, std::max(detail::cacheline_size, alignof(node_type)));
     total += vector_size;
 
     // now initialise arena
@@ -210,7 +174,7 @@ private:
       for (size_t i = 0; i < graph_nodes.size(); ++i) {
         size_t align = graph_nodes[i]->clone_align();
         if (i == 0) {
-          align = std::max(cacheline_size, align);
+          align = std::max(detail::cacheline_size, align);
         }
         void *mem = arena.allocate(graph_nodes[i]->clone_size(), align);
         nodes.emplace_back(graph_nodes[i]->clone_at(mem));

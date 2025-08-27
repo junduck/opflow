@@ -7,6 +7,7 @@
 
 #include "iterator.hpp"
 #include "opflow/common.hpp"
+#include "utils.hpp"
 
 namespace opflow::detail {
 template <typename T, typename Alloc = std::allocator<T>>

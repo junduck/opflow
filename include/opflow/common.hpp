@@ -1,14 +1,23 @@
 #pragma once
 
-#include <bit>
 #include <chrono>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 
 namespace opflow {
+namespace detail {
+template <typename T>
+concept smart_ptr = requires(T t) {
+  typename std::remove_cvref_t<T>::element_type;
+  { t.get() } -> std::same_as<typename std::remove_cvref_t<T>::element_type *>;
+  { t.operator->() } -> std::same_as<typename std::remove_cvref_t<T>::element_type *>;
+};
+
+constexpr inline char name_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+} // namespace detail
+
 // Time
 
 template <typename Time>
@@ -66,20 +75,6 @@ using chrono_min_conv = chrono_conv<Data, std::chrono::minutes::period>;
 template <typename Data>
 using chrono_h_conv = chrono_conv<Data, std::chrono::hours::period>;
 
-// Error handling
-
-template <typename NodeType>
-class node_error : public std::runtime_error {
-public:
-  using node_type = NodeType;
-
-  node_error(auto &&msg, node_type const &node) : std::runtime_error(std::forward<decltype(msg)>(msg)), node(node) {}
-  node_type const &get_node() const noexcept { return node; }
-
-private:
-  node_type node;
-};
-
 // Concepts
 
 template <typename R, typename U>
@@ -94,24 +89,6 @@ concept range_derived_from = std::ranges::forward_range<R> && std::derived_from<
 template <typename T>
 concept arithmetic = std::is_arithmetic_v<T>;
 
-template <typename Container, typename Key, typename Value>
-concept associative = requires(Container const c) {
-  // query using find
-  { c.find(std::declval<Key>()) } -> std::same_as<typename Container::const_iterator>;
-  { c.end() } -> std::sentinel_for<typename Container::const_iterator>;
-} && requires(std::ranges::range_value_t<Container> v) {
-  // value type
-  { std::get<0>(v) } -> std::convertible_to<Key const &>;
-  { std::get<1>(v) } -> std::convertible_to<Value const &>;
-};
-
-template <typename T>
-concept smart_ptr = requires(T t) {
-  typename std::remove_cvref_t<T>::element_type;
-  { t.get() } -> std::same_as<typename std::remove_cvref_t<T>::element_type *>;
-  { t.operator->() } -> std::same_as<typename std::remove_cvref_t<T>::element_type *>;
-};
-
 template <typename T>
 concept dag_node = requires(T const *t) {
   typename T::data_type;
@@ -125,7 +102,9 @@ concept dag_node = requires(T const *t) {
 
 template <typename T>
 concept dag_node_ptr = (std::is_pointer_v<T> && dag_node<std::remove_pointer_t<T>>) ||
-                       (smart_ptr<T> && dag_node<typename std::remove_cvref_t<T>::element_type>);
+                       (detail::smart_ptr<T> && dag_node<typename std::remove_cvref_t<T>::element_type>);
+
+// Utilities
 
 template <std::floating_point T>
 constexpr inline T feps = std::numeric_limits<T>::epsilon(); ///< Epsilon constant
@@ -140,143 +119,21 @@ constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double val
 template <std::floating_point T>
 constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
 
-// Utilities
-
-constexpr inline size_t aligned_size(size_t size, size_t align) noexcept { return (size + align - 1) & ~(align - 1); }
-
-constexpr inline char name_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-
-struct str_hash {
-  using is_transparent = void; ///< Enable transparent hashing
-  std::size_t operator()(std::string_view str) const noexcept { return std::hash<std::string_view>{}(str); }
-  std::size_t operator()(std::string const &str) const noexcept { return std::hash<std::string>{}(str); }
-  std::size_t operator()(char const *str) const noexcept { return std::hash<std::string_view>{}(str); }
-};
-
 template <size_t N = 6, std::uniform_random_bit_generator G>
 std::string random_string(G &gen, std::string_view prefix = "") {
-  std::uniform_int_distribution<size_t> dist(0, sizeof(name_chars) - 2); // Exclude null terminator
+  std::uniform_int_distribution<size_t> dist(0, sizeof(detail::name_chars) - 2); // Exclude null terminator
 
   std::string str(prefix.size() + N, '\0');
   std::copy(prefix.begin(), prefix.end(), str.begin());
   for (size_t i = prefix.size(); i < str.size(); ++i) {
-    str[i] = name_chars[dist(gen)];
+    str[i] = detail::name_chars[dist(gen)];
   }
   return str;
 }
-
-struct strict_bool {
-  bool value;
-
-  constexpr strict_bool() noexcept : value(false) {}
-  constexpr strict_bool(bool v) noexcept : value(v) {}
-
-  template <typename T>
-  constexpr strict_bool(T) = delete;
-
-  template <typename T>
-  strict_bool &operator=(T) = delete;
-
-  constexpr explicit operator bool() const noexcept { return value; }
-  constexpr bool operator!() const noexcept { return !value; }
-
-  friend constexpr bool operator==(strict_bool const &lhs, strict_bool const &rhs) = default;
-};
-
-template <typename... Ts>
-struct overload : Ts... {
-  using Ts::operator()...;
-};
-template <typename... Ts>
-overload(Ts...) -> overload<Ts...>;
 
 template <dag_node T>
 struct dag_root;
 
 template <dag_node T>
 using dag_root_type = typename dag_root<T>::type;
-
-// Cacheline
-
-#if defined(__cpp_lib_hardware_interference_size) && __cpp_lib_hardware_interference_size >= 201703L
-// std::hardware_destructive_interference_size reports 64 for Apple Silicon as of Apple clang version 17.0.0
-// (clang-1700.0.13.5), but 128 should be used as reported by sysctl: hw.cachelinesize: 128
-#if defined(__APPLE__) && defined(__arm64__)
-constexpr inline size_t cacheline_size = 128;
-#else
-constexpr inline size_t cacheline_size = std::hardware_destructive_interference_size;
-#endif
-#else
-constexpr inline size_t cacheline_size = 64; // Default to 64 bytes
-#endif
-
-// Fast bit operations for cacheline size (which is always a power of 2)
-constexpr inline size_t cacheline_shift = std::countr_zero(cacheline_size);
-constexpr inline size_t cacheline_mask = cacheline_size - 1;
-
-template <typename T, std::size_t Alignment>
-struct aligned_allocator {
-  static_assert(Alignment && (Alignment & (Alignment - 1)) == 0, "Alignment must be a power of two");
-
-  using value_type = T;
-  using pointer = T *;
-  using const_pointer = T const *;
-  using size_type = std::size_t;
-  using difference_type = std::ptrdiff_t;
-
-  template <class U>
-  struct rebind {
-    using other = aligned_allocator<U, Alignment>;
-  };
-
-  constexpr aligned_allocator() noexcept = default;
-
-  template <typename U>
-  constexpr aligned_allocator(aligned_allocator<U, Alignment> const &) noexcept {}
-
-  pointer allocate(size_type n) {
-    if (n == 0)
-      return nullptr;
-
-    // std::aligned_alloc requires size to be a multiple of alignment
-    size_type aligned_bytes = aligned_size(n * sizeof(T), Alignment);
-    return static_cast<pointer>(std::aligned_alloc(Alignment, aligned_bytes));
-  }
-
-  void deallocate(pointer ptr, size_type) noexcept {
-    if (ptr == nullptr)
-      return;
-
-    std::free(ptr);
-  }
-
-  size_type max_size() const noexcept { return (std::numeric_limits<size_type>::max)() / sizeof(T); }
-
-  template <typename U>
-  constexpr bool operator==(aligned_allocator<U, Alignment> const &) const noexcept {
-    return true;
-  }
-
-  template <typename U>
-  constexpr bool operator!=(aligned_allocator<U, Alignment> const &) const noexcept {
-    return false;
-  }
-};
-
-template <typename T>
-using cacheline_aligned_alloc = aligned_allocator<T, cacheline_size>;
-
-// Sync
-
-/**
- * @brief Synchronisation point for non-concurrent access
- *
- */
-struct alignas(cacheline_size) sync_point {
-  std::atomic<size_t> seq;
-
-  void enter() noexcept { seq.load(std::memory_order::acquire); }
-  void exit() noexcept { seq.fetch_add(1, std::memory_order::release); }
-};
-
 } // namespace opflow

@@ -6,6 +6,7 @@
 
 #include "common.hpp"
 #include "def.hpp"
+#include "detail/utils.hpp"
 
 namespace opflow {
 enum class win_type {
@@ -157,12 +158,13 @@ struct win_erased_base : public op_base<T> {
   explicit win_erased_base(data_type win_time) noexcept : win_size(win_time) {}
 
   bool is_cumulative() const noexcept override {
-    auto visitor = overload{[](size_t arg) { return arg == 0; }, [](data_type arg) { return arg == data_type{}; }};
+    auto visitor =
+        detail::overload{[](size_t arg) { return arg == 0; }, [](data_type arg) { return arg == data_type{}; }};
     return std::visit(visitor, win_size);
   }
 
   win_type window_type() const noexcept override {
-    auto visitor = overload{[](size_t) { return win_type::event; }, [](data_type) { return win_type::time; }};
+    auto visitor = detail::overload{[](size_t) { return win_type::event; }, [](data_type) { return win_type::time; }};
     return std::visit(visitor, win_size);
   }
 
