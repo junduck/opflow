@@ -1,17 +1,15 @@
 #pragma once
 
 #include <bit>
-#include <concepts>
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <type_traits>
 
 namespace opflow::detail {
+template <std::unsigned_integral T>
 struct offset_type {
-  uint32_t offset; ///< Pointer offset
-  uint32_t size;   ///< Size
+  T offset; ///< Pointer offset
+  T size;   ///< Size
 };
 
 template <typename... Ts>

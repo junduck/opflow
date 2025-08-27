@@ -6,22 +6,20 @@
 #include <vector>
 
 #include "iterator.hpp"
+#include "utils.hpp"
 
 namespace opflow::detail {
-template <typename T, typename Alloc = std::allocator<T>>
+template <typename T, std::unsigned_integral Index = uint32_t, typename Alloc = std::allocator<T>>
 class flat_multivect {
-  struct idx_t {
-    size_t offset; ///< Offset in the flat data
-    size_t length; ///< Length of the vector at this position
-  };
-  using T_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
-  using idx_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<idx_t>;
+  using offset_type = detail::offset_type<Index>;
+  using data_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+  using offset_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<offset_type>;
 
-  using flat_container = std::vector<T, T_alloc>;
-  using idx_container = std::vector<idx_t, idx_alloc>;
+  using flat_container = std::vector<T, data_alloc>;
+  using idx_container = std::vector<offset_type, offset_alloc>;
 
-  flat_container flat_data; ///< Flattened storage for all vectors
   idx_container index;      ///< Offsets and lengths for each vector
+  flat_container flat_data; ///< Flattened storage for all vectors
 
 public:
   using value_type = std::span<T>;
@@ -32,11 +30,11 @@ public:
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   flat_multivect() = default;
-  flat_multivect(Alloc const &alloc) : flat_data(alloc), index(alloc) {}
+  flat_multivect(Alloc const &alloc) : index(alloc), flat_data(alloc) {}
 
-  template <typename OtherAlloc>
-  flat_multivect(flat_multivect<T, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
-      : flat_data(alloc), index(alloc) {
+  template <typename OtherIndex, typename OtherAlloc>
+  flat_multivect(flat_multivect<T, OtherIndex, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
+      : index(alloc), flat_data(alloc) {
     // Reserve exact capacity to avoid any growth
     flat_data.reserve(other.total_size());
     auto other_flat = other.flat();
@@ -47,7 +45,7 @@ public:
     size_t offset = 0;
     for (size_t i = 0; i < other.size(); ++i) {
       size_t len = other.size(i);
-      index.push_back({offset, len});
+      index.emplace_back(offset, len);
       offset += len;
     }
   }
@@ -59,7 +57,7 @@ public:
     size_t const len = std::ranges::size(range);
 
     flat_data.insert(flat_data.end(), std::ranges::begin(range), std::ranges::end(range));
-    index.push_back({off, len});
+    index.emplace_back(off, len);
 
     return idx;
   }
@@ -68,7 +66,7 @@ public:
   template <std::ranges::forward_range R>
   size_t push_front(R &&range) {
     flat_data.insert(flat_data.begin(), std::ranges::begin(range), std::ranges::end(range));
-    index.insert(index.begin(), {0, std::ranges::size(range)});
+    index.emplace(index.begin(), 0, std::ranges::size(range));
     // shift offsets
     size_t const n = std::ranges::size(range);
     for (size_t i = 1; i < index.size(); ++i) {
@@ -87,7 +85,7 @@ public:
   // Pop the front element (slow, linear time)
   void pop_front() {
     assert(!index.empty() && "pop_front on empty flat_multivect");
-    size_t first_len = index.front().length;
+    size_t first_len = index.front().size;
     flat_data.erase(flat_data.begin(),
                     flat_data.begin() + static_cast<typename flat_container::difference_type>(first_len));
     index.erase(index.begin());
@@ -101,7 +99,7 @@ public:
   void erase(size_t idx) {
     assert(idx < index.size() && "Index out of bounds");
     size_t off = index[idx].offset;
-    size_t len = index[idx].length;
+    size_t len = index[idx].size;
     // Remove elements from flat_data
     flat_data.erase(flat_data.begin() + static_cast<typename flat_container::difference_type>(off),
                     flat_data.begin() + static_cast<typename flat_container::difference_type>(off + len));
@@ -120,11 +118,11 @@ public:
 
   value_type operator[](size_t idx) noexcept {
     assert(idx < index.size() && "Index out of bounds");
-    return value_type(flat_data).subspan(index[idx].offset, index[idx].length);
+    return value_type(flat_data).subspan(index[idx].offset, index[idx].size);
   }
   const_value_type operator[](size_t idx) const noexcept {
     assert(idx < index.size() && "Index out of bounds");
-    return const_value_type(flat_data).subspan(index[idx].offset, index[idx].length);
+    return const_value_type(flat_data).subspan(index[idx].offset, index[idx].size);
   }
 
   value_type flat() noexcept { return value_type(flat_data); }
@@ -155,13 +153,13 @@ public:
   size_t size() const noexcept { return index.size(); }
   size_t size(size_t idx) const noexcept {
     assert(idx < index.size() && "Index out of bounds");
-    return index[idx].length;
+    return index[idx].size;
   }
 
   bool empty() const noexcept { return index.empty(); }
   bool empty(size_t idx) const noexcept {
     assert(idx < index.size() && "Index out of bounds");
-    return index[idx].length == 0;
+    return index[idx].size == 0;
   }
 
   void clear() noexcept {
@@ -170,8 +168,14 @@ public:
   }
 
   void reserve(size_t n_vect, size_t n_elem) {
-    flat_data.reserve(n_elem);
     index.reserve(n_vect);
+    flat_data.reserve(n_elem);
+  }
+
+  static size_t heap_alloc_size(size_t n_vect, size_t n_elem) noexcept {
+    size_t data_size = aligned_size(sizeof(T) * n_elem, alignof(T));
+    size_t idx_size = aligned_size(sizeof(offset_type) * n_vect, alignof(offset_type));
+    return data_size + idx_size;
   }
 };
 } // namespace opflow::detail

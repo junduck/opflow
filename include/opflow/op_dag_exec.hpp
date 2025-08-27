@@ -300,9 +300,9 @@ private:
   size_t ngrp;               ///< Number of groups
   graph_topo<op_type> graph; ///< DAG to execute, uses its own alloc
 
-  std::vector<hbuf_type, hbuf_alloc> history;             ///< History buffer for node I/O data
-  std::vector<size_t, size_alloc> record_offset;          ///< History record offsets for each node, shared
-  detail::flat_multivect<size_t, size_alloc> args_offset; ///< Argument offsets for each node, shared
+  std::vector<hbuf_type, hbuf_alloc> history;                       ///< History buffer for node I/O data
+  std::vector<size_t, size_alloc> record_offset;                    ///< History record offsets for each node, shared
+  detail::flat_multivect<size_t, uint32_t, size_alloc> args_offset; ///< Argument offsets for each node, shared
 
   bool all_cumulative;                                 ///< True if all nodes are in cumulative mode, shared
   std::vector<win_desc_type, win_desc_alloc> win_desc; ///< Window descriptors for each node, shared
