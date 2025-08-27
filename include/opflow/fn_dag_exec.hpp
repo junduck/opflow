@@ -1,142 +1,150 @@
 #pragma once
 
 #include <memory>
-#include <numeric>
 
-#include "common.hpp"
-#include "def.hpp"
-#include "fn/root.hpp"
+#include "detail/flat_multivect.hpp"
+#include "detail/vector_store.hpp"
 #include "fn_base.hpp"
-#include "graph.hpp"
-#include "graph_topo.hpp"
+#include "graph_topo_fanout.hpp"
 
 namespace opflow {
-template <typename T>
+template <typename T, typename Alloc = std::allocator<T>>
 class fn_dag_exec {
 public:
   using data_type = T;
   using fn_type = fn_base<data_type>;
-  using node_type = std::shared_ptr<fn_type>;
+  using graph_node_type = std::shared_ptr<fn_type>;
 
-  template <range_of<node_type> R>
-  fn_dag_exec(graph<node_type> const &g, R &&outputs)
-      : nodes(g),                          // topo
-        data_offset(), data_size(), mem(), // data
-        output_nodes(), output_sizes(),    // output
-        curr_args() {
-
-    validate_nodes();
-    validate_nodes_compat();
+  fn_dag_exec(graph_node<fn_type> const &g, size_t num_groups, Alloc const &alloc = Alloc{})
+      : // DAG
+        ngrp(num_groups), graph(g, ngrp),
+        // data
+        history(0, ngrp, alloc), record_offset(alloc), args_offset(alloc),
+        // tmp
+        curr_args(0, ngrp, alloc) {
+    validate();
     init_data();
-
-    for (auto const &node : outputs) {
-      auto id = nodes.id_of(node);
-      if (id == nodes.size()) {
-        throw node_error("Output node not found in graph", node);
-      }
-      output_nodes.push_back(id);
-      output_sizes.push_back(node->num_outputs());
-    }
   }
 
-  fn_dag_exec(graph<node_type> const &g, std::initializer_list<node_type> outputs)
-      : fn_dag_exec(g, std::vector<node_type>(outputs)) {}
+  void on_data(data_type const *in, size_t igrp) {
+    auto record = history[igrp];
 
-  void on_data(data_type const *in) {
-    // Handle root
-    nodes[0]->on_data(in, out_ptr(0));
-    // Handle subsequent nodes
-    commit_input_buffer();
+    auto nodes = graph[igrp];
+    nodes[0]->on_data(in, out_ptr(record, 0));
+
+    commit_input_buffer(igrp);
   }
 
-  void value(data_type *OPFLOW_RESTRICT out) const noexcept {
+  void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
+    auto record = history[igrp];
     size_t i = 0;
-    for (auto id : output_nodes) {
-      for (size_t port = 0; port < output_sizes[id]; ++port) {
-        out[i++] = mem[data_offset[id] + port];
+    for (auto [id, size] : graph.nodes_out()) {
+      for (size_t port = 0; port < size; ++port) {
+        out[i++] = record[record_offset[id] + port];
       }
     }
   }
-  size_t num_inputs() const noexcept { return nodes[0]->num_inputs(); }
-  size_t num_outputs() const noexcept { return std::accumulate(output_sizes.begin(), output_sizes.end(), size_t(0)); }
 
-  // LEAKY interface to avoid extra copy on_data at input node
+  data_type *input_buffer(size_t igrp) noexcept {
+    auto record = history[igrp];
+    return record.data();
+  }
 
-  // upstream:
-  // prev.value(curr.get_input_buffer());
-  // curr.commit_input_buffer();
-  // curr.value(next.get_input_buffer());
-  // ...
+  void commit_input_buffer(size_t igrp) noexcept {
+    auto record = history[igrp];
+    auto nodes = graph[igrp];
 
-  data_type *get_input_buffer() noexcept { return mem.data(); }
-
-  void commit_input_buffer() {
-    // Root input is already written
     for (size_t i = 1; i < nodes.size(); ++i) {
-      nodes[i]->on_data(in_ptr(i), out_ptr(i));
+      // call node
+      nodes[i]->on_data(in_ptr(record, i, igrp), out_ptr(record, i));
     }
   }
+
+  size_t num_inputs() const noexcept {
+    auto nodes = graph[0];
+    return nodes[0]->num_inputs();
+  }
+
+  size_t num_outputs() const noexcept {
+    size_t total = 0;
+    for (auto const &out : graph.nodes_out()) {
+      total += out.size;
+    }
+    return total;
+  }
+
+  size_t num_groups() const noexcept { return ngrp; }
 
 private:
-  data_type *out_ptr(size_t node_id) noexcept { return mem.data() + data_offset[node_id]; }
+  data_type *out_ptr(auto record, size_t node_id) noexcept { return record.data() + record_offset[node_id]; }
 
-  data_type const *in_ptr(size_t node_id) const {
-    curr_args.clear();
-    for (auto [pred, port] : nodes.args_of(node_id)) {
-      auto val = mem[data_offset[pred] + port];
-      curr_args.push_back(val);
+  data_type const *in_ptr(auto record, size_t node_id, size_t grp_id) noexcept {
+    auto args = curr_args[grp_id];
+    auto offsets = args_offset[node_id];
+    assert(args.size() >= offsets.size() && "[BUG] Argument size mismatch");
+    for (size_t i = 0; i < offsets.size(); ++i) {
+      args[i] = record[offsets[i]];
     }
-    return curr_args.data();
+    return args.data();
   }
 
-  void validate_nodes() const {
-    if (nodes.empty()) {
-      throw std::runtime_error("Graph is empty.");
+  void validate() const {
+    auto nodes = graph[0];
+    // validate root
+    if (!dynamic_cast<fn_root<data_type> *>(nodes[0].get())) {
+      throw std::runtime_error("Wrong root node type in graph.");
     }
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      if (!nodes[i]) {
-        throw std::runtime_error("Graph contains null node.");
+    for (size_t i = 1; i < graph.size(); ++i) {
+      if (graph.pred_of(i).empty()) {
+        throw std::runtime_error("Multiple root nodes detected in graph.");
       }
     }
-    if (nodes.root_ids().size() != 1) {
-      throw std::runtime_error("Graph must have exactly one root input.");
-    }
-  }
-
-  void validate_nodes_compat() const {
-    if (!dynamic_cast<fn::graph_root<data_type> *>(nodes[0].get())) {
-      throw node_error("Root node must be of type fn::graph_root", nodes[0]);
-    }
-    size_t max_port = 0;
+    // validate connections
     for (size_t i = 1; i < nodes.size(); ++i) {
-      for (auto [pred, port] : nodes.args_of(i)) {
-        max_port = std::max(max_port, port);
+      for (auto [pred, port] : graph.args_of(i)) {
         if (port >= nodes[pred]->num_outputs()) {
-          throw node_error("Incompatible node connections", nodes[i]);
+          throw std::runtime_error("Incompatible node connections in graph.");
         }
       }
     }
-    curr_args.resize(max_port + 1);
   }
 
   void init_data() {
-    data_offset.reserve(nodes.size());
+    auto nodes = graph[0];
+
+    size_t max_inputs = 0;
+    size_t total_size = 0;
+    record_offset.reserve(nodes.size());
     for (size_t i = 0; i < nodes.size(); ++i) {
-      data_offset.push_back(data_size);
-      data_size += nodes[i]->num_outputs();
+      record_offset.push_back(total_size);
+      total_size += nodes[i]->num_outputs();
+      max_inputs = std::max(max_inputs, nodes[i]->num_inputs());
     }
-    mem.resize(data_size);
+    history.ensure_group_capacity(total_size);
+    curr_args.ensure_group_capacity(max_inputs);
+
+    std::vector<size_t> args{};
+    args_offset.reserve(graph.size(), graph.num_edges());
+    for (size_t i = 0; i < graph.size(); ++i) {
+      args.clear();
+      for (auto [pred, port] : graph.args_of(i)) {
+        args.push_back(record_offset[pred] + port);
+      }
+      args_offset.push_back(args);
+    }
   }
 
-  graph_topo<node_type> nodes; ///< Topologically sorted DAG
+  // allocator types
+  using data_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<data_type>;
+  using size_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<size_t>;
 
-  std::vector<size_t> data_offset; ///< Data offsets for each node
-  size_t data_size;                ///< Total size
-  std::vector<data_type> mem;      ///< Data buffer
+  size_t ngrp;                      ///< Number of groups
+  graph_topo_fanout<fn_type> graph; ///< DAG to execute, uses its own alloc
 
-  std::vector<size_t> output_nodes; ///< Output node indices
-  std::vector<size_t> output_sizes; ///< Output sizes for each output node
+  detail::vector_store<data_type, data_alloc> history;    ///< Memory buffer for each node
+  std::vector<size_t, size_alloc> record_offset;          ///< Memory offsets for each node
+  detail::flat_multivect<size_t, size_alloc> args_offset; ///< Argument offsets for each node
 
-  mutable std::vector<data_type> curr_args; ///< Reused for current node arguments
+  detail::vector_store<data_type, data_alloc> curr_args; ///< Reused for current node arguments
 };
 } // namespace opflow
