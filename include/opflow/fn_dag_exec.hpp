@@ -5,7 +5,7 @@
 #include "detail/flat_multivect.hpp"
 #include "detail/vector_store.hpp"
 #include "fn_base.hpp"
-#include "graph_topo_fanout.hpp"
+#include "graph_topo.hpp"
 
 namespace opflow {
 template <typename T, typename Alloc = std::allocator<T>>
@@ -138,8 +138,8 @@ private:
   using data_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<data_type>;
   using size_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<size_t>;
 
-  size_t ngrp;                      ///< Number of groups
-  graph_topo_fanout<fn_type> graph; ///< DAG to execute, uses its own alloc
+  size_t ngrp;               ///< Number of groups
+  graph_topo<fn_type> graph; ///< DAG to execute, uses its own alloc
 
   detail::vector_store<data_type, data_alloc> history;    ///< Memory buffer for each node
   std::vector<size_t, size_alloc> record_offset;          ///< Memory offsets for each node

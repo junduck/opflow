@@ -1,40 +1,85 @@
 #pragma once
 
+#include <algorithm>
+#include <memory>
+#include <memory_resource>
 #include <queue>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
+#include "common.hpp"
 #include "detail/flat_multivect.hpp"
-#include "detail/iterator.hpp"
-#include "graph.hpp"
+#include "graph_node.hpp"
 
 namespace opflow {
-template <typename T>
-class graph_topo {
-public:
-  using node_type = T;
+namespace detail {
+class fixed_buffer_resource : public std::pmr::memory_resource {
+  std::byte *buffer_;
+  std::byte *curr_;
+  std::byte *end_;
 
-  struct arg_type {
-    uint32_t node;
-    uint32_t port;
+public:
+  fixed_buffer_resource(void *buffer, std::size_t capacity)
+      : buffer_(static_cast<std::byte *>(buffer)), curr_(buffer_), end_(buffer_ + capacity) {}
+
+protected:
+  void *do_allocate(std::size_t bytes, std::size_t alignment) override {
+    auto uptr = reinterpret_cast<uintptr_t>(curr_);
+    auto aligned = reinterpret_cast<std::byte *>(aligned_size(uptr, alignment));
+    auto new_curr = aligned + bytes;
+    if (new_curr > end_) {
+      throw std::bad_alloc(); // Out of memory
+    }
+    curr_ = new_curr;
+    return aligned;
+  }
+
+  // No-op: monotonic, no deallocation
+  void do_deallocate(void *, std::size_t, std::size_t) noexcept override {}
+
+  bool do_is_equal(std::pmr::memory_resource const &other) const noexcept override { return this == &other; }
+};
+} // namespace detail
+
+template <dag_node T>
+class graph_topo {
+  //  std::pmr::monotonic_buffer_resource arena;
+  std::vector<std::byte, cacheline_aligned_alloc<std::byte>> arena_storage;
+  detail::fixed_buffer_resource arena;
+
+public:
+  using base_type = T;
+  struct arena_deleter {
+    void operator()(base_type *ptr) const noexcept {
+      // memory is reclaimed when arena is destroyed, no dealloc needed
+      ptr->~base_type();
+    }
   };
 
-  /**
-   * @brief Construct a topological sorted graph from a directed graph
-   *
-   * @param g a directed graph
-   */
-  template <typename H, typename E>
-  graph_topo(graph<T, H, E> const &g) : pred_map(), sorted() {
-    // Perform a topological sort on the input graph
-    // and populate the sorted vector and preds structure
+  using node_type = std::unique_ptr<base_type, arena_deleter>;
+  using shared_node_type = std::shared_ptr<base_type>;
 
-    std::unordered_map<T, size_t, H, E> in_degree, sorted_id;
-    std::queue<T> ready;
+  struct output_type {
+    uint32_t id;   ///< output node id
+    uint32_t size; ///< output size
+
+    friend bool operator==(output_type const &lhs, output_type const &rhs) noexcept = default;
+  };
+
+  graph_topo(graph_node<base_type> const &g, size_t n_group = 1)
+      : arena_storage(), arena(nullptr, 0), n_grp(n_group), n_nodes(), nodes(), outputs(), pred_map(), arg_map() {
+    if (n_group == 0) {
+      throw std::invalid_argument("Number of groups must be greater than 0.");
+    }
+
+    std::unordered_map<shared_node_type, size_t, detail::ptr_hash<base_type>, std::equal_to<>> in_degree, sorted_id;
+    std::queue<shared_node_type> ready;
+    std::vector<shared_node_type> sorted;
 
     in_degree.reserve(g.size());
-    sorted.reserve(g.size());
     sorted_id.reserve(g.size());
+    sorted.reserve(g.size());
 
     for (auto const &[node, pred] : g.get_pred()) {
       auto n_pred = pred.size();
@@ -45,7 +90,7 @@ public:
     }
 
     while (!ready.empty()) {
-      T current = std::move(ready.front());
+      auto current = std::move(ready.front());
       ready.pop();
       sorted.push_back(current);
 
@@ -60,8 +105,7 @@ public:
     }
 
     if (sorted.size() != g.size()) {
-      sorted.clear();
-      throw std::runtime_error("Graph contains a cycle");
+      throw std::runtime_error("Cyclic graph detected.");
     }
 
     // Build the sorted_id mapping first
@@ -70,205 +114,122 @@ public:
     }
 
     // Then build the predecessors map
-    std::vector<size_t> tmp;
+    std::vector<size_t> tmp_id;
     std::vector<arg_type> tmp_args;
     for (size_t i = 0; i < sorted.size(); ++i) {
-      tmp.clear();
+      tmp_id.clear();
       tmp_args.clear();
       for (auto const &pred : g.pred_of(sorted[i])) {
-        tmp.push_back(sorted_id[pred]);
+        tmp_id.push_back(sorted_id[pred]);
       }
       for (auto const &arg : g.args_of(sorted[i])) {
         tmp_args.emplace_back(sorted_id[arg.node], arg.port);
       }
-      auto test_id = pred_map.push_back(tmp);
+      auto test_id = pred_map.push_back(tmp_id);
       auto test_args_id = arg_map.push_back(tmp_args);
       assert(test_id == i && "[BUG] Preds ID mismatch when constructing preds map.");
       assert(test_args_id == i && "[BUG] Args ID mismatch when constructing args map.");
     }
+
+    // prepare arena and copy nodes
+    auto const &output_nodes = g.get_output();
+    size_t n_output = output_nodes.size();
+    init_arena(sorted, n_output);
+    nodes = std::pmr::vector<node_type>(&arena);
+    outputs = std::pmr::vector<output_type>(&arena);
+    copy_nodes(sorted, n_output);
+    n_nodes = sorted.size();
+
+    for (auto const &node : output_nodes) {
+      auto it = std::find(sorted.begin(), sorted.end(), node);
+      if (it == sorted.end()) {
+        throw std::runtime_error("Output node not found in graph.");
+      }
+      // this is safe anyway id == size() -> invalid
+      output_type out{.id = static_cast<uint32_t>(std::distance(sorted.begin(), it)),
+                      .size = static_cast<uint32_t>(node->num_outputs())};
+      outputs.push_back(out);
+    }
   }
 
-  /**
-   * @brief Get the number of nodes in the graph
-   *
-   * @return size_t
-   */
-  size_t size() const noexcept { return sorted.size(); }
+  std::span<node_type> operator[](size_t igrp) noexcept { return nodes_of(igrp); }
+  std::span<node_type const> operator[](size_t igrp) const noexcept { return nodes_of(igrp); }
+
+  std::span<node_type> nodes_of(size_t igrp) noexcept { return {nodes.data() + igrp * n_nodes, n_nodes}; }
+  std::span<node_type const> nodes_of(size_t igrp) const noexcept { return {nodes.data() + igrp * n_nodes, n_nodes}; }
+
+  auto pred_of(size_t id) const noexcept { return pred_map[id]; }
+
+  auto args_of(size_t id) const noexcept { return arg_map[id]; }
+
+  std::span<output_type const> nodes_out() const noexcept { return {outputs.data(), outputs.size()}; }
+
+  size_t size() const noexcept { return n_nodes; }
 
   size_t num_edges() const noexcept { return arg_map.total_size(); }
 
-  /**
-   * @brief Check if the graph is empty
-   *
-   * @return true if the graph contains no nodes, false otherwise
-   */
-  bool empty() const noexcept { return sorted.empty(); }
+  size_t num_nodes() const noexcept { return n_nodes; }
 
-  /**
-   * @brief Check if a node exists in the graph
-   *
-   * @param node_id ID of the node to check
-   * @return true if the node exists, false otherwise
-   */
-  bool contains_id(size_t node_id) const noexcept { return node_id < size(); }
-
-  /**
-   * @brief Check if a node exists in the graph by value
-   *
-   * @param node The node to check
-   * @return true if the node exists, false otherwise
-   */
-  bool contains_node(T const &node) const { return std::ranges::find(sorted, node) != sorted.end(); }
-
-  /**
-   * @brief Get the node at a specific index
-   *
-   * @param id The index in topological order (0-based)
-   * @return T const& The node at the given index
-   */
-  T const &operator[](size_t id) const noexcept { return sorted[id]; }
-
-  /**
-   * @brief Get the ID of a node by value
-   *
-   * @param node The node to look up
-   * @return size_t The ID of the node, of size() if not found
-   */
-  size_t id_of(T const &node) const {
-    auto const it = std::ranges::find(sorted, node);
-    return static_cast<size_t>(std::distance(sorted.begin(), it));
-  }
-
-  /**
-   * @brief Get the predecessors of a node by index
-   *
-   * @param id The index of the node whose predecessors to retrieve
-   * @return std::span<const size_t> A span of the predecessor id for the node at the given index
-   */
-  auto pred_of(size_t id) const noexcept { return pred_map[id]; }
-
-  /**
-   * @brief Get the arguments of a node by index
-   *
-   * @param id The index of the node whose arguments to retrieve
-   * @return std::span<const arg_type> A span of the arguments for the node at the given index
-   */
-  auto args_of(size_t id) const noexcept { return arg_map[id]; }
-
-  /**
-   * @brief Check if a node is a root node
-   *
-   * @param id The index of the node to check
-   * @return true if the node is a root node, false otherwise
-   */
-  bool is_root(size_t id) const noexcept {
-    // A root node has no predecessors
-    return pred_map[id].empty();
-  }
-
-  /**
-   * @brief Get the root IDs in the graph
-   *
-   * @note O(V) operation
-   *
-   * @return a vector of root node indices
-   */
-  auto root_ids() const noexcept {
-    std::vector<size_t> ids;
-    for (size_t i = 0; i < sorted.size(); ++i) {
-      if (is_root(i)) {
-        ids.push_back(i);
-      }
-    }
-    return ids;
-  }
-
-  /**
-   * @brief Get all root nodes in the graph
-   *
-   * @note O(V) operation and copies nodes
-   *
-   * @return a vector of root nodes
-   */
-  auto get_roots() const {
-    std::vector<T> roots;
-    for (size_t i = 0; i < sorted.size(); ++i) {
-      if (is_root(i)) {
-        roots.push_back(sorted[i]);
-      }
-    }
-    return roots;
-  }
-
-  /**
-   * @brief Check if a node is a leaf node
-   *
-   * @note O(V+E) operation
-   *
-   * @param id The index of the node to check
-   * @return true if the node is a leaf node, false otherwise
-   */
-  bool is_leaf(size_t id) const noexcept {
-    auto flat = pred_map.flat();
-    return std::ranges::find(flat, id) == flat.end();
-  }
-
-  /**
-   * @brief Get the leaf IDs in the graph
-   *
-   * @note O(V+E) operation
-   *
-   * @return a vector of leaf node indices
-   */
-  auto leaf_ids() const noexcept {
-    std::vector<size_t> ids;
-    std::vector<bool> is_leaf(sorted.size(), true);
-    for (auto id : pred_map.flat()) {
-      is_leaf[id] = false; // Mark all nodes that have successors as not leaf
-    }
-    for (size_t i = 0; i < sorted.size(); ++i) {
-      if (is_leaf[i]) {
-        ids.push_back(i);
-      }
-    }
-    return ids;
-  }
-
-  /**
-   * @brief Get all leaf nodes in the graph
-   *
-   * @note O(V+E) operation and copies nodes
-   *
-   * @return a vector of leaf nodes
-   */
-  auto get_leaves() const {
-    std::vector<T> leaves;
-    std::vector<bool> is_leaf(sorted.size(), true);
-    for (auto id : pred_map.flat()) {
-      is_leaf[id] = false; // Mark all nodes that have successors as not leaf
-    }
-    for (size_t i = 0; i < sorted.size(); ++i) {
-      if (is_leaf[i]) {
-        leaves.push_back(sorted[i]);
-      }
-    }
-    return leaves;
-  }
-
-  // iterators
-
-  using const_iterator = detail::iterator_t<graph_topo, true>;
-  const_iterator begin() const noexcept { return const_iterator{this, 0}; }
-  const_iterator end() const noexcept { return const_iterator{this, size()}; }
+  size_t num_groups() const noexcept { return n_grp; }
 
 private:
+  void init_arena(std::vector<std::shared_ptr<base_type>> const &graph_nodes, size_t n_output) {
+    // before we copy to arena, we calculate total memory needed
+    // 1. we need to make n copies of nodes
+    // 2. we need to account for node ptr and node out storage
+    // 3. initialise arena storage to proper size
+
+    // storage:
+    // | ptr | ptr | ... | out | out | ... | PADDING to cacheline | node grp | PADDING to cacheline | node grp | ... |
+
+    size_t total = 0;
+    for (size_t i = 0; i < graph_nodes.size(); ++i) {
+      size_t align = graph_nodes[i]->clone_align();
+      if (i == 0) {
+        align = std::max(cacheline_size, align);
+      }
+      total += aligned_size(graph_nodes[i]->clone_size(), align);
+    }
+    total *= n_grp;
+
+    size_t vec_ptr_size = aligned_size(sizeof(node_type) * graph_nodes.size() * n_grp, alignof(node_type));
+    size_t vec_out_size = aligned_size(sizeof(output_type) * n_output, alignof(output_type));
+    size_t vector_size = aligned_size(vec_ptr_size + vec_out_size, std::max(cacheline_size, alignof(node_type)));
+    total += vector_size;
+
+    // now initialise arena
+    arena_storage.resize(total);
+    arena = detail::fixed_buffer_resource(arena_storage.data(), arena_storage.size());
+  }
+
+  void copy_nodes(std::vector<std::shared_ptr<base_type>> const &graph_nodes, size_t n_output) {
+    // because vector will grow and fragment our arena, we reserve first
+    nodes.reserve(n_grp * graph_nodes.size());
+    outputs.reserve(n_output);
+    for (size_t i_copy = 0; i_copy < n_grp; ++i_copy) {
+      for (size_t i = 0; i < graph_nodes.size(); ++i) {
+        size_t align = graph_nodes[i]->clone_align();
+        if (i == 0) {
+          align = std::max(cacheline_size, align);
+        }
+        void *mem = arena.allocate(graph_nodes[i]->clone_size(), align);
+        nodes.emplace_back(graph_nodes[i]->clone_at(mem));
+      }
+    }
+  }
+
+  struct arg_type {
+    uint32_t node;
+    uint32_t port;
+  };
+
+  size_t n_grp;
+  size_t n_nodes;
+  std::pmr::vector<node_type> nodes;
+  std::pmr::vector<output_type> outputs;
+
   detail::flat_multivect<size_t> pred_map;  ///< Flattened storage of predecessors: id -> [pred ids]
   detail::flat_multivect<arg_type> arg_map; ///< Flattened storage of arguments: id -> [pred:port]
-  std::vector<T> sorted;                    ///< Sorted nodes in topological order: id -> node
 };
-
-// Deduction guide
-template <typename T, typename Hash, typename Equal>
-graph_topo(graph<T, Hash, Equal> const &g) -> graph_topo<T>;
 
 } // namespace opflow

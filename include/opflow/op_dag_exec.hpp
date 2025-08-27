@@ -6,7 +6,7 @@
 #include "detail/history_buffer.hpp"
 #include "detail/vector_store.hpp"
 #include "graph_node.hpp"
-#include "graph_topo_fanout.hpp"
+#include "graph_topo.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow {
@@ -297,8 +297,8 @@ private:
   using size_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<size_t>;
   using win_desc_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<win_desc_type>;
 
-  size_t ngrp;                      ///< Number of groups
-  graph_topo_fanout<op_type> graph; ///< DAG to execute, uses its own alloc
+  size_t ngrp;               ///< Number of groups
+  graph_topo<op_type> graph; ///< DAG to execute, uses its own alloc
 
   std::vector<hbuf_type, hbuf_alloc> history;             ///< History buffer for node I/O data
   std::vector<size_t, size_alloc> record_offset;          ///< History record offsets for each node, shared
