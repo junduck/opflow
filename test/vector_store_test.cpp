@@ -212,8 +212,8 @@ TEST_F(VectorStoreTest, EdgeCases) {
     EXPECT_EQ(store[0][0].data[0], 100);
     EXPECT_EQ(store[2][1].data.back(), 200);
 
-    auto addr21 = reinterpret_cast<uintptr_t>(std::addressof(store[2][1]));
-    EXPECT_EQ(addr21 % cacheline_size, 0) << "Group 2 element 1 not aligned";
+    auto addr2 = reinterpret_cast<uintptr_t>(store[2].data());
+    EXPECT_EQ(addr2 % cacheline_size, 0) << "Group 2 not aligned";
   }
 }
 
@@ -378,6 +378,243 @@ TEST_F(VectorStoreTest, AllocatorPropagation) {
   for (size_t grp = 0; grp < store.num_groups(); ++grp) {
     auto span = store[grp];
     for (size_t i = 0; i < span.size(); ++i) {
+      EXPECT_EQ(span[i], static_cast<int>(grp * 100 + i));
+    }
+  }
+}
+
+// Test ensure_group_capacity method
+TEST_F(VectorStoreTest, EnsureGroupCapacity) {
+  vector_store<int> store(3, 4); // 3 elements per group, 4 groups
+
+  // Initialize with test data
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 0; i < span.size(); ++i) {
+      span[i] = static_cast<int>(grp * 10 + i);
+    }
+  }
+
+  // Ensure capacity smaller than current - should be no-op
+  store.ensure_group_capacity(2);
+  EXPECT_EQ(store.group_size(), 3);
+  EXPECT_EQ(store.num_groups(), 4);
+
+  // Verify data is unchanged
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 0; i < span.size(); ++i) {
+      EXPECT_EQ(span[i], static_cast<int>(grp * 10 + i));
+    }
+  }
+
+  // Ensure capacity equal to current - should be no-op
+  store.ensure_group_capacity(3);
+  EXPECT_EQ(store.group_size(), 3);
+  EXPECT_EQ(store.num_groups(), 4);
+
+  // Verify data is unchanged
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 0; i < span.size(); ++i) {
+      EXPECT_EQ(span[i], static_cast<int>(grp * 10 + i));
+    }
+  }
+
+  // Expand capacity to larger size
+  store.ensure_group_capacity(6);
+  EXPECT_EQ(store.group_size(), 6);
+  EXPECT_EQ(store.num_groups(), 4);
+
+  // Verify original data is preserved
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 0; i < 3; ++i) { // Original data
+      EXPECT_EQ(span[i], static_cast<int>(grp * 10 + i));
+    }
+    for (size_t i = 3; i < 6; ++i) { // New elements should be zero-initialized
+      EXPECT_EQ(span[i], 0);
+    }
+  }
+
+  // Test we can use the new capacity
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    span[4] = static_cast<int>(grp * 100 + 4);
+    span[5] = static_cast<int>(grp * 100 + 5);
+  }
+
+  // Verify new data
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    EXPECT_EQ(span[4], static_cast<int>(grp * 100 + 4));
+    EXPECT_EQ(span[5], static_cast<int>(grp * 100 + 5));
+  }
+}
+
+// Test ensure_group_capacity with alignment considerations
+TEST_F(VectorStoreTest, EnsureGroupCapacityAlignment) {
+  vector_store<int> store(2, 3);
+
+  // Fill with test data
+  store[0][0] = 10;
+  store[0][1] = 20;
+  store[1][0] = 30;
+  store[1][1] = 40;
+  store[2][0] = 50;
+  store[2][1] = 60;
+
+  // Expand to a size that might have the same stride (depending on cacheline size)
+  store.ensure_group_capacity(3);
+
+  // Verify alignment is maintained
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    auto addr = reinterpret_cast<uintptr_t>(span.data());
+    if (grp == 0) {
+      EXPECT_EQ(addr % cacheline_size, 0) << "Group " << grp << " not aligned after expansion";
+    }
+  }
+
+  // Verify data preservation
+  EXPECT_EQ(store[0][0], 10);
+  EXPECT_EQ(store[0][1], 20);
+  EXPECT_EQ(store[1][0], 30);
+  EXPECT_EQ(store[1][1], 40);
+  EXPECT_EQ(store[2][0], 50);
+  EXPECT_EQ(store[2][1], 60);
+
+  // New elements should be zero-initialized
+  EXPECT_EQ(store[0][2], 0);
+  EXPECT_EQ(store[1][2], 0);
+  EXPECT_EQ(store[2][2], 0);
+}
+
+// Test ensure_group_capacity with significant size increase
+TEST_F(VectorStoreTest, EnsureGroupCapacityLargeIncrease) {
+  vector_store<double> store(2, 2);
+
+  // Initialize with known values
+  store[0][0] = 1.1;
+  store[0][1] = 2.2;
+  store[1][0] = 3.3;
+  store[1][1] = 4.4;
+
+  // Significantly increase capacity
+  store.ensure_group_capacity(10);
+
+  EXPECT_EQ(store.group_size(), 10);
+  EXPECT_EQ(store.num_groups(), 2);
+
+  // Verify original data
+  EXPECT_DOUBLE_EQ(store[0][0], 1.1);
+  EXPECT_DOUBLE_EQ(store[0][1], 2.2);
+  EXPECT_DOUBLE_EQ(store[1][0], 3.3);
+  EXPECT_DOUBLE_EQ(store[1][1], 4.4);
+
+  // Verify new elements are zero-initialized
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 2; i < 10; ++i) {
+      EXPECT_DOUBLE_EQ(span[i], 0.0) << "New element [" << grp << "][" << i << "] not zero-initialized";
+    }
+  }
+
+  // Test using the full new capacity
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 2; i < 10; ++i) {
+      span[i] = grp * 10.0 + i;
+    }
+  }
+
+  // Verify we can access all elements
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 2; i < 10; ++i) {
+      EXPECT_DOUBLE_EQ(span[i], grp * 10.0 + i);
+    }
+  }
+}
+
+// Test ensure_group_capacity with different data types
+TEST_F(VectorStoreTest, EnsureGroupCapacityDifferentTypes) {
+  // Test with struct
+  struct Point {
+    int x, y;
+  };
+  static_assert(std::is_trivial_v<Point>);
+
+  vector_store<Point> store(2, 2);
+  store[0][0] = {10, 20};
+  store[0][1] = {30, 40};
+  store[1][0] = {50, 60};
+  store[1][1] = {70, 80};
+
+  store.ensure_group_capacity(4);
+
+  EXPECT_EQ(store.group_size(), 4);
+  EXPECT_EQ(store.num_groups(), 2);
+
+  // Verify original data
+  EXPECT_EQ(store[0][0].x, 10);
+  EXPECT_EQ(store[0][0].y, 20);
+  EXPECT_EQ(store[0][1].x, 30);
+  EXPECT_EQ(store[0][1].y, 40);
+  EXPECT_EQ(store[1][0].x, 50);
+  EXPECT_EQ(store[1][0].y, 60);
+  EXPECT_EQ(store[1][1].x, 70);
+  EXPECT_EQ(store[1][1].y, 80);
+
+  // Verify new elements are zero-initialized
+  EXPECT_EQ(store[0][2].x, 0);
+  EXPECT_EQ(store[0][2].y, 0);
+  EXPECT_EQ(store[0][3].x, 0);
+  EXPECT_EQ(store[0][3].y, 0);
+  EXPECT_EQ(store[1][2].x, 0);
+  EXPECT_EQ(store[1][2].y, 0);
+  EXPECT_EQ(store[1][3].x, 0);
+  EXPECT_EQ(store[1][3].y, 0);
+}
+
+// Test ensure_group_capacity preserves memory layout properties
+TEST_F(VectorStoreTest, EnsureGroupCapacityMemoryLayout) {
+  vector_store<int> store(3, 3);
+
+  // Fill with data
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 0; i < span.size(); ++i) {
+      span[i] = static_cast<int>(grp * 100 + i);
+    }
+  }
+
+  store.ensure_group_capacity(8);
+
+  // Verify groups are still properly aligned and separated
+  auto span0 = store[0];
+  auto span1 = store[1];
+  auto span2 = store[2];
+
+  auto addr0 = reinterpret_cast<uintptr_t>(span0.data());
+  auto addr1 = reinterpret_cast<uintptr_t>(span1.data());
+  auto addr2 = reinterpret_cast<uintptr_t>(span2.data());
+
+  // First group should be cacheline aligned
+  EXPECT_EQ(addr0 % cacheline_size, 0);
+
+  // Groups should be separated by at least cacheline_size
+  EXPECT_GE(addr1 - addr0, cacheline_size);
+  EXPECT_GE(addr2 - addr1, cacheline_size);
+
+  // Verify stride is consistent
+  EXPECT_EQ(addr1 - addr0, store.group_stride());
+  EXPECT_EQ(addr2 - addr1, store.group_stride());
+
+  // Verify data integrity
+  for (size_t grp = 0; grp < store.num_groups(); ++grp) {
+    auto span = store[grp];
+    for (size_t i = 0; i < 3; ++i) { // Original data
       EXPECT_EQ(span[i], static_cast<int>(grp * 100 + i));
     }
   }

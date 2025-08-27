@@ -129,6 +129,40 @@ public:
   std::span<const T> operator[](size_type grp_id) const noexcept { return get(grp_id); }
 
   /**
+   * @brief Ensure each group can hold at least the specified number of elements
+   *
+   * If the new group size is larger than the current group size, reallocates storage
+   * and copies existing data. If the new size is smaller or equal, no operation is performed.
+   *
+   * @param new_group_size Minimum number of elements each group should be able to hold
+   */
+  void ensure_group_capacity(size_type new_group_size) {
+    if (new_group_size <= grp_size) {
+      return; // No change needed
+    }
+
+    size_type new_group_stride = calculate_group_stride(new_group_size);
+    if (new_group_stride == grp_stride) {
+      // We can reuse existing storage
+      grp_size = new_group_size;
+      return; // No other changes needed
+    }
+
+    vector_store new_store(new_group_size, grp_num, storage.get_allocator());
+    // copy existing data to new store
+    for (size_type grp = 0; grp < grp_num; ++grp) {
+      auto old_group = group_data(grp);
+      auto new_group = new_store.group_data(grp);
+      std::copy(old_group, old_group + grp_size, new_group);
+    }
+
+    // Replace current storage with new storage
+    storage = std::move(new_store.storage);
+    grp_size = new_group_size;
+    grp_stride = new_group_stride;
+  }
+
+  /**
    * @brief Get the number of elements per group
    *
    * @return Group size (m)
