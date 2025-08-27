@@ -50,6 +50,10 @@ target_link_libraries(test_op_dag_exec GTest::gtest_main opflow::headers)
 add_executable(test_sorted_vect sorted_vect_test.cpp)
 target_link_libraries(test_sorted_vect GTest::gtest_main opflow::headers)
 
+# functor tests
+add_executable(test_functor functor_test.cpp)
+target_link_libraries(test_functor GTest::gtest_main opflow::headers)
+
 # ringbuf_vect tests
 add_executable(test_ringbuf_vect ringbuf_vect_test.cpp)
 target_link_libraries(test_ringbuf_vect GTest::gtest_main opflow::headers)
@@ -84,4 +88,5 @@ gtest_discover_tests(test_flat_set_corner_cases)
 gtest_discover_tests(test_chrono)
 gtest_discover_tests(test_op_dag_exec)
 gtest_discover_tests(test_sorted_vect)
+gtest_discover_tests(test_functor)
 gtest_discover_tests(test_ringbuf_vect)
