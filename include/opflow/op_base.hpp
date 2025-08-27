@@ -66,8 +66,6 @@ struct op_base {
   virtual size_t window_size(event_window_tag) const noexcept { return 0; }
   virtual data_type window_size(time_window_tag) const noexcept { return data_type{}; }
 
-  op_base const *observer() const noexcept { return this; }
-
   virtual op_base *clone_at(void *mem) const noexcept = 0;
   virtual size_t clone_size() const noexcept = 0;
   virtual size_t clone_align() const noexcept = 0;

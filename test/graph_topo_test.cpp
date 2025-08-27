@@ -25,7 +25,6 @@ struct dummy_node {
   }
   size_t clone_size() const noexcept { return sizeof(dummy_node); };
   size_t clone_align() const noexcept { return alignof(dummy_node); }
-  dummy_node const *observer() const noexcept { return this; }
 
   size_t num_inputs() const noexcept { return 0; }  // No inputs
   size_t num_outputs() const noexcept { return 0; } // No outputs
@@ -52,7 +51,6 @@ struct alignas(64) aligned_dummy_node {
   }
   size_t clone_size() const noexcept { return sizeof(aligned_dummy_node); };
   size_t clone_align() const noexcept { return alignof(aligned_dummy_node); }
-  aligned_dummy_node const *observer() const noexcept { return this; }
 
   size_t num_inputs() const noexcept { return 0; }  // No inputs
   size_t num_outputs() const noexcept { return 0; } // No outputs
