@@ -1,6 +1,7 @@
 #pragma once
 
 #include "opflow/agg_base.hpp"
+#include "opflow/def.hpp"
 
 namespace opflow::agg {
 template <typename Data>
@@ -11,7 +12,9 @@ struct count : public agg_base<Data> {
     *out = static_cast<data_type>(n);
   }
 
-  size_t num_inputs() const noexcept override { return 1; }
+  size_t num_inputs() const noexcept override { return 0; }
   size_t num_outputs() const noexcept override { return 1; }
+
+  OPFLOW_CLONEABLE(count)
 };
 } // namespace opflow::agg

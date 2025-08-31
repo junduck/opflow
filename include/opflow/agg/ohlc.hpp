@@ -4,6 +4,7 @@
 #include <span>
 
 #include "opflow/agg_base.hpp"
+#include "opflow/def.hpp"
 
 namespace opflow::agg {
 template <typename Data>
@@ -25,5 +26,7 @@ struct ohlc : public agg_base<Data> {
 
   size_t num_inputs() const noexcept override { return 1; }
   size_t num_outputs() const noexcept override { return 4; }
+
+  OPFLOW_CLONEABLE(ohlc)
 };
 } // namespace opflow::agg
