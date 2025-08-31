@@ -9,13 +9,13 @@
 
 namespace opflow {
 template <typename T, typename Alloc = std::allocator<T>>
-class fn_dag_exec {
+class fn_exec {
 public:
   using data_type = T;
   using fn_type = fn_base<data_type>;
   using graph_node_type = std::shared_ptr<fn_type>;
 
-  fn_dag_exec(graph_node<fn_type> const &g, size_t num_groups, Alloc const &alloc = Alloc{})
+  fn_exec(graph_node<fn_type> const &g, size_t num_groups, Alloc const &alloc = Alloc{})
       : // DAG
         ngrp(num_groups), dag(g, ngrp),
         // data

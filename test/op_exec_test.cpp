@@ -4,14 +4,14 @@
 
 #include "opflow/graph_node.hpp"
 #include "opflow/op/sum.hpp"
-#include "opflow/op_dag_exec.hpp"
+#include "opflow/op_exec.hpp"
 
 namespace {
 using namespace opflow;
 
 class GraphExecFanoutTest : public ::testing::Test {
 protected:
-  using exec_type = op_dag_exec<double>;
+  using exec_type = op_exec<double>;
   using op_type = typename exec_type::op_type;
   using graph_node_type = typename exec_type::graph_node_type;
   using sum_type = op::sum<double>;

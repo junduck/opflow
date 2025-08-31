@@ -16,14 +16,13 @@ namespace opflow {
  *
  */
 template <typename T, typename Alloc = std::allocator<T>>
-class op_dag_exec {
+class op_exec {
 public:
   using data_type = T;
   using op_type = op_base<data_type>;
   using graph_node_type = std::shared_ptr<op_type>;
 
-  op_dag_exec(graph_node<op_type> const &g, size_t num_groups, size_t history_size_hint = 256,
-              Alloc const &alloc = Alloc{})
+  op_exec(graph_node<op_type> const &g, size_t num_groups, size_t history_size_hint = 256, Alloc const &alloc = Alloc{})
       : // DAG
         ngrp(num_groups), dag(g, ngrp),
         // data
@@ -39,7 +38,7 @@ public:
   }
 
   template <sized_range_of<size_t> S>
-  op_dag_exec(graph_node<op_type> const &g, size_t num_groups, S &&hints_by_grp, Alloc const &alloc = Alloc{})
+  op_exec(graph_node<op_type> const &g, size_t num_groups, S &&hints_by_grp, Alloc const &alloc = Alloc{})
       : // DAG
         ngrp(num_groups), dag(g, ngrp),
         // data

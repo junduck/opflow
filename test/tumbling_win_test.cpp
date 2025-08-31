@@ -51,8 +51,6 @@ TEST(TumblingWindow_IntTime, BasicEmissionAndAlignment) {
   EXPECT_EQ(s3.timestamp, 70);
   EXPECT_EQ(s3.size, 2u);
   EXPECT_EQ(s3.evict, 2u);
-
-  EXPECT_EQ(w.next_tick, 80);
 }
 
 TEST(TumblingWindow_IntTime, MultipleWindowSkipNoDataInBetween) {

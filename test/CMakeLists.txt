@@ -43,8 +43,8 @@ add_executable(test_chrono chrono_test.cpp)
 target_link_libraries(test_chrono GTest::gtest_main opflow::headers)
 
 # Graph executor tests
-add_executable(test_op_dag_exec op_dag_exec_test.cpp)
-target_link_libraries(test_op_dag_exec GTest::gtest_main opflow::headers)
+add_executable(test_op_exec op_exec_test.cpp)
+target_link_libraries(test_op_exec GTest::gtest_main opflow::headers)
 
 # sorted_vect tests
 add_executable(test_sorted_vect sorted_vect_test.cpp)
@@ -96,7 +96,7 @@ gtest_discover_tests(test_flat_set)
 gtest_discover_tests(test_flat_set_edge_cases)
 gtest_discover_tests(test_flat_set_corner_cases)
 gtest_discover_tests(test_chrono)
-gtest_discover_tests(test_op_dag_exec)
+gtest_discover_tests(test_op_exec)
 gtest_discover_tests(test_sorted_vect)
 gtest_discover_tests(test_functor)
 gtest_discover_tests(test_ringbuf_vect)
