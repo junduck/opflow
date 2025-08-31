@@ -41,7 +41,7 @@ public:
   using typename base::spec_type;
 
   explicit tumbling(data_type window_size) noexcept
-      : window_size(window_size), next_tick(max_time<data_type>()), emitting() {}
+      : window_size(window_size), next_tick(max_time<data_type>()), count(), emitting() {}
 
   bool on_data(data_type tick, data_type const *) noexcept override {
 
@@ -92,7 +92,7 @@ public:
   }
 
   void reset() noexcept override {
-    next_tick = data_type{};
+    next_tick = max_time<data_type>();
     count = 0;
     emitting = {};
   }
