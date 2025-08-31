@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "opflow/common.hpp"
+#include "opflow/detail/aligned_allocator.hpp"
 #include "opflow/detail/vector_store.hpp"
 #include <algorithm>
 #include <array>

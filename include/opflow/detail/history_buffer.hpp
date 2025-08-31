@@ -11,7 +11,7 @@
 
 namespace opflow::detail {
 template <typename T, typename Alloc = std::allocator<T>>
-class alignas(cacheline_size) history_buffer {
+class history_buffer {
 public:
   using value_type = std::pair<T, std::span<T>>;
   using const_value_type = std::pair<T, std::span<T const>>;
@@ -20,7 +20,7 @@ public:
   using difference_type = std::ptrdiff_t;
 
 private:
-  using alloc_type = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+  using alloc_type = rebind_alloc<Alloc, T>;
   std::vector<T, alloc_type> buffer; ///< Circular buffer for storing records: record = [time, data...]
   size_type record_size;             ///< Size of each record
   size_type capacity;                ///< Current capacity of the buffer (in records)
@@ -33,7 +33,7 @@ public:
   history_buffer() = default;
 
   history_buffer(size_type val_size, size_type init_cap, Alloc const &alloc = Alloc())
-      : buffer(alloc_type(alloc)), record_size(val_size + 1), capacity(next_pow2(init_cap)), head(), count() {
+      : buffer(alloc), record_size(val_size + 1), capacity(next_pow2(init_cap)), head(), count() {
     // Check for potential overflow in value allocation
     if (record_size == 0 || capacity > std::numeric_limits<size_type>::max() / record_size) {
       throw std::bad_alloc();

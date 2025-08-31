@@ -4,9 +4,9 @@
 #include <vector>
 
 namespace opflow::detail {
-template <typename T, size_t BIN_THRES = 100>
-class sorted_vect : public std::vector<T> {
-  using base = std::vector<T>;
+template <typename T, size_t BIN_THRES = 100, typename Alloc = std::allocator<T>>
+class sorted_vect : public std::vector<T, Alloc> {
+  using base = std::vector<T, Alloc>;
   using base::push_back;
 
 public:

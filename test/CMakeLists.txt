@@ -2,8 +2,8 @@ add_executable(test_main main.cpp)
 target_link_libraries(test_main GTest::gtest_main private_headers opflow::headers)
 
 # Topo graph tests
-add_executable(test_graph_topo graph_topo_test.cpp)
-target_link_libraries(test_graph_topo GTest::gtest_main opflow::headers)
+add_executable(test_dag_store dag_store_test.cpp)
+target_link_libraries(test_dag_store GTest::gtest_main opflow::headers)
 
 # History tests
 add_executable(test_history_deque history_deque_test.cpp)
@@ -70,10 +70,20 @@ target_link_libraries(test_graph_node GTest::gtest_main opflow::headers)
 add_executable(test_vector_store vector_store_test.cpp)
 target_link_libraries(test_vector_store GTest::gtest_main opflow::headers)
 
+# column store tests
+add_executable(test_column_store column_store_test.cpp)
+target_link_libraries(test_column_store GTest::gtest_main opflow::headers)
+
+# agg_exec tests
+add_executable(test_agg_exec agg_exec_test.cpp)
+target_link_libraries(test_agg_exec GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
-gtest_discover_tests(test_graph_topo)
+gtest_discover_tests(test_dag_store)
 gtest_discover_tests(test_vector_store)
+gtest_discover_tests(test_agg_exec)
+gtest_discover_tests(test_column_store)
 gtest_discover_tests(test_graph_node)
 gtest_discover_tests(test_tumbling_window)
 gtest_discover_tests(test_history_deque)

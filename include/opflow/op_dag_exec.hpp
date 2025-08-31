@@ -2,12 +2,13 @@
 
 #include "common.hpp"
 #include "def.hpp"
-#include "detail/flat_multivect.hpp"
-#include "detail/history_buffer.hpp"
-#include "detail/vector_store.hpp"
 #include "graph_node.hpp"
-#include "graph_topo.hpp"
-#include "opflow/op_base.hpp"
+#include "op_base.hpp"
+
+#include "detail/dag_store.hpp"
+#include "detail/history_buffer.hpp"
+#include "detail/utils.hpp"
+#include "detail/vector_store.hpp"
 
 namespace opflow {
 /**
@@ -24,11 +25,11 @@ public:
   op_dag_exec(graph_node<op_type> const &g, size_t num_groups, size_t history_size_hint = 256,
               Alloc const &alloc = Alloc{})
       : // DAG
-        ngrp(num_groups), graph(g, ngrp),
+        ngrp(num_groups), dag(g, ngrp),
         // data
-        history(alloc), record_offset(alloc), args_offset(alloc),
+        history(alloc),
         // window
-        all_cumulative(), win_desc(alloc), step_count(graph.size(), ngrp, alloc),
+        all_cumulative(), win_desc(alloc), step_count(dag.size(), ngrp, alloc),
         // tmp
         curr_args(0, ngrp, alloc) {
     validate();
@@ -40,11 +41,11 @@ public:
   template <sized_range_of<size_t> S>
   op_dag_exec(graph_node<op_type> const &g, size_t num_groups, S &&hints_by_grp, Alloc const &alloc = Alloc{})
       : // DAG
-        ngrp(num_groups), graph(g, ngrp),
+        ngrp(num_groups), dag(g, ngrp),
         // data
-        history(alloc), record_offset(alloc), args_offset(alloc),
+        history(alloc),
         // window
-        all_cumulative(), win_desc(alloc), step_count(graph.size(), ngrp),
+        all_cumulative(), win_desc(alloc), step_count(dag.size(), ngrp),
         // tmp
         curr_args(0, ngrp, alloc) {
     if (std::ranges::size(hints_by_grp) != ngrp) {
@@ -58,7 +59,7 @@ public:
   void on_data(data_type timestamp, data_type const *input_data, size_t igrp) {
     auto [_, record] = history[igrp].push(timestamp);
 
-    auto nodes = graph.nodes_of(igrp);
+    auto nodes = dag[igrp];
     nodes[0]->on_data(input_data);
     nodes[0]->value(out_ptr(record, 0));
 
@@ -68,9 +69,9 @@ public:
   void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
     auto [_, record] = history[igrp].back();
     size_t i = 0;
-    for (auto [id, size] : graph.nodes_out()) {
+    for (auto [offset, size] : dag.output_offset) {
       for (size_t port = 0; port < size; ++port) {
-        out[i++] = record[record_offset[id] + port];
+        out[i++] = record[offset + port];
       }
     }
   }
@@ -82,7 +83,7 @@ public:
 
   void commit_input_buffer(size_t igrp) noexcept {
     auto [timestamp, record] = history[igrp].back();
-    auto nodes = graph[igrp];
+    auto nodes = dag[igrp];
 
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
@@ -109,14 +110,14 @@ public:
   }
 
   size_t num_inputs() const noexcept {
-    auto nodes = graph[0];
+    auto nodes = dag[0];
     return nodes[0]->num_inputs();
   }
 
   size_t num_outputs() const noexcept {
     size_t total = 0;
-    for (auto const &out : graph.nodes_out()) {
-      total += out.size;
+    for (auto [_, size] : dag.output_offset) {
+      total += size;
     }
     return total;
   }
@@ -124,11 +125,11 @@ public:
   size_t num_groups() const noexcept { return ngrp; }
 
 private:
-  data_type *out_ptr(auto record, size_t node_id) noexcept { return record.data() + record_offset[node_id]; }
+  data_type *out_ptr(auto record, size_t node_id) noexcept { return record.data() + dag.record_offset[node_id]; }
 
   data_type const *in_ptr(auto record, size_t node_id, size_t grp_id) noexcept {
     auto args = curr_args[grp_id];
-    auto offsets = args_offset[node_id];
+    auto offsets = dag.input_offset[node_id];
     assert(args.size() >= offsets.size() && "[BUG] Argument size mismatch");
     for (size_t i = 0; i < offsets.size(); ++i) {
       args[i] = record[offsets[i]];
@@ -137,63 +138,39 @@ private:
   }
 
   void validate() {
-    auto nodes = graph[0];
+    auto nodes = dag[0];
     // validate root
     if (!dynamic_cast<op_root<data_type> *>(nodes[0].get())) {
       throw std::runtime_error("Wrong root node type in graph.");
     }
-    for (size_t i = 1; i < graph.size(); ++i) {
-      if (graph.pred_of(i).empty()) {
+    for (size_t i = 1; i < dag.size(); ++i) {
+      if (dag.input_offset[i].empty()) {
         throw std::runtime_error("Multiple root nodes detected in graph.");
-      }
-    }
-    // validate connections
-    for (size_t i = 1; i < nodes.size(); ++i) {
-      for (auto [pred, port] : graph.args_of(i)) {
-        if (port >= nodes[pred]->num_outputs()) {
-          throw std::runtime_error("Incompatible node connections in graph.");
-        }
       }
     }
   }
 
   template <sized_range_of<size_t> R>
   void init_data(R &&history_size_hints) {
-    // we only need to test group 0
-    auto nodes = graph[0];
-
     size_t max_inputs = 0;
-    size_t total_size = 0;
-    record_offset.reserve(graph.size());
-    for (size_t i = 0; i < graph.size(); ++i) {
-      record_offset.push_back(total_size);
-      total_size += nodes[i]->num_outputs();
-      max_inputs = std::max(max_inputs, graph.args_of(i).size());
-    }
-    history.reserve(ngrp);
-    for (size_t hint : history_size_hints) {
-      history.emplace_back(total_size, hint, history.get_allocator());
+    for (size_t i = 0; i < dag.size(); ++i) {
+      max_inputs = std::max(max_inputs, dag.input_offset[i].size());
     }
     curr_args.ensure_group_capacity(max_inputs);
 
-    std::vector<size_t> args{};
-    args_offset.reserve(graph.size(), graph.num_edges());
-    for (size_t i = 0; i < graph.size(); ++i) {
-      args.clear();
-      for (auto [pred, port] : graph.args_of(i)) {
-        args.push_back(record_offset[pred] + port);
-      }
-      args_offset.push_back(args);
+    history.reserve(ngrp);
+    for (size_t hint : history_size_hints) {
+      history.emplace_back(dag.record_size, hint, history.get_allocator());
     }
   }
 
   void init_window() {
     // we only need to test group 0
-    auto nodes = graph[0];
+    auto nodes = dag[0];
 
-    win_desc.reserve(graph.size());
+    win_desc.reserve(dag.size());
     size_t n_cumulative = 0;
-    for (size_t i = 0; i < graph.size(); ++i) {
+    for (size_t i = 0; i < dag.size(); ++i) {
       win_desc_type desc{};
       if (nodes[i]->is_cumulative()) {
         // cumulative op
@@ -217,7 +194,7 @@ private:
       }
       win_desc.push_back(desc);
     }
-    all_cumulative = n_cumulative == graph.size();
+    all_cumulative = n_cumulative == dag.size();
   }
 
   void evict_event(data_type timestamp, size_t id, size_t igrp) noexcept {
@@ -229,7 +206,7 @@ private:
     auto &step_cnt = step_count[igrp][id];
     assert(history[igrp].size() >= step_cnt && "[BUG] History is smaller than step count for node.");
 
-    auto nodes = graph[igrp];
+    auto nodes = dag[igrp];
     auto win_size = win_desc[id].dynamic ? nodes[id]->window_size(event_window) : win_desc[id].win_event;
     if (step_cnt <= win_size)
       return; // No data to remove
@@ -252,7 +229,7 @@ private:
     auto &step_cnt = step_count[igrp][id];
     assert(history[igrp].size() >= step_cnt && "[BUG] History is smaller than step count for node.");
 
-    auto nodes = graph[igrp];
+    auto nodes = dag[igrp];
     auto win_size = win_desc[id].dynamic ? nodes[id]->window_size(time_window) : win_desc[id].win_time;
     auto win_start = timestamp - win_size;
     auto k = history[igrp].size() - step_cnt;
@@ -289,25 +266,19 @@ private:
     bool dynamic;       // query window_size() on every step
     win_type type;      // window type
   };
+  using win_desc_alloc = detail::rebind_alloc<Alloc, win_desc_type>;
 
-  // allocator types
-  using data_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<data_type>;
-  using hbuf_type = detail::history_buffer<data_type, data_alloc>;
-  using hbuf_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<hbuf_type>;
-  using size_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<size_t>;
-  using win_desc_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<win_desc_type>;
+  using hbuf_type = detail::aligned_type<detail::history_buffer<data_type, Alloc>, detail::cacheline_size>;
+  using hbuf_alloc = detail::rebind_alloc<Alloc, hbuf_type>;
 
-  size_t ngrp;               ///< Number of groups
-  graph_topo<op_type> graph; ///< DAG to execute, uses its own alloc
-
-  std::vector<hbuf_type, hbuf_alloc> history;                       ///< History buffer for node I/O data
-  std::vector<size_t, size_alloc> record_offset;                    ///< History record offsets for each node, shared
-  detail::flat_multivect<size_t, uint32_t, size_alloc> args_offset; ///< Argument offsets for each node, shared
+  size_t ngrp;                                ///< Number of groups
+  detail::dag_store<op_type, Alloc> dag;      ///< DAG to execute, uses its own alloc
+  std::vector<hbuf_type, hbuf_alloc> history; ///< Memory buffer for each node
 
   bool all_cumulative;                                 ///< True if all nodes are in cumulative mode, shared
   std::vector<win_desc_type, win_desc_alloc> win_desc; ///< Window descriptors for each node, shared
-  detail::vector_store<size_t, size_alloc> step_count; ///< Step count for each node, used in step sliding mode
+  detail::vector_store<size_t, Alloc> step_count;      ///< Step count for each node
 
-  detail::vector_store<data_type, data_alloc> curr_args; ///< Reused for current node arguments
+  detail::vector_store<data_type, Alloc> curr_args; ///< Reused for current node arguments
 };
 } // namespace opflow

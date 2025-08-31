@@ -1,6 +1,7 @@
 #pragma once
 
 #include "opflow/common.hpp"
+#include "opflow/def.hpp"
 #include "opflow/window_base.hpp"
 
 namespace opflow::win {
@@ -32,14 +33,77 @@ namespace opflow::win {
  *
  */
 template <arithmetic T>
-struct tumbling : window_base<T> {
+class tumbling : public window_base<T> {
   using base = window_base<T>;
+
+public:
   using typename base::data_type;
   using typename base::spec_type;
 
+  explicit tumbling(data_type window_size) noexcept
+      : window_size(window_size), next_tick(max_time<data_type>()), emitting() {}
+
+  bool on_data(data_type tick, data_type const *) noexcept override {
+
+    // Case 1: Initialization state - next_tick is max_time<data_type>()
+    if (next_tick == max_time<data_type>()) {
+      next_tick = aligned_next_window_begin(tick);
+    }
+
+    // append data to window
+    ++count;
+
+    // Case 2: Still in the same window (tick < next_tick)
+    if (tick < next_tick) {
+      return false; // No window emitted
+    }
+
+    // Case 3: tick >= next_tick, we've reached or moved past the current window
+    emitting.timestamp = next_tick;
+    emitting.offset = 0;
+    emitting.size = count - 1; // Latest tick does not belong to emitted window (right open)
+    emitting.evict = emitting.size;
+
+    while (tick >= next_tick) {
+      next_tick += window_size;
+    }
+
+    return true; // Emit the current window
+  }
+
+  bool flush() noexcept override {
+    // If no data points have been accumulated, do not emit
+    if (count == 0) {
+      return false;
+    }
+    // Force emission of the current window and move to the next window
+    emitting.timestamp = next_tick;
+    emitting.offset = 0;
+    emitting.size = count;
+    emitting.evict = emitting.size;
+    next_tick += window_size;
+    return true;
+  }
+
+  spec_type emit() noexcept override {
+    // size initialised to 1 due to last data point that triggered the emit belongs to new window
+    count -= emitting.evict;
+    return std::exchange(emitting, {});
+  }
+
+  void reset() noexcept override {
+    next_tick = data_type{};
+    count = 0;
+    emitting = {};
+  }
+
+  OPFLOW_CLONEABLE(tumbling)
+
+private:
   data_type const window_size; ///< Size of the tumbling window
   data_type next_tick;         ///< Next tick time point for the tumbling window
-  spec_type curr;              ///< Current window specification
+  size_t count;                ///< Current number of elements pushed to window
+  spec_type emitting;          ///< Window specification to emit
 
   data_type aligned_next_window_begin(data_type tick) const noexcept {
     if constexpr (std::integral<data_type>) {
@@ -57,54 +121,6 @@ struct tumbling : window_base<T> {
         return tick - remainder + window_size; // Align to the next window start
       }
     }
-  }
-
-  explicit tumbling(data_type window) noexcept : window_size(window), next_tick(), curr() {}
-
-  bool on_data(data_type tick, data_type const *) noexcept override {
-
-    // Case 1: Initialization state - next_tick is data_type{} (default constructed)
-    if (next_tick == data_type{}) {
-      next_tick = aligned_next_window_begin(tick);
-    }
-
-    // Case 2: Still in the same window (tick < next_tick)
-    if (tick < next_tick) {
-      ++curr.size;
-      return false; // No window emitted
-    }
-
-    // Case 3: tick >= next_tick, we've reached or moved past the current window
-    curr.timestamp = next_tick;
-    curr.evict = curr.size; // tumbling window
-
-    while (tick >= next_tick) {
-      next_tick += window_size;
-    }
-
-    return true; // Emit the current window
-  }
-
-  bool flush() noexcept override {
-    // If no data points have been accumulated, do not emit
-    if (curr.size == 0) {
-      return false;
-    }
-    // Force emission of the current window and move to the next window
-    curr.timestamp = next_tick;
-    curr.evict = curr.size;
-    next_tick += window_size;
-    return true;
-  }
-
-  spec_type emit() noexcept override {
-    // size initialised to 1 due to last data point that triggered the emit belongs to new window
-    return std::exchange(curr, {.timestamp = data_type{}, .offset = 0, .size = 1, .evict = 0});
-  }
-
-  void reset() noexcept override {
-    next_tick = data_type{};
-    curr = {};
   }
 };
 } // namespace opflow::win

@@ -1,251 +1,153 @@
 #pragma once
 
-#include <algorithm>
-#include <cassert>
-#include <memory>
-#include <optional>
-#include <vector>
-
-#include "agg_base.hpp"
 #include "common.hpp"
-#include "detail/flat_multivect.hpp"
+#include "def.hpp"
+#include "graph_agg.hpp"
 #include "window_base.hpp"
 
+#include "detail/agg_store.hpp"
+#include "detail/aligned_allocator.hpp"
+#include "detail/column_store.hpp"
+#include "detail/vector_store.hpp"
+
 namespace opflow {
-template <typename T>
+
+/**
+ * @brief Multi-group aggregation executor
+ *
+ * This class supports executing aggregations over multiple independent groups.
+ * Each group maintains its own data buffer and window state, allowing for
+ * independent processing of different data streams or partitions.
+ *
+ * Features:
+ * - Multiple independent groups (each with separate data buffers)
+ * - Per-group window management and emission
+ * - Shared aggregation graph definition across all groups
+ * - Efficient memory layout using arena allocation
+ * - Support for custom allocators
+ *
+ * Usage:
+ * 1. Create a graph_agg defining the aggregation pipeline
+ * 2. Instantiate agg_exec with the graph and number of groups
+ * 3. Feed data using on_data() with group index
+ * 4. Extract results using value() with group index
+ *
+ * @tparam T The DAG node type (must satisfy dag_node concept)
+ * @tparam Alloc Allocator type for memory management
+ */
+template <dag_node T, typename Alloc = std::allocator<T>>
 class agg_exec {
 public:
-  using data_type = T;
-  using agg_type = agg_base<data_type>;
-  using node_type = std::shared_ptr<agg_type>;
-  using window_type = std::unique_ptr<window_base<data_type>>;
+  using data_type = typename T::data_type;
 
-  agg_exec(window_type win, size_t input_size)
-      : win(std::move(win)), nodes(), selected(),                               // config
-        df(input_size), input_size(input_size), output_offset(), output_size(), // data
-        curr_args() {}
+  agg_exec(graph_agg<T> const &graph, size_t n_input, size_t n_groups, size_t pre_alloc_rows = 256,
+           Alloc alloc = Alloc{})
+      : n_grp(n_groups), aggr(graph, n_groups, alloc), history(aggr.record_size, n_grp, alloc), dataframes(),
+        curr_args(0, n_groups, alloc), win_args(0, n_groups, alloc) {
+    // Initialize data frames for each group
+    dataframes.reserve(n_grp);
+    for (size_t igrp = 0; igrp < n_grp; ++igrp) {
+      dataframes.emplace_back(n_input, pre_alloc_rows);
+    }
 
-  template <range_of<size_t> R>
-  void add(node_type agg, R &&colidx) {
-    nodes.push_back(std::move(agg));
-    selected.push_back(std::forward<R>(colidx));
-
-    output_offset.push_back(output_size);
-    output_size += nodes.back()->num_outputs();
+    size_t max_input = 0;
+    for (size_t i = 0; i < aggr.size(); ++i) {
+      max_input = std::max(max_input, aggr.input_column[i].size());
+    }
+    curr_args.ensure_group_capacity(max_input);
   }
 
   // Ingest a new row. Returns the timestamp of the emitted window, if any.
-  std::optional<data_type> on_data(data_type timestamp, data_type const *in, data_type *out) {
-    // Append this row to each input column buffer
-    append_row(in);
+  std::optional<data_type> on_data(data_type timestamp, data_type const *in, size_t igrp) {
+    assert(igrp < n_grp && "[BUG] Group index out of range.");
+
+    dataframes[igrp].append(in);
 
     // Check if window should emit
+    auto const &win = aggr.window(igrp);
     if (!win->on_data(timestamp, in)) {
       return std::nullopt;
     }
 
-    auto spec = win->emit();
-    assert(spec.size > 0 && "[BUG] Window size must be greater than 0");
-    assert(spec.offset + spec.size <= nrow() && "[BUG] Window must fit within available rows");
-    assert(spec.evict <= nrow() && "[BUG] Evict size must not exceed number of rows");
+    return run_aggr(win->emit(), igrp);
+  }
 
-    execute_aggregators(spec, out);
-    evict_expired_data(spec);
+  void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
+    assert(igrp < n_grp && "[BUG] Group index out of range.");
 
-    return spec.timestamp;
+    auto record = history[igrp];
+    for (size_t i = 0; i < aggr.record_size; ++i) {
+      out[i] = record[i];
+    }
   }
 
   // Force emission. Returns the timestamp of the emitted window, if any.
-  std::optional<data_type> flush(data_type *out) {
+  std::optional<data_type> flush(size_t igrp) {
+    assert(igrp < n_grp && "[BUG] Group index out of range.");
+
+    auto &win = aggr.window(igrp);
     if (!win->flush()) {
       return std::nullopt;
     }
 
-    auto spec = win->emit();
-    assert(spec.size > 0 && "[BUG] Window size must be greater than 0");
-    assert(spec.offset + spec.size <= nrow() && "[BUG] Window must fit within available rows");
-    assert(spec.evict <= nrow() && "[BUG] Evict size must not exceed number of rows");
+    return run_aggr(win->emit(), igrp);
+  }
 
-    execute_aggregators(spec, out);
-    evict_expired_data(spec);
+  size_t num_inputs() const noexcept {
+    auto const &df = dataframes[0];
+    return df.ncol();
+  }
+
+  size_t num_outputs() const noexcept { return aggr.record_size; }
+
+  size_t num_groups() const noexcept { return n_grp; }
+
+private:
+  using spec_type = typename window_base<data_type>::spec_type;
+
+  void append_row(data_type const *in, size_t igrp) { dataframes[igrp].append(in); }
+
+  data_type run_aggr(spec_type const &spec, size_t igrp) {
+    auto nodes = aggr[igrp];
+
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      nodes[i]->on_data(spec.size, in_ptr(i, spec.offset, igrp), out_ptr(i, igrp));
+    }
+
+    // evict data
+    dataframes[igrp].evict(spec.evict);
 
     return spec.timestamp;
   }
 
-  size_t num_inputs() const noexcept { return input_size; }
-  size_t num_outputs() const noexcept { return output_size; }
-
-  void reset() {
-    win->reset();
-    for (auto &n : nodes)
-      n->reset();
-    for (auto &col : df)
-      col.clear();
+  data_type *out_ptr(size_t node_id, size_t igrp) noexcept {
+    auto record = history[igrp];
+    return record.data() + aggr.record_offset[node_id];
   }
 
-private:
-  using spec_type = typename window_base<data_type>::spec_type;
-  using col_type = std::vector<data_type>;
+  data_type const *const *in_ptr(size_t node_id, size_t offset, size_t igrp) noexcept {
+    auto args = curr_args[igrp];
+    auto cols = aggr.input_column[node_id];
+    auto const &df = dataframes[igrp];
 
-  void append_row(data_type const *in) {
-    for (size_t i = 0; i < input_size; ++i)
-      df[i].push_back(in[i]);
-  }
-
-  void execute_aggregators(spec_type const &spec, data_type *out) {
-    for (size_t i = 0; i < nodes.size(); ++i)
-      nodes[i]->on_data(spec.size, in_ptr(i, spec.offset), out_ptr(i, out));
-  }
-
-  void evict_expired_data(spec_type const &spec) {
-    if (spec.evict == 0)
-      return;
-    /**
-     * For code review agent:
-     * 1. i didn't use ring buffer here because col.data() should be contiguous.
-     * 2. i can't use ping-pong buffers because bad cache locality.
-     * 3. data_type is trivial so erase() is not that bad.
-     * 4. in most cases spec.evict == nrow() or spec.evict == nrow() - 1, so it is even better.
-     */
-    for (auto &col : df)
-      col.erase(col.begin(), col.begin() + static_cast<ptrdiff_t>(spec.evict));
-  }
-
-  size_t nrow() const noexcept { return df[0].size(); }
-  size_t ncol() const noexcept { return df.size(); }
-
-  data_type *out_ptr(size_t node_id, data_type *out) noexcept { return out + output_offset[node_id]; }
-
-  data_type const *const *in_ptr(size_t node_id, size_t offset) {
-    curr_args.clear();
-    for (auto i : selected[node_id]) {
-      curr_args.push_back(df[i].data() + static_cast<ptrdiff_t>(offset));
+    for (size_t i = 0; i < cols.size(); ++i) {
+      args[i] = df[cols[i]].data() + offset;
     }
-    return curr_args.data();
+    return args.data();
   }
 
-  window_type win;
-  std::vector<node_type> nodes;            ///< Aggregators (executed sequentially over the same window)
-  detail::flat_multivect<size_t> selected; ///< Input column indices per aggregator
+  size_t n_grp;
+  detail::agg_store<T, Alloc> aggr;
 
-  // TODO: add reserve hint from window api to minimise reallocations
-  std::vector<col_type> df; ///< Buffer dataframe for input data
+  detail::vector_store<data_type, Alloc> history;
 
-  std::vector<size_t> output_offset; ///< Data offsets for each node
-  size_t output_size;                ///< Total output size
-  size_t input_size;                 ///< Total input size
+  // TODO: currently df is using cacheline_aligned_alloc instead of rebind_alloc to avoid false sharing
+  using df_type = detail::aligned_type<detail::column_store<data_type, detail::cacheline_aligned_alloc<data_type>>,
+                                       detail::cacheline_size>;
+  std::vector<df_type, detail::rebind_alloc<Alloc, df_type>> dataframes;
 
-  std::vector<data_type const *> curr_args;
+  detail::vector_store<data_type const *, Alloc> curr_args;
+  detail::vector_store<data_type, Alloc> win_args; ///< Reused for window function arguments
 };
 
-/**
- * @brief Aggregation builder
- *
- * Instruction for coding agent:
- *
- * 1. This is a fluent interface for creating an aggregation algorithm.
- * 2. The logic is: set input size -> define agg window -> add aggregators -> build executor -> reuse
- *
- * @code
-  agg_builder<double> builder;
-  builder.input_size(1024)
-        .window<win::tumbling<double>>(100)
-        .add<agg::ohlc<double>>({0}, extra_ctor_args) // selected cols as input to agg::ohlc
-        .add<agg::sum>({2, 5}); // if agg is a template<typename> class, agg<T> is instantiated with T, may look cleaner
-  auto exec = builder.build(); // builder will reset and can be used to build again
- * @endcode
- *
- * @tparam T Data type
- */
-template <typename T>
-class agg_builder {
-public:
-  agg_builder() noexcept = default;
-  agg_builder(size_t input_size) : n(input_size), win(nullptr), aggs(), cols() {}
-
-  agg_builder &input_size(size_t size) {
-    n = size;
-    return *this;
-  }
-
-  template <typename W, typename... Args>
-  agg_builder &window(Args &&...args) {
-    win = std::make_unique<W>(std::forward<Args>(args)...);
-    return *this;
-  }
-
-  template <range_of<size_t> R, typename AggType, typename... Args>
-  agg_builder &add(R &&colidx, Args &&...args) {
-    auto agg = std::make_shared<AggType>(std::forward<Args>(args)...);
-    aggs.push_back(std::move(agg));
-    cols.emplace_back(colidx.begin(), colidx.end());
-    return *this;
-  }
-
-  template <typename AggType, typename... Args>
-  agg_builder &add(std::initializer_list<size_t> colidx, Args &&...args) {
-    auto agg = std::make_shared<AggType>(std::forward<Args>(args)...);
-    aggs.push_back(std::move(agg));
-    cols.emplace_back(colidx);
-    return *this;
-  }
-
-  template <template <typename> typename W, typename... Args>
-  agg_builder &window(Args &&...args) {
-    return window<W<T>>(std::forward<Args>(args)...);
-  }
-
-  template <range_of<size_t> R, template <typename> typename Agg, typename... Args>
-  agg_builder &add(R &&colidx, Args &&...args) {
-    return add<Agg<T>>(std::forward<R>(colidx), std::forward<Args>(args)...);
-  }
-
-  template <template <typename> typename Agg, typename... Args>
-  agg_builder &add(std::initializer_list<size_t> colidx, Args &&...args) {
-    return add<Agg<T>>(colidx, std::forward<Args>(args)...);
-  }
-
-  [[nodiscard]] agg_exec<T> build() {
-    validate();
-    // NOTE: no exception safety guarantees
-    agg_exec<T> exec(std::move(win), n);
-    for (size_t i = 0; i < aggs.size(); ++i) {
-      exec.add(aggs[i], cols[i]);
-    }
-    reset(); // Reset state for next use
-    return std::move(exec);
-  }
-
-  void reset() {
-    win.reset();
-    aggs.clear();
-    cols.clear();
-  }
-
-private:
-  using data_type = T;
-  using agg_type = agg_base<data_type>;
-  using node_type = std::shared_ptr<agg_type>;
-  using window_type = std::unique_ptr<window_base<data_type>>;
-
-  void validate() {
-    if (!win)
-      throw std::runtime_error("Window is not set");
-    if (n == 0)
-      throw std::runtime_error("Input size must be > 0");
-    for (auto col : cols) {
-      if (col.empty())
-        throw std::runtime_error("Column index is empty");
-      for (auto i : col) {
-        if (i >= n)
-          throw std::runtime_error("Column index out of bounds");
-      }
-    }
-  }
-
-  size_t n;
-  window_type win;
-  std::vector<node_type> aggs;
-  std::vector<std::vector<size_t>> cols;
-};
 } // namespace opflow

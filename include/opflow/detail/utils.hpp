@@ -4,12 +4,15 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace opflow::detail {
 template <std::unsigned_integral T>
 struct offset_type {
   T offset; ///< Pointer offset
   T size;   ///< Size
+
+  friend bool operator==(offset_type const &lhs, offset_type const &rhs) noexcept = default;
 };
 
 template <typename... Ts>
@@ -54,4 +57,19 @@ constexpr inline size_t cacheline_size = 64; // Default to 64 bytes
 constexpr inline size_t cacheline_shift = std::countr_zero(cacheline_size);
 constexpr inline size_t cacheline_mask = cacheline_size - 1;
 
+template <typename T, typename A>
+size_t heap_alloc_size(std::vector<T, A> const &, size_t intended_size) noexcept {
+  return aligned_size(sizeof(T) * intended_size, alignof(T));
+}
+
+template <typename T>
+concept trivial = std::is_trivial_v<T>;
+
+template <typename T, size_t Align>
+struct alignas(Align) aligned_type : public T {
+  using T::T;
+};
+
+template <typename Alloc, typename T>
+using rebind_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
 } // namespace opflow::detail

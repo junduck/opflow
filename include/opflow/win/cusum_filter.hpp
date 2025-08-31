@@ -1,6 +1,7 @@
 #pragma once
 
 #include "opflow/common.hpp"
+#include "opflow/def.hpp"
 #include "opflow/window_base.hpp"
 
 namespace opflow::win {
@@ -18,18 +19,12 @@ namespace opflow::win {
  * @ref López de Prado, M. (2018). Advances in Financial Machine Learning
  */
 template <arithmetic T>
-struct cusum_filter : public window_base<T> {
+class cusum_filter : public window_base<T> {
   using base = window_base<T>;
+
+public:
   using typename base::data_type;
   using typename base::spec_type;
-
-  data_type const thres;
-  size_t const idx;
-
-  data_type lagged_log;
-  data_type cusum_pos, cusum_neg;
-  spec_type curr;
-  bool init;
 
   /**
    * @brief Construct a new cusum filter object
@@ -37,7 +32,7 @@ struct cusum_filter : public window_base<T> {
    * @param log_threshold log threshold for an event
    * @param inspect_index index of the data point to calculate log difference
    */
-  cusum_filter(data_type log_threshold, size_t inspect_index)
+  cusum_filter(data_type log_threshold, size_t inspect_index) noexcept
       : thres(log_threshold), idx(inspect_index), lagged_log(), cusum_pos(), cusum_neg(), curr(), init() {}
 
   bool on_data(data_type time, data_type const *in) noexcept override {
@@ -74,5 +69,16 @@ struct cusum_filter : public window_base<T> {
   void reset() noexcept override {
     *this = cusum_filter(thres, idx); // Reset to a new instance with the same parameters
   }
+
+  OPFLOW_CLONEABLE(cusum_filter)
+
+private:
+  data_type const thres;
+  size_t const idx;
+
+  data_type lagged_log;
+  data_type cusum_pos, cusum_neg;
+  spec_type curr;
+  bool init;
 };
 } // namespace opflow::win

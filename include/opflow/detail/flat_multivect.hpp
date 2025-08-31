@@ -9,7 +9,7 @@
 #include "utils.hpp"
 
 namespace opflow::detail {
-template <typename T, std::unsigned_integral Index = uint32_t, typename Alloc = std::allocator<T>>
+template <typename T, std::unsigned_integral Index = size_t, typename Alloc = std::allocator<T>>
 class flat_multivect {
   using offset_type = detail::offset_type<Index>;
   using data_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
@@ -32,8 +32,8 @@ public:
   flat_multivect() = default;
   flat_multivect(Alloc const &alloc) : index(alloc), flat_data(alloc) {}
 
-  template <typename OtherIndex, typename OtherAlloc>
-  flat_multivect(flat_multivect<T, OtherIndex, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
+  template <typename OtherValue, typename OtherIndex, typename OtherAlloc>
+  flat_multivect(flat_multivect<OtherValue, OtherIndex, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
       : index(alloc), flat_data(alloc) {
     // Reserve exact capacity to avoid any growth
     flat_data.reserve(other.total_size());
@@ -170,12 +170,6 @@ public:
   void reserve(size_t n_vect, size_t n_elem) {
     index.reserve(n_vect);
     flat_data.reserve(n_elem);
-  }
-
-  static size_t heap_alloc_size(size_t n_vect, size_t n_elem) noexcept {
-    size_t data_size = aligned_size(sizeof(T) * n_elem, alignof(T));
-    size_t idx_size = aligned_size(sizeof(offset_type) * n_vect, alignof(offset_type));
-    return data_size + idx_size;
   }
 };
 } // namespace opflow::detail

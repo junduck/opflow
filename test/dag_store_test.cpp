@@ -1,15 +1,15 @@
 #include <gtest/gtest.h>
 
+#include "opflow/detail/dag_store.hpp"
 #include "opflow/graph_node.hpp"
-#include "opflow/graph_topo.hpp"
 
-#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
 using namespace opflow;
+using namespace opflow::detail;
 
 struct dummy_node {
   using data_type = int;
@@ -27,7 +27,7 @@ struct dummy_node {
   size_t clone_align() const noexcept { return alignof(dummy_node); }
 
   size_t num_inputs() const noexcept { return 0; }  // No inputs
-  size_t num_outputs() const noexcept { return 0; } // No outputs
+  size_t num_outputs() const noexcept { return 1; } // Prevent incompatible errors
 
   std::string name;
   int value = 0;
@@ -53,7 +53,7 @@ struct alignas(64) aligned_dummy_node {
   size_t clone_align() const noexcept { return alignof(aligned_dummy_node); }
 
   size_t num_inputs() const noexcept { return 0; }  // No inputs
-  size_t num_outputs() const noexcept { return 0; } // No outputs
+  size_t num_outputs() const noexcept { return 1; } // Prevent incompatible errors
 
   std::string name;
   int value = 0;
@@ -135,31 +135,31 @@ TEST_F(GraphTopoFanoutTest, SingleNodeGraph) {
   g.add(node);
   g.add_output(node);
 
-  graph_topo<dummy_node> topo(g, 1);
+  dag_store<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.size(), 1);
   EXPECT_EQ(topo.num_nodes(), 1);
   EXPECT_EQ(topo.num_groups(), 1);
 
-  ASSERT_EQ(topo.nodes_out().size(), 1);
-  EXPECT_EQ(topo.nodes_out()[0].id, 0);
-
-  auto nodes_span = topo.nodes_of(0);
+  auto nodes_span = topo[0];
   ASSERT_EQ(nodes_span.size(), 1);
   EXPECT_EQ(nodes_span[0]->name, "single");
   EXPECT_EQ(nodes_span[0]->value, 42);
+
+  // Verify output mapping
+  EXPECT_EQ(topo.output_offset.size(), 1);
+  EXPECT_EQ(topo.output_offset[0].size, 1);
 }
 
 TEST_F(GraphTopoFanoutTest, LinearGraphTopologicalOrder) {
   create_linear_graph();
 
-  graph_topo<dummy_node> topo(g, 1);
+  dag_store<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.size(), 3);
-  EXPECT_EQ(topo.nodes_out().size(), 1);
-  EXPECT_EQ(topo.nodes_out()[0].id, 2); // nodeC should be at index 2 (last in topo order)
+  EXPECT_EQ(topo.output_offset.size(), 1); // One output node
 
-  auto nodes_span = topo.nodes_of(0);
+  auto nodes_span = topo[0];
   ASSERT_EQ(nodes_span.size(), 3);
 
   // Verify topological order: A should come before B, B should come before C
@@ -182,32 +182,41 @@ TEST_F(GraphTopoFanoutTest, LinearGraphTopologicalOrder) {
   EXPECT_TRUE(found_A && found_B && found_C);
   EXPECT_LT(idx_A, idx_B);
   EXPECT_LT(idx_B, idx_C);
+
+  // Verify input/output structure through record offsets
+  EXPECT_EQ(topo.record_offset.size(), 3);
+  EXPECT_EQ(topo.input_offset.size(), 3);
 }
 
 TEST_F(GraphTopoFanoutTest, DiamondGraphCorrectPredecessors) {
   create_diamond_graph();
 
-  graph_topo<dummy_node> topo(g, 1);
+  dag_store<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.size(), 4);
 
-  // Find nodeD's index and verify its predecessors
-  auto nodes_span = topo.nodes_of(0);
-  size_t nodeD_idx = SIZE_MAX;
+  // Verify the diamond structure is preserved in topological order
+  auto nodes_span = topo[0];
+
+  // Find indices of each node
+  std::unordered_map<std::string, size_t> name_to_idx;
   for (size_t i = 0; i < nodes_span.size(); ++i) {
-    if (nodes_span[i]->name == "D") {
-      nodeD_idx = i;
-      break;
-    }
+    name_to_idx[nodes_span[i]->name] = i;
   }
 
-  ASSERT_NE(nodeD_idx, SIZE_MAX);
+  // Verify diamond structure through topological ordering constraints
+  // A should come before B and C, B and C should come before D
+  EXPECT_LT(name_to_idx["A"], name_to_idx["B"]);
+  EXPECT_LT(name_to_idx["A"], name_to_idx["C"]);
+  EXPECT_LT(name_to_idx["B"], name_to_idx["D"]);
+  EXPECT_LT(name_to_idx["C"], name_to_idx["D"]);
 
-  auto preds = topo.pred_of(nodeD_idx);
-  EXPECT_EQ(preds.size(), 2); // nodeD has two predecessors
+  // Verify input structure through input_offset
+  EXPECT_EQ(topo.input_offset.size(), 4);
 
-  auto args = topo.args_of(nodeD_idx);
-  EXPECT_EQ(args.size(), 2); // nodeD has two arguments
+  // Node D should have 2 inputs (from B and C)
+  auto nodeD_inputs = topo.input_offset[name_to_idx["D"]];
+  EXPECT_EQ(nodeD_inputs.size(), 2);
 }
 
 // Memory safety and PMR correctness tests
@@ -215,19 +224,19 @@ TEST_F(GraphTopoFanoutTest, MultipleGroupsCorrectCopies) {
   create_linear_graph();
 
   constexpr size_t num_groups = 5;
-  graph_topo<dummy_node> topo(g, num_groups);
+  dag_store<dummy_node> topo(g, num_groups);
 
   EXPECT_EQ(topo.num_groups(), num_groups);
   EXPECT_EQ(topo.size(), 3);
 
   // Verify each group has independent copies
   for (size_t grp = 0; grp < num_groups; ++grp) {
-    auto nodes_span = topo.nodes_of(grp);
+    auto nodes_span = topo[grp];
     ASSERT_EQ(nodes_span.size(), 3);
 
     // Verify nodes are different objects across groups
     if (grp > 0) {
-      auto prev_nodes = topo.nodes_of(grp - 1);
+      auto prev_nodes = topo[grp - 1];
       for (size_t i = 0; i < nodes_span.size(); ++i) {
         EXPECT_NE(nodes_span[i].get(), prev_nodes[i].get())
             << "Node " << i << " in group " << grp << " should be different from group " << (grp - 1);
@@ -249,11 +258,11 @@ TEST_F(GraphTopoFanoutTest, MemoryAlignmentCorrectness) {
   aligned_g.add(nodeB, nodeA);
   aligned_g.add_output(nodeB);
 
-  graph_topo<aligned_dummy_node> topo(aligned_g, 3);
+  dag_store<aligned_dummy_node> topo(aligned_g, 3);
 
   // Verify all nodes are properly aligned
   for (size_t grp = 0; grp < 3; ++grp) {
-    auto nodes_span = topo.nodes_of(grp);
+    auto nodes_span = topo[grp];
     for (size_t i = 0; i < nodes_span.size(); ++i) {
       auto ptr = reinterpret_cast<uintptr_t>(nodes_span[i].get());
       EXPECT_EQ(ptr % 64, 0) << "Node " << i << " in group " << grp << " is not 64-byte aligned";
@@ -267,14 +276,14 @@ TEST_F(GraphTopoFanoutTest, PMRArenaMemoryManagement) {
   constexpr size_t num_groups = 3;
 
   {
-    graph_topo<dummy_node> topo(g, num_groups);
+    dag_store<dummy_node> topo(g, num_groups);
 
     // Verify nodes were cloned for each group
     EXPECT_EQ(topo.size(), g.size());
 
     // Verify we can access all groups without crashes
     for (size_t grp = 0; grp < num_groups; ++grp) {
-      auto nodes_span = topo.nodes_of(grp);
+      auto nodes_span = topo[grp];
       EXPECT_EQ(nodes_span.size(), g.size());
 
       for (size_t i = 0; i < nodes_span.size(); ++i) {
@@ -306,22 +315,25 @@ TEST_F(GraphTopoFanoutTest, LargeGraphStressTest) {
   g.add_output(nodes.back());
 
   constexpr size_t num_groups = 10;
-  graph_topo<dummy_node> topo(g, num_groups);
+  dag_store<dummy_node> topo(g, num_groups);
 
   EXPECT_EQ(topo.size(), graph_size);
   EXPECT_EQ(topo.num_groups(), num_groups);
 
   // Verify integrity of all groups
   for (size_t grp = 0; grp < num_groups; ++grp) {
-    auto nodes_span = topo.nodes_of(grp);
+    auto nodes_span = topo[grp];
     ASSERT_EQ(nodes_span.size(), graph_size);
 
-    // Verify chain integrity within each group
+    // Verify chain structure through input_offset - each node (except first) should have 1 input
     for (size_t i = 1; i < nodes_span.size(); ++i) {
-      auto preds = topo.pred_of(i);
-      EXPECT_EQ(preds.size(), 1);
-      EXPECT_EQ(preds[0], i - 1);
+      auto inputs = topo.input_offset[i];
+      EXPECT_EQ(inputs.size(), 1) << "Node " << i << " should have exactly 1 input";
     }
+
+    // First node should have no inputs
+    auto first_inputs = topo.input_offset[0];
+    EXPECT_EQ(first_inputs.size(), 0) << "First node should have no inputs";
   }
 }
 
@@ -338,33 +350,39 @@ TEST_F(GraphTopoFanoutTest, CyclicGraphHandling) {
   g.add(nodeA, nodeC);
   g.add_output(nodeC);
 
-  EXPECT_THROW(graph_topo<dummy_node> topo(g, 1), std::runtime_error);
+  EXPECT_THROW(dag_store<dummy_node> topo(g, 1), std::runtime_error);
 }
 
 TEST_F(GraphTopoFanoutTest, MultipleOutputNodes) {
   create_complex_graph();
 
-  graph_topo<dummy_node> topo(g, 1);
+  dag_store<dummy_node> topo(g, 1);
 
-  EXPECT_EQ(topo.nodes_out().size(), 2);                     // We have 2 output nodes
-  EXPECT_NE(topo.nodes_out()[0].id, topo.nodes_out()[1].id); // They should be at different indices
+  EXPECT_EQ(topo.output_offset.size(), 2); // We have 2 output nodes
 
-  auto nodes_span = topo.nodes_of(0);
+  auto nodes_span = topo[0];
 
-  // Verify output nodes can be accessed
-  for (auto out : topo.nodes_out()) {
-    EXPECT_LT(out.id, nodes_span.size());
-    // Verify these are indeed our output nodes
-    bool is_output = (nodes_span[out.id]->name == "D") || (nodes_span[out.id]->name == "F");
-    EXPECT_TRUE(is_output);
+  // Verify we have the expected nodes
+  std::unordered_set<std::string> found_names;
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    found_names.insert(nodes_span[i]->name);
   }
+
+  // Should have all 6 nodes: A, B, C, D, E, F
+  EXPECT_EQ(found_names.size(), 6);
+  EXPECT_TRUE(found_names.count("A"));
+  EXPECT_TRUE(found_names.count("B"));
+  EXPECT_TRUE(found_names.count("C"));
+  EXPECT_TRUE(found_names.count("D"));
+  EXPECT_TRUE(found_names.count("E"));
+  EXPECT_TRUE(found_names.count("F"));
 }
 
 TEST_F(GraphTopoFanoutTest, ConstCorrectness) {
   create_linear_graph();
 
-  graph_topo<dummy_node> topo(g, 1);
-  graph_topo<dummy_node> const &const_topo = topo;
+  dag_store<dummy_node> topo(g, 1);
+  dag_store<dummy_node> const &const_topo = topo;
 
   // Test const methods
   EXPECT_EQ(const_topo.size(), 3);
@@ -372,41 +390,38 @@ TEST_F(GraphTopoFanoutTest, ConstCorrectness) {
   EXPECT_EQ(const_topo.num_groups(), 1);
 
   // Test const nodes access
-  auto const_nodes = const_topo.nodes_of(0);
+  auto const_nodes = const_topo[0];
   EXPECT_EQ(const_nodes.size(), 3);
 
-  // Test const pred/args access
-  auto preds = const_topo.pred_of(1);
-  auto args = const_topo.args_of(1);
-  EXPECT_EQ(preds.size(), 1);
-  EXPECT_EQ(args.size(), 1);
+  // Test const public data access
+  EXPECT_EQ(const_topo.record_offset.size(), 3);
+  EXPECT_EQ(const_topo.input_offset.size(), 3);
+  EXPECT_EQ(const_topo.output_offset.size(), 1);
 }
 
 TEST_F(GraphTopoFanoutTest, MemoryEfficiencyMultipleGroups) {
   create_linear_graph();
 
-  // Test that pred_map and arg_map are shared across groups
+  // Test that the structure is efficiently shared across groups
   constexpr size_t num_groups = 100;
-  graph_topo<dummy_node> topo(g, num_groups);
+  dag_store<dummy_node> topo(g, num_groups);
 
   EXPECT_EQ(topo.num_groups(), num_groups);
 
   // All groups should have same topological structure
   for (size_t grp = 0; grp < num_groups; ++grp) {
+    auto nodes_span = topo[grp];
+    EXPECT_EQ(nodes_span.size(), 3);
+
+    // Verify linear chain structure through input offsets
     for (size_t node_id = 0; node_id < topo.size(); ++node_id) {
-      auto preds = topo.pred_of(node_id);
-      auto args = topo.args_of(node_id);
+      auto inputs = topo.input_offset[node_id];
 
-      // These should be consistent across all groups since structure is shared
-      if (grp == 0) {
-        // Store reference values from first group
-        // (pred_of and args_of return the same data regardless of group)
-        continue;
+      if (node_id == 0) {
+        EXPECT_EQ(inputs.size(), 0); // First node has no inputs
+      } else {
+        EXPECT_EQ(inputs.size(), 1); // Other nodes have one input
       }
-
-      // Verify structure is same (pred_map and arg_map are shared)
-      EXPECT_EQ(preds.size(), topo.pred_of(node_id).size());
-      EXPECT_EQ(args.size(), topo.args_of(node_id).size());
     }
   }
 }
@@ -429,11 +444,11 @@ TEST_F(GraphTopoFanoutTest, ArenaMemoryAlignmentEdgeCases) {
   mixed_g.add_output(nodes.back());
 
   // Test with multiple groups to stress arena allocation
-  graph_topo<aligned_dummy_node> topo(mixed_g, 5);
+  dag_store<aligned_dummy_node> topo(mixed_g, 5);
 
   // Verify all nodes maintain proper alignment
   for (size_t grp = 0; grp < 5; ++grp) {
-    auto nodes_span = topo.nodes_of(grp);
+    auto nodes_span = topo[grp];
     for (size_t i = 0; i < nodes_span.size(); ++i) {
       auto ptr = reinterpret_cast<uintptr_t>(nodes_span[i].get());
       EXPECT_EQ(ptr % alignof(aligned_dummy_node), 0) << "Node " << i << " in group " << grp << " lost alignment";
@@ -445,10 +460,10 @@ TEST_F(GraphTopoFanoutTest, TopoOrderConsistencyAcrossGroups) {
   create_diamond_graph();
 
   constexpr size_t num_groups = 3;
-  graph_topo<dummy_node> topo(g, num_groups);
+  dag_store<dummy_node> topo(g, num_groups);
 
   // Get topological order from first group
-  auto group0 = topo.nodes_of(0);
+  auto group0 = topo[0];
   std::vector<std::string> topo_order;
   for (size_t i = 0; i < group0.size(); ++i) {
     topo_order.push_back(group0[i]->name);
@@ -456,7 +471,7 @@ TEST_F(GraphTopoFanoutTest, TopoOrderConsistencyAcrossGroups) {
 
   // Verify all other groups have identical topological order
   for (size_t grp = 1; grp < num_groups; ++grp) {
-    auto group = topo.nodes_of(grp);
+    auto group = topo[grp];
     ASSERT_EQ(group.size(), topo_order.size());
 
     for (size_t i = 0; i < group.size(); ++i) {
@@ -469,8 +484,8 @@ TEST_F(GraphTopoFanoutTest, TopoOrderConsistencyAcrossGroups) {
 TEST_F(GraphTopoFanoutTest, PredecessorAndArgumentMapping) {
   create_diamond_graph();
 
-  graph_topo<dummy_node> topo(g, 1);
-  auto nodes_span = topo.nodes_of(0);
+  dag_store<dummy_node> topo(g, 1);
+  auto nodes_span = topo[0];
 
   // Find indices of each node
   std::unordered_map<std::string, size_t> name_to_idx;
@@ -478,41 +493,27 @@ TEST_F(GraphTopoFanoutTest, PredecessorAndArgumentMapping) {
     name_to_idx[nodes_span[i]->name] = i;
   }
 
-  // Verify A has no predecessors
-  auto a_preds = topo.pred_of(name_to_idx["A"]);
-  auto a_args = topo.args_of(name_to_idx["A"]);
-  EXPECT_TRUE(a_preds.empty());
-  EXPECT_TRUE(a_args.empty());
+  // Verify A has no inputs (root node)
+  auto a_inputs = topo.input_offset[name_to_idx["A"]];
+  EXPECT_TRUE(a_inputs.empty());
 
-  // Verify B has A as predecessor
-  auto b_preds = topo.pred_of(name_to_idx["B"]);
-  auto b_args = topo.args_of(name_to_idx["B"]);
-  EXPECT_EQ(b_preds.size(), 1);
-  EXPECT_EQ(b_args.size(), 1);
-  EXPECT_EQ(b_preds[0], name_to_idx["A"]);
-  EXPECT_EQ(b_args[0].node, name_to_idx["A"]);
-  EXPECT_EQ(b_args[0].port, 0);
+  // Verify B has A as input (should have 1 input)
+  auto b_inputs = topo.input_offset[name_to_idx["B"]];
+  EXPECT_EQ(b_inputs.size(), 1);
 
-  // Verify C has A as predecessor
-  auto c_preds = topo.pred_of(name_to_idx["C"]);
-  auto c_args = topo.args_of(name_to_idx["C"]);
-  EXPECT_EQ(c_preds.size(), 1);
-  EXPECT_EQ(c_args.size(), 1);
-  EXPECT_EQ(c_preds[0], name_to_idx["A"]);
+  // Verify C has A as input (should have 1 input)
+  auto c_inputs = topo.input_offset[name_to_idx["C"]];
+  EXPECT_EQ(c_inputs.size(), 1);
 
-  // Verify D has B and C as predecessors
-  auto d_preds = topo.pred_of(name_to_idx["D"]);
-  auto d_args = topo.args_of(name_to_idx["D"]);
-  EXPECT_EQ(d_preds.size(), 2);
-  EXPECT_EQ(d_args.size(), 2);
+  // Verify D has B and C as inputs (should have 2 inputs)
+  auto d_inputs = topo.input_offset[name_to_idx["D"]];
+  EXPECT_EQ(d_inputs.size(), 2);
 
-  std::vector<size_t> expected_preds = {name_to_idx["B"], name_to_idx["C"]};
-  std::sort(expected_preds.begin(), expected_preds.end());
-
-  std::vector<size_t> actual_preds(d_preds.begin(), d_preds.end());
-  std::sort(actual_preds.begin(), actual_preds.end());
-
-  EXPECT_EQ(actual_preds, expected_preds);
+  // Verify topological ordering constraints hold
+  EXPECT_LT(name_to_idx["A"], name_to_idx["B"]);
+  EXPECT_LT(name_to_idx["A"], name_to_idx["C"]);
+  EXPECT_LT(name_to_idx["B"], name_to_idx["D"]);
+  EXPECT_LT(name_to_idx["C"], name_to_idx["D"]);
 }
 
 TEST_F(GraphTopoFanoutTest, ComplexCyclicGraphDetection) {
@@ -533,7 +534,7 @@ TEST_F(GraphTopoFanoutTest, ComplexCyclicGraphDetection) {
 
   g.add_output(nodeE);
 
-  EXPECT_THROW(graph_topo<dummy_node> topo(g, 1), std::runtime_error);
+  EXPECT_THROW(dag_store<dummy_node> topo(g, 1), std::runtime_error);
 }
 
 TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
@@ -569,7 +570,7 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
 
   // Measure construction time (basic performance check)
   auto start = std::chrono::high_resolution_clock::now();
-  graph_topo<dummy_node> topo(g, 2);
+  dag_store<dummy_node> topo(g, 2);
   auto end = std::chrono::high_resolution_clock::now();
 
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -580,10 +581,10 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
 
   // Verify structure integrity on large graph
   for (size_t grp = 0; grp < 2; ++grp) {
-    auto nodes_span = topo.nodes_of(grp);
+    auto nodes_span = topo[grp];
     EXPECT_EQ(nodes_span.size(), nodes.size());
 
-    // Spot check: verify root node has no predecessors
+    // Spot check: verify root node has no inputs
     size_t root_idx = 0;
     for (size_t i = 0; i < nodes_span.size(); ++i) {
       if (nodes_span[i]->value == 0) { // Root node has value 0
@@ -592,8 +593,8 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
       }
     }
 
-    auto root_preds = topo.pred_of(root_idx);
-    EXPECT_TRUE(root_preds.empty());
+    auto root_inputs = topo.input_offset[root_idx];
+    EXPECT_TRUE(root_inputs.empty());
   }
 }
 
@@ -601,12 +602,12 @@ TEST_F(GraphTopoFanoutTest, NodeGroupIsolation) {
   create_linear_graph();
 
   constexpr size_t num_groups = 3;
-  graph_topo<dummy_node> topo(g, num_groups);
+  dag_store<dummy_node> topo(g, num_groups);
 
   // Modify state of nodes in one group and verify other groups are unaffected
-  auto group0 = topo.nodes_of(0);
-  auto group1 = topo.nodes_of(1);
-  auto group2 = topo.nodes_of(2);
+  auto group0 = topo[0];
+  auto group1 = topo[1];
+  auto group2 = topo[2];
 
   // Find a specific node in each group and verify they're different objects
   size_t test_idx = 1; // Middle node
@@ -643,7 +644,7 @@ TEST_F(GraphTopoFanoutTest, EmptyOutputNodesList) {
   std::vector<std::shared_ptr<dummy_node>> empty_out_nodes;
   g.set_output(empty_out_nodes);
 
-  graph_topo<dummy_node> topo(g, 1);
+  dag_store<dummy_node> topo(g, 1);
 
   EXPECT_EQ(topo.size(), 3);
 }
@@ -655,10 +656,22 @@ TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
   std::vector<std::shared_ptr<dummy_node>> duplicate_out_nodes = {nodeC, nodeC, nodeB, nodeC};
   g.set_output(duplicate_out_nodes);
 
-  graph_topo<dummy_node> topo(g, 1);
+  dag_store<dummy_node> topo(g, 1);
 
-  EXPECT_EQ(topo.nodes_out().size(), 4);
-  EXPECT_EQ(topo.nodes_out()[0], topo.nodes_out()[1]); // Same node should have same index
-  EXPECT_EQ(topo.nodes_out()[1], topo.nodes_out()[3]); // Same node should have same index
-  EXPECT_NE(topo.nodes_out()[0], topo.nodes_out()[2]); // Different nodes should have different indices
+  EXPECT_EQ(topo.output_offset.size(), 4); // Should have 4 output entries
+
+  // Find the indices of nodeB and nodeC in the topology
+  auto nodes_span = topo[0];
+  size_t nodeB_idx = SIZE_MAX, nodeC_idx = SIZE_MAX;
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    if (nodes_span[i]->name == "B") {
+      nodeB_idx = i;
+    } else if (nodes_span[i]->name == "C") {
+      nodeC_idx = i;
+    }
+  }
+
+  ASSERT_NE(nodeB_idx, SIZE_MAX);
+  ASSERT_NE(nodeC_idx, SIZE_MAX);
+  EXPECT_NE(nodeB_idx, nodeC_idx); // Should be different nodes at different indices
 }

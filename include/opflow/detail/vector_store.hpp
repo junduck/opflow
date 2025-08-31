@@ -22,10 +22,9 @@ namespace opflow::detail {
  * |<-- cacheline aligned -->|         |<-- cacheline aligned -->|
  *
  * @tparam T The element type to store
- * @tparam Allocator The allocator type for the underlying storage
+ * @tparam Alloc The allocator type for the underlying storage
  */
-template <typename T, typename Allocator = std::allocator<T>>
-  requires(std::is_trivial_v<T>) // Requires trivial type so we can default copy/move storage
+template <trivial T, typename Alloc = std::allocator<T>>
 class vector_store {
 public:
   using value_type = T;
@@ -40,12 +39,11 @@ private:
     std::array<std::byte, cacheline_size> data;
   };
 
-  // Rebind allocator to work with cacheline_chunk instead of std::byte
-  using chunk_allocator_type = typename std::allocator_traits<Allocator>::template rebind_alloc<cacheline_chunk>;
+  using chunk_alloc = rebind_alloc<Alloc, cacheline_chunk>;
 
-  std::vector<cacheline_chunk, chunk_allocator_type> storage;
+  std::vector<cacheline_chunk, chunk_alloc> storage;
+  size_type const grp_num;
   size_type grp_size;
-  size_type grp_num;
   size_type grp_stride; // Bytes between start of consecutive groups
 
   /**
@@ -54,7 +52,7 @@ private:
    * @param group_size Number of elements per group
    * @return Stride in bytes between consecutive groups
    */
-  static constexpr size_type calculate_group_stride(size_type group_size) noexcept {
+  static constexpr size_type calc_group_stride(size_type group_size) noexcept {
     size_type group_bytes = group_size * sizeof(T);
     return aligned_size(group_bytes, cacheline_size);
   }
@@ -95,9 +93,8 @@ public:
    * @param num_groups Number of groups (n)
    * @param alloc Allocator instance for the underlying storage
    */
-  explicit vector_store(size_type group_size, size_type num_groups, const Allocator &alloc = Allocator{})
-      : storage(chunk_allocator_type{alloc}), grp_size(group_size), grp_num(num_groups),
-        grp_stride(calculate_group_stride(group_size)) {
+  explicit vector_store(size_type group_size, size_type num_groups, const Alloc &alloc = Alloc{})
+      : storage(alloc), grp_num(num_groups), grp_size(group_size), grp_stride(calc_group_stride(group_size)) {
 
     assert(num_groups > 0 && "Number of groups must be greater than 0");
     if (group_size == 0) {
@@ -144,7 +141,7 @@ public:
       return; // No change needed
     }
 
-    size_type new_group_stride = calculate_group_stride(new_group_size);
+    size_type new_group_stride = calc_group_stride(new_group_size);
     if (new_group_stride == grp_stride) {
       // We can reuse existing storage
       grp_size = new_group_size;
