@@ -65,7 +65,8 @@ TEST(FlatMultiVectPmrTest, ConstructFromPmrAllocToStd) {
   pmr_fmv.push_back(std::vector<int>{10});
 
   // Construct default-allocator instance from pmr-backed one
-  flat_multivect<int> std_fmv(pmr_fmv);
+  flat_multivect<int> std_fmv;
+  std_fmv.copy_from(pmr_fmv);
 
   EXPECT_EQ(std_fmv.size(), pmr_fmv.size());
   EXPECT_EQ(std_fmv.total_size(), pmr_fmv.total_size());
@@ -89,7 +90,8 @@ TEST(FlatMultiVectPmrTest, AllocationCounting) {
 
   size_t before = counting_res.alloc_calls;
   // Construct a pmr-backed flat_multivect from the std-backed one
-  flat_multivect<int, uint32_t, std::pmr::polymorphic_allocator<int>> pmr_fmv(std_fmv, pa);
+  flat_multivect<int, uint32_t, std::pmr::polymorphic_allocator<int>> pmr_fmv(pa);
+  pmr_fmv.copy_from(std_fmv);
 
   // We expect the pmr-backed construction to allocate via the counting resource
   EXPECT_GT(counting_res.alloc_calls, before);

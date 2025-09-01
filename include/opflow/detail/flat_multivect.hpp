@@ -32,9 +32,17 @@ public:
   flat_multivect() = default;
   flat_multivect(Alloc const &alloc) : index(alloc), flat_data(alloc) {}
 
-  template <typename OtherValue, typename OtherIndex, typename OtherAlloc>
-  flat_multivect(flat_multivect<OtherValue, OtherIndex, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
+  template <typename OtherAlloc>
+  flat_multivect(flat_multivect<T, Index, OtherAlloc> const &other, Alloc const &alloc = Alloc{})
       : index(alloc), flat_data(alloc) {
+    copy_from(other);
+  }
+
+  template <typename U, typename OtherIndex, typename OtherAlloc>
+  void copy_from(flat_multivect<U, OtherIndex, OtherAlloc> const &other) {
+    flat_data.clear();
+    index.clear();
+
     // Reserve exact capacity to avoid any growth
     flat_data.reserve(other.total_size());
     auto other_flat = other.flat();
