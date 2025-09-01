@@ -25,8 +25,7 @@
         cast[i] = fn(in[i]);                                                                                           \
       }                                                                                                                \
     }                                                                                                                  \
-    size_t num_inputs() const noexcept override { return n_input; }                                                    \
-    size_t num_outputs() const noexcept override { return n_input; }                                                   \
+    OPFLOW_INOUT(n_input, n_input)                                                                                     \
     OPFLOW_CLONEABLE(name)                                                                                             \
   };
 #endif
@@ -42,8 +41,7 @@
       data_type *OPFLOW_RESTRICT cast = out;                                                                           \
       cast[0] = fn(in[0], in[1]);                                                                                      \
     }                                                                                                                  \
-    size_t num_inputs() const noexcept override { return 2; }                                                          \
-    size_t num_outputs() const noexcept override { return 1; }                                                         \
+    OPFLOW_INOUT(2, 1)                                                                                                 \
     OPFLOW_CLONEABLE(name)                                                                                             \
   };
 #endif
@@ -85,14 +83,11 @@ OPFLOW_FN_UNARY_FN(trunc, std::trunc);
 OPFLOW_FN_UNARY_FN(round, std::round);
 
 template <std::floating_point T>
-struct clamp : public fn_base<T> {
+class clamp : public fn_base<T> {
+public:
   using base = fn_base<T>;
   using base::base;
   using typename base::data_type;
-
-  data_type const lo;
-  data_type const hi;
-  uint32_t const n_input;
 
   explicit clamp(data_type lo, data_type hi, uint32_t n = 1) noexcept : lo(lo), hi(hi), n_input(n) {}
 
@@ -103,10 +98,13 @@ struct clamp : public fn_base<T> {
     }
   }
 
-  size_t num_inputs() const noexcept override { return n_input; }
-  size_t num_outputs() const noexcept override { return n_input; }
-
+  OPFLOW_INOUT(n_input, n_input)
   OPFLOW_CLONEABLE(clamp)
+
+private:
+  data_type const lo;
+  data_type const hi;
+  uint32_t const n_input;
 };
 
 // Due to memory layout constraints, we can't vectorise binary functors.
@@ -119,5 +117,4 @@ OPFLOW_FN_BINARY_FN(fmod, detail::fmod);
 
 template <std::floating_point T>
 using lerp = functor<T, detail::lerp<T>>;
-
 } // namespace opflow::fn

@@ -19,6 +19,12 @@
 #endif
 #endif
 
+#ifndef OPFLOW_INOUT
+#define OPFLOW_INOUT(InVal, OutVal)                                                                                    \
+  size_t num_inputs() const noexcept override { return InVal; }                                                        \
+  size_t num_outputs() const noexcept override { return OutVal; }
+#endif
+
 #ifndef OPFLOW_NO_UNIQUE_ADDRESS
 #if defined(_MSC_VER)
 // [[no_unique_address]] is ignored by MSVC even in C++20 mode; instead, [[msvc::no_unique_address]] is provided.
