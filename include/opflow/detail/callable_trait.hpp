@@ -4,9 +4,27 @@
 
 namespace opflow::detail {
 namespace impl {
+
+template <typename... Args>
+struct first_arg;
+
+template <typename Arg0, typename... Args>
+struct first_arg<Arg0, Args...> {
+  using type = Arg0;
+};
+
+template <>
+struct first_arg<> {
+  using type = void;
+};
+
+template <typename... Args>
+using first_arg_t = typename first_arg<Args...>::type;
+
 template <typename Ret, typename... Args>
 struct callable_trait_impl {
   using return_type = Ret;
+  using data_type = first_arg_t<Args...>;
 
   constexpr static size_t arity = sizeof...(Args);
 };
@@ -52,7 +70,13 @@ struct is_tuple<std::tuple<Ts...>> : std::true_type {};
 template <typename T>
 constexpr inline bool is_tuple_v = is_tuple<T>::value;
 
-template <typename T>
-concept can_use_ebo = !std::is_final_v<T> && std::is_empty_v<T>;
+template <typename Fn>
+concept unary_functor =
+    (callable_trait_t<Fn>::arity == 1) &&
+    (std::same_as<typename callable_trait_t<Fn>::return_type, typename callable_trait_t<Fn>::data_type>);
 
+template <typename Fn>
+concept binary_functor =
+    (callable_trait_t<Fn>::arity == 2) &&
+    (std::same_as<typename callable_trait_t<Fn>::return_type, typename callable_trait_t<Fn>::data_type>);
 } // namespace opflow::detail
