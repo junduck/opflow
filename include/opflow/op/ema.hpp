@@ -8,13 +8,10 @@
 
 namespace opflow::op {
 template <typename T>
-struct ema : public op_base<T> {
+class ema : public op_base<T> {
+public:
   using base = op_base<T>;
   using typename base::data_type;
-
-  detail::smooth<data_type> val; ///< Current EMA value
-  data_type alpha;               ///< Smoothing factor
-  bool initialised;              ///< Whether the first value has been processed
 
   explicit ema(data_type alpha) noexcept : val{}, alpha{detail::smooth_factor(alpha)}, initialised{false} {
     assert(alpha > 0. && "alpha/period must be positive.");
@@ -37,20 +34,20 @@ struct ema : public op_base<T> {
     initialised = false;
   }
 
-  size_t num_inputs() const noexcept override { return 1; }
-  size_t num_outputs() const noexcept override { return 1; }
-
+  OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(ema)
+
+private:
+  detail::smooth<data_type> val; ///< Current EMA value
+  data_type alpha;               ///< Smoothing factor
+  bool initialised;              ///< Whether the first value has been processed
 };
 
 template <typename T>
-struct ema_time : public op_base<T> {
+class ema_time : public op_base<T> {
+public:
   using base = op_base<T>;
   using typename base::data_type;
-
-  detail::smooth<data_type> val; ///< Current EMA value
-  data_type inv_tau;             ///< 1. / Time constant
-  bool initialised;              ///< Whether the first value has been processed
 
   explicit ema_time(data_type tau) noexcept : val{}, inv_tau{data_type(1) / tau}, initialised{false} {
     assert(tau > 0. && "Time constant must be positive.");
@@ -76,9 +73,12 @@ struct ema_time : public op_base<T> {
     initialised = false;
   }
 
-  size_t num_inputs() const noexcept override { return 1; }
-  size_t num_outputs() const noexcept override { return 1; }
-
+  OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(ema_time)
+
+private:
+  detail::smooth<data_type> val; ///< Current EMA value
+  data_type inv_tau;             ///< 1. / Time constant
+  bool initialised;              ///< Whether the first value has been processed
 };
 } // namespace opflow::op

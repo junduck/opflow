@@ -5,21 +5,14 @@
 
 namespace opflow::op {
 // This is a toy operator that demonstrate dynamic windowing
-template <typename T, win_type WIN = win_type::event>
-struct dynwin_avg : public win_base<T, WIN> {
-  using base = win_base<T, WIN>;
+template <typename T>
+class dynwin_avg : public win_base<T> {
+public:
+  using base = win_base<T>;
   using typename base::data_type;
 
-  data_type sum, mean, m2, thres;
-  size_t count;
-
-  explicit dynwin_avg(size_t win_event, data_type thres) noexcept
-    requires(WIN == win_type::event)
-      : base(win_event), thres(thres) {}
-
-  explicit dynwin_avg(data_type win_time, data_type thres) noexcept
-    requires(WIN == win_type::time)
-      : base(win_time), thres(thres) {}
+  explicit dynwin_avg(size_t win_event, data_type thres) noexcept : base(win_event), thres(thres) {}
+  explicit dynwin_avg(data_type win_time, data_type thres) noexcept : base(win_time), thres(thres) {}
 
   void on_data(data_type const *in) noexcept override {
     auto const x = in[0];
@@ -30,11 +23,7 @@ struct dynwin_avg : public win_base<T, WIN> {
     m2 += d * (x - mean);
     if (m2 > thres * thres) {
       // Trigger dynamic window, double window size
-      if constexpr (WIN == win_type::event) {
-        this->win_event *= 2;
-      } else if constexpr (WIN == win_type::time) {
-        this->win_time *= 2;
-      }
+      double_window();
       m2 = 0; // Reset M2 after triggering
     }
   }
@@ -59,9 +48,16 @@ struct dynwin_avg : public win_base<T, WIN> {
   }
 
   bool is_dynamic() const noexcept override { return true; }
-  size_t num_inputs() const noexcept override { return 1; }
-  size_t num_outputs() const noexcept override { return 1; }
 
+  OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(dynwin_avg)
+
+private:
+  data_type sum, mean, m2, thres;
+  size_t count;
+
+  void double_window() {
+    std::visit(this->win_size, [&](auto &v) { v *= 2; });
+  }
 };
 } // namespace opflow::op

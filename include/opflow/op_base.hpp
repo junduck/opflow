@@ -75,7 +75,7 @@ struct op_base {
 };
 
 /**
- * @brief Simple windowed operator base class
+ * @brief Simple windowed operator base class, strongly typed win_type
  *
  * The default implementation:
  * - Takes a single constructor argument for the window size.
@@ -87,20 +87,16 @@ struct op_base {
  * @tparam WIN window type
  */
 template <typename T, win_type WIN>
-struct win_base : public op_base<T> {
+class win_typed_base : public op_base<T> {
+public:
   using base = op_base<T>;
   using typename base::data_type;
 
-  union {
-    size_t win_event;
-    data_type win_time;
-  };
-
-  explicit win_base(size_t win_event) noexcept
+  explicit win_typed_base(size_t win_event) noexcept
     requires(WIN == win_type::event)
       : win_event(win_event) {}
 
-  explicit win_base(data_type win_time) noexcept
+  explicit win_typed_base(data_type win_time) noexcept
     requires(WIN == win_type::time)
       : win_time(win_time) {}
 
@@ -133,10 +129,16 @@ struct win_base : public op_base<T> {
       return {};
     }
   }
+
+protected:
+  union {
+    size_t win_event;
+    data_type win_time;
+  };
 };
 
 /**
- * @brief Simple windowed operator base class, with erased window type
+ * @brief Simple windowed operator base class, erased win_type
  *
  * The default implementation:
  * - Has same behaviour as @see opflow::win_base
@@ -147,15 +149,15 @@ struct win_base : public op_base<T> {
  * @tparam WIN window type
  */
 template <typename T>
-struct win_erased_base : public op_base<T> {
+class win_base : public op_base<T> {
+public:
   using data_type = T;
   using base = op_base<T>;
 
-  std::variant<size_t, data_type> win_size;
+  template <std::integral I>
+  explicit win_base(I win_event) noexcept : win_size(static_cast<size_t>(win_event)) {}
 
-  explicit win_erased_base(size_t win_event) noexcept : win_size(win_event) {}
-
-  explicit win_erased_base(data_type win_time) noexcept : win_size(win_time) {}
+  explicit win_base(data_type win_time) noexcept : win_size(win_time) {}
 
   bool is_cumulative() const noexcept override {
     auto visitor =
@@ -179,6 +181,9 @@ struct win_erased_base : public op_base<T> {
            "[BUG] Graph executor calls window_size(time_window_tag) on event-based window op.");
     return std::get<data_type>(win_size);
   }
+
+protected:
+  std::variant<size_t, data_type> win_size;
 };
 
 template <typename T>
@@ -200,9 +205,7 @@ struct op_root : op_base<T> {
   }
   void reset() noexcept override {}
 
-  size_t num_inputs() const noexcept override { return input_size; }
-  size_t num_outputs() const noexcept override { return input_size; }
-
+  OPFLOW_INOUT(input_size, input_size)
   OPFLOW_CLONEABLE(op_root)
 };
 

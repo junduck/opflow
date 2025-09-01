@@ -1,17 +1,16 @@
 #pragma once
 
-#include "detail/accum.hpp"
 #include "opflow/def.hpp"
 #include "opflow/op_base.hpp"
 
-namespace opflow::op {
-template <typename T, win_type WIN = win_type::event>
-struct avg : public win_base<T, WIN> {
-  using base = win_base<T, WIN>;
-  using typename base::data_type;
+#include "detail/accum.hpp"
 
-  detail::smooth<data_type> val; ///< mean value
-  size_t n;                      ///< count of values processed
+namespace opflow::op {
+template <typename T>
+class avg : public win_base<T> {
+public:
+  using base = win_base<T>;
+  using typename base::data_type;
 
   using base::base;
 
@@ -34,19 +33,19 @@ struct avg : public win_base<T, WIN> {
     n = 0;
   }
 
-  size_t num_inputs() const noexcept override { return 1; }
-  size_t num_outputs() const noexcept override { return 1; }
-
+  OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(avg)
+
+private:
+  detail::smooth<data_type> val; ///< mean value
+  size_t n;                      ///< count of values processed
 };
 
-template <typename T, win_type WIN = win_type::event>
-struct avg_weighted : public win_base<T, WIN> {
-  using base = win_base<T, WIN>;
+template <typename T>
+class avg_weighted : public win_base<T> {
+public:
+  using base = win_base<T>;
   using typename base::data_type;
-
-  detail::smooth<data_type> val;  ///< weighted mean value
-  detail::accum<data_type> w_sum; ///< sum of weights
 
   using base::base;
 
@@ -71,9 +70,11 @@ struct avg_weighted : public win_base<T, WIN> {
     w_sum.reset();
   }
 
-  size_t num_inputs() const noexcept override { return 2; }
-  size_t num_outputs() const noexcept override { return 1; }
-
+  OPFLOW_INOUT(2, 1)
   OPFLOW_CLONEABLE(avg_weighted)
+
+private:
+  detail::smooth<data_type> val;  ///< weighted mean value
+  detail::accum<data_type> w_sum; ///< sum of weights
 };
 } // namespace opflow::op

@@ -168,7 +168,7 @@ TEST_F(GraphExecFanoutTest, InputBufferAPI) {
 
 TEST_F(GraphExecFanoutTest, TimeBasedWindowing) {
   // Create executor with time-based windows
-  auto time_sum = g.add<op::sum<double, win_type::time>>(root | 0, 5.0); // 5-second time window
+  auto time_sum = g.add<op::sum<double>>(root | 0, 5.0); // 5-second time window
   g.set_output(time_sum);
   auto time_exec = std::make_unique<exec_type>(g, 1);
 

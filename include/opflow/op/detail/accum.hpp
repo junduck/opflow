@@ -10,7 +10,7 @@ namespace opflow::op::detail {
  * This class uses Kahan summation to improve numerical stability
  *
  */
-template <std::floating_point T = double>
+template <std::floating_point T>
 class accum {
   T sum, carry;
   inline void _add(T x) {
@@ -46,7 +46,7 @@ public:
  * This class uses fma (fused multiply-add) to improve numerical stability
  *
  */
-template <std::floating_point T = double>
+template <std::floating_point T>
 class smooth {
   T val;
 
