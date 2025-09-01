@@ -8,6 +8,8 @@
 #include "opflow/window_base.hpp"
 
 #include "fixed_buffer_resource.hpp"
+#include "flat_multivect.hpp"
+#include "utils.hpp"
 
 namespace opflow::detail {
 template <dag_node T, typename Alloc = std::allocator<T>>
@@ -21,23 +23,23 @@ public:
   using base_type = T;
   using window_base_type = window_base<data_type>;
 
-  using window_type = std::unique_ptr<window_base_type, detail::arena_deleter<window_base_type>>;
+  using window_type = std::unique_ptr<window_base_type, arena_deleter<window_base_type>>;
   using shared_window_type = std::shared_ptr<window_base_type>;
 
-  using node_type = std::unique_ptr<base_type, detail::arena_deleter<base_type>>;
+  using node_type = std::unique_ptr<base_type, arena_deleter<base_type>>;
   using shared_node_type = std::shared_ptr<base_type>;
 
-  agg_store(graph_agg<T> const &graph, size_t n_group = 1, Alloc alloc = Alloc{})
-      : arena_storage(alloc), arena(nullptr, 0), n_grp(n_group), n_nodes(graph.size()), win_ptrs(), node_ptrs(),
+  agg_store(graph_agg<T> const &g, size_t n_group = 1, Alloc alloc = Alloc{})
+      : arena_storage(alloc), arena(nullptr, 0), n_grp(n_group), n_nodes(g.size()), win_ptrs(), node_ptrs(),
         record_size(), record_offset(), input_column() {
     if (n_group == 0) {
       throw std::invalid_argument("Number of groups must be greater than 0.");
     }
 
-    init_arena(graph);
-    copy_nodes(graph);
+    init_arena(g);
+    copy_nodes(g);
 
-    auto nodes = graph.get_nodes();
+    auto nodes = g.get_nodes();
 
     record_size = 0;
     record_offset.reserve(n_nodes);
@@ -46,9 +48,8 @@ public:
       record_size += nodes[i]->num_outputs();
     }
 
-    input_column = graph.get_input_column();
-
-    win_column.assign(graph.window_input_column().begin(), graph.window_input_column().end());
+    input_column.copy_from(g.get_input_column());
+    win_column.assign(g.window_input_column().begin(), g.window_input_column().end());
   }
 
   window_type const &window(size_t igrp) const noexcept { return win_ptrs[igrp]; }
@@ -67,6 +68,9 @@ private:
     // | ptr win | ..... | ptr node | ..... | PADDING | node grp | PADDING | ... | node grp | ... |
     // | <---CONCURRENT READONLY ACCESS---> |
     //
+    // ptr win = | ptr win 0 | ptr win 1 | ... | ptr win n |
+    // ptr node = | ptr grp 0 node 0 | ptr grp 0 node 1 | ... | ptr grp 0 node n | ... | ptr grp m node n |
+    //
     // node grp = | win | node 0 | node 1 | ... | node n |
     //            | <---    SINGLE THREAD ACCESS    ---> |
 
@@ -75,9 +79,9 @@ private:
 
     size_t total = 0;
 
-    size_t win_ptr_size = detail::heap_alloc_size(win_ptrs, n_grp);
-    size_t node_ptr_size = detail::heap_alloc_size(node_ptrs, n_nodes * n_grp);
-    total = detail::aligned_size(win_ptr_size + node_ptr_size, detail::cacheline_size);
+    size_t win_ptr_size = heap_alloc_size(win_ptrs, n_grp);
+    size_t node_ptr_size = heap_alloc_size(node_ptrs, n_grp * n_nodes);
+    total = aligned_size(win_ptr_size + node_ptr_size, cacheline_size);
 
     size_t align = 0;
     size_t max_align = cacheline_size;
@@ -100,7 +104,7 @@ private:
 
     // now initialise arena
     arena_storage.resize(total);
-    arena = detail::fixed_buffer_resource(arena_storage.data(), arena_storage.size());
+    arena = fixed_buffer_resource(arena_storage.data(), arena_storage.size());
 
     // consolidate memory layout
     win_ptrs = std::pmr::vector<window_type>(&arena);
@@ -116,7 +120,7 @@ private:
     void *mem = nullptr;
     for (size_t i_copy = 0; i_copy < n_grp; ++i_copy) {
       auto const &win = graph.get_window();
-      mem = arena.allocate(win->clone_size(), std::max(detail::cacheline_size, win->clone_align()));
+      mem = arena.allocate(win->clone_size(), std::max(cacheline_size, win->clone_align()));
       win_ptrs.emplace_back(win->clone_at(mem));
       for (auto const &node : nodes) {
         mem = arena.allocate(node->clone_size(), node->clone_align());
@@ -131,13 +135,12 @@ private:
   std::pmr::vector<window_type> win_ptrs; ///< windows, size = n_grp
   std::pmr::vector<node_type> node_ptrs;  ///< nodes, size = n_grp * n_nodes
 
-  using u32 = uint32_t;
-  using u32_alloc = std::allocator_traits<Alloc>::template rebind_alloc<u32>;
+  using u32_alloc = rebind_alloc<Alloc, u32>;
 
 public:
-  size_t record_size;
-  std::vector<u32> record_offset;                           // i-th node -> offset in record
-  detail::flat_multivect<u32, u32, u32_alloc> input_column; // i-th node -> [input column]
-  std::vector<u32> win_column;                              // [window column]
+  u32 record_size;
+  std::vector<u32> record_offset;                   // i-th node -> offset in record
+  flat_multivect<u32, u32, u32_alloc> input_column; // i-th node -> [input column]
+  std::vector<u32> win_column;                      // [window column]
 };
 } // namespace opflow::detail

@@ -19,13 +19,13 @@ template <dag_node T, typename Alloc = std::allocator<T>>
 class dag_store {
   using byte_alloc = rebind_alloc<Alloc, std::byte>;
   std::vector<std::byte, byte_alloc> arena_storage;
-  detail::fixed_buffer_resource arena;
+  fixed_buffer_resource arena;
 
 public:
   using data_type = typename T::data_type;
   using base_type = T;
 
-  using node_type = std::unique_ptr<base_type, detail::arena_deleter<base_type>>;
+  using node_type = std::unique_ptr<base_type, arena_deleter<base_type>>;
   using shared_node_type = std::shared_ptr<base_type>;
 
   dag_store(graph_node<base_type> const &g, size_t n_group = 1, Alloc alloc = Alloc{})
@@ -35,7 +35,7 @@ public:
       throw std::invalid_argument("Number of groups must be greater than 0.");
     }
 
-    std::unordered_map<shared_node_type, size_t, detail::ptr_hash<base_type>, std::equal_to<>> in_degree, sorted_id;
+    std::unordered_map<shared_node_type, u32, ptr_hash<base_type>, std::equal_to<>> in_degree, sorted_id;
     std::queue<shared_node_type> ready;
     std::vector<shared_node_type> sorted;
 
@@ -71,7 +71,7 @@ public:
     }
 
     // Build the sorted_id mapping first
-    for (size_t i = 0; i < sorted.size(); ++i) {
+    for (u32 i = 0; i < sorted.size(); ++i) {
       sorted_id[sorted[i]] = i;
     }
 
@@ -92,7 +92,7 @@ public:
       record_size += ptrs[i]->num_outputs();
     }
 
-    std::vector<size_t> args{};
+    std::vector<u32> args{};
     input_offset.reserve(n_nodes, num_edges);
     for (size_t i = 0; i < n_nodes; ++i) {
       args.clear();
@@ -125,23 +125,27 @@ public:
 private:
   void init_arena(std::vector<shared_node_type> const &nodes) {
     // Memory layout:
-    // | ptr | ... | PADDING | node grp | PADDING | ... |
+    // | ptr grp 0 id 0 | ptr grp 0 id 1 | ... | ptr grp m id n | PADDING | node grp 0 | PADDING | ... |
+    // | <---          CONCURRENT READONLY ACCESS          ---> |
+    //
+    // node grp = | node 0 | node 1 | ... | node n |
+    //            | <--- SINGLE THREAD ACCESS ---> |
 
     size_t total = 0;
 
-    size_t ptr_size = detail::heap_alloc_size(ptrs, nodes.size() * n_grp);
-    total = detail::aligned_size(ptr_size, detail::cacheline_size);
+    size_t ptr_size = heap_alloc_size(ptrs, n_grp * n_nodes);
+    total = aligned_size(ptr_size, cacheline_size);
 
     size_t align = 0;
-    size_t max_align = detail::cacheline_size;
+    size_t max_align = cacheline_size;
 
     size_t node_size = 0;
     for (auto const &node : nodes) {
       align = node->clone_align();
       max_align = std::max(max_align, align);
-      node_size += detail::aligned_size(node->clone_size(), align);
+      node_size += aligned_size(node->clone_size(), align);
     }
-    size_t node_grp_size = detail::aligned_size(node_size, max_align);
+    size_t node_grp_size = aligned_size(node_size, max_align);
     total += node_grp_size * n_grp;
 
     // add extra max_align to ensure space fits
@@ -149,7 +153,7 @@ private:
 
     // now initialise arena
     arena_storage.resize(total);
-    arena = detail::fixed_buffer_resource(arena_storage.data(), arena_storage.size());
+    arena = fixed_buffer_resource(arena_storage.data(), arena_storage.size());
 
     // consolidate memory layout
     ptrs = std::pmr::vector<node_type>(&arena);
@@ -161,7 +165,7 @@ private:
       for (size_t i = 0; i < nodes.size(); ++i) {
         size_t align = nodes[i]->clone_align();
         if (i == 0) {
-          align = std::max(detail::cacheline_size, align);
+          align = std::max(cacheline_size, align);
         }
         void *mem = arena.allocate(nodes[i]->clone_size(), align);
         ptrs.emplace_back(nodes[i]->clone_at(mem));
@@ -173,16 +177,15 @@ private:
   size_t const n_nodes;
   std::pmr::vector<node_type> ptrs;
 
-  using u32 = uint32_t;
-  using u32_offset = detail::offset_type<u32>;
+  using offset = offset_type<u32>;
 
-  using u32_alloc = detail::rebind_alloc<Alloc, u32>;
-  using u32_offset_alloc = detail::rebind_alloc<Alloc, u32_offset>;
+  using u32_alloc = rebind_alloc<Alloc, u32>;
+  using offset_alloc = rebind_alloc<Alloc, offset>;
 
 public:
-  size_t record_size;
-  std::vector<u32, u32_alloc> record_offset;                // i-th node -> offset in record
-  detail::flat_multivect<u32, u32, u32_alloc> input_offset; // i-th node -> [offset in rec]
-  std::vector<u32_offset, u32_offset_alloc> output_offset;  // i-th out -> <offset in rec, node->num_outputs()>
+  u32 record_size;
+  std::vector<u32, u32_alloc> record_offset;        // i-th node -> offset in record
+  flat_multivect<u32, u32, u32_alloc> input_offset; // i-th node -> [offset in rec]
+  std::vector<offset, offset_alloc> output_offset;  // i-th out -> <offset in rec, node->num_outputs()>
 };
 } // namespace opflow::detail

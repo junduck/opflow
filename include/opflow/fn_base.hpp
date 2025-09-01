@@ -63,8 +63,6 @@ struct fn_root : fn_base<T> {
   OPFLOW_CLONEABLE(fn_root)
 };
 
-static_assert(dag_node<fn_root<int>>);
-
 template <typename T>
 struct dag_root<fn_base<T>> {
   using type = fn_root<T>;
