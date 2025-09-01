@@ -57,7 +57,9 @@ private:
   size_t count;
 
   void double_window() {
-    std::visit(this->win_size, [&](auto &v) { v *= 2; });
+    std::visit([](auto &v) { v *= 2; }, this->win_size);
   }
 };
+
+static_assert(dag_node<dynwin_avg<double>>);
 } // namespace opflow::op

@@ -25,6 +25,8 @@ private:
   detail::accum<data_type> val; ///< accumulated value
 };
 
+static_assert(dag_node<sum<double>>);
+
 #ifndef NDEBUG
 // for testing purpose
 template <std::floating_point U>
