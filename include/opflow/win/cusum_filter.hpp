@@ -30,13 +30,12 @@ public:
    * @brief Construct a new cusum filter object
    *
    * @param log_threshold log threshold for an event
-   * @param inspect_index index of the data point to calculate log difference
    */
-  cusum_filter(data_type log_threshold, size_t inspect_index) noexcept
-      : thres(log_threshold), idx(inspect_index), lagged_log(), cusum_pos(), cusum_neg(), curr(), init() {}
+  cusum_filter(data_type log_threshold) noexcept
+      : thres(log_threshold), lagged_log(), cusum_pos(), cusum_neg(), curr(), init() {}
 
   bool on_data(data_type time, data_type const *in) noexcept override {
-    auto curr_log = std::log(in[idx]);
+    auto curr_log = std::log(in[0]);
     curr.timestamp = time;
     ++curr.size;
     if (!init) {
@@ -67,14 +66,13 @@ public:
   }
 
   void reset() noexcept override {
-    *this = cusum_filter(thres, idx); // Reset to a new instance with the same parameters
+    *this = cusum_filter{thres}; // Reset to a new instance with the same parameters
   }
 
   OPFLOW_CLONEABLE(cusum_filter)
 
 private:
   data_type const thres;
-  size_t const idx;
 
   data_type lagged_log;
   data_type cusum_pos, cusum_neg;

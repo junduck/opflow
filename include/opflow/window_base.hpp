@@ -36,7 +36,7 @@ struct window_spec {
  * | 0,1,2      | false   | N/A           | N/A      | no window                                 |
  * | 0,1,2,3    | true    | [T0, 0, 3, 2] | 0,1,2    | offset 0, size 3, evict/pop 2 from queue  |
  * | 2,3,4      | false   | N/A           | N/A      | no window, 0,1 evicted from queue         |
- * | 2,3,4,5    | true    | [T1, 1, 3, 4] | 3,4,5    | offset 3, size 3, evict/pop 4 from queue  |
+ * | 2,3,4,5    | true    | [T1, 1, 3, 4] | 3,4,5    | offset 1, size 3, evict/pop 4 from queue  |
  * | 6          | false   | N/A           | N/A      | no window, 2,3,4,5 evicted from queue     |
  *
  * Note that the queue and window are maintained by aggregator and is for exposition only.

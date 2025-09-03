@@ -55,6 +55,8 @@ public:
       max_input = std::max(max_input, aggr.input_column[i].size());
     }
     curr_args.ensure_group_capacity(max_input);
+
+    win_args.ensure_group_capacity(aggr.win_column.size());
   }
 
   // Ingest a new row. Returns the timestamp of the emitted window, if any.
@@ -65,7 +67,7 @@ public:
 
     // Check if window should emit
     auto const &win = aggr.window(igrp);
-    if (!win->on_data(timestamp, in)) {
+    if (!win->on_data(timestamp, win_in_ptr(in, igrp))) {
       return std::nullopt;
     }
 
@@ -132,6 +134,14 @@ private:
 
     for (size_t i = 0; i < cols.size(); ++i) {
       args[i] = df[cols[i]].data() + offset;
+    }
+    return args.data();
+  }
+
+  data_type const *win_in_ptr(data_type const *in, size_t igrp) noexcept {
+    auto args = win_args[igrp];
+    for (size_t i = 0; i < aggr.win_column.size(); ++i) {
+      args[i] = in[aggr.win_column[i]];
     }
     return args.data();
   }
