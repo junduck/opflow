@@ -122,8 +122,18 @@ public:
    * @param grp_id Group identifier (0-based)
    * @return Span providing access to group_size elements
    */
-  std::span<T> get(size_type grp_id) noexcept { return {group_data(grp_id), grp_size}; }
-  std::span<const T> get(size_type grp_id) const noexcept { return {group_data(grp_id), grp_size}; }
+  std::span<T> get(size_type grp_id) noexcept {
+    if (!grp_size) {
+      return {};
+    }
+    return {group_data(grp_id), grp_size};
+  }
+  std::span<const T> get(size_type grp_id) const noexcept {
+    if (!grp_size) {
+      return {};
+    }
+    return {group_data(grp_id), grp_size};
+  }
 
   std::span<T> operator[](size_type grp_id) noexcept { return get(grp_id); }
   std::span<const T> operator[](size_type grp_id) const noexcept { return get(grp_id); }
