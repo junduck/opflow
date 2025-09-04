@@ -24,9 +24,7 @@ struct ohlc : public agg_base<Data> {
     out[3] = c;
   }
 
-  size_t num_inputs() const noexcept override { return 1; }
-  size_t num_outputs() const noexcept override { return 4; }
-
+  OPFLOW_INOUT(1, 4)
   OPFLOW_CLONEABLE(ohlc)
 };
 } // namespace opflow::agg

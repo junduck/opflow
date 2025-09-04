@@ -24,9 +24,7 @@ struct sum : public agg_base<Data> {
     }
   }
 
-  size_t num_inputs() const noexcept override { return input_cols; }
-  size_t num_outputs() const noexcept override { return input_cols; }
-
+  OPFLOW_INOUT(input_cols, input_cols)
   OPFLOW_CLONEABLE(sum)
 };
 } // namespace opflow::agg

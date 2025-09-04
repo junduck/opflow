@@ -6,6 +6,20 @@
 #include "detail/accum.hpp"
 
 namespace opflow::op {
+
+/**
+ * @brief Exponential Moving Average (EMA)
+ *
+ * Info for coding agent:
+ * - Input:
+ *   0. x
+ * - Output:
+ *   0. ema
+ * - Param:
+ *   0. alpha: Smoothing factor, if alpha > 1, it is used as "period" in common tech indicator library
+ *      where alpha = 2 / (period + 1)
+ *   @ref detail::smooth_factor for more details
+ */
 template <typename T>
 class ema : public op_base<T> {
 public:
@@ -42,6 +56,23 @@ private:
 
 static_assert(dag_node<ema<double>>);
 
+/**
+ * @brief Unbiased Exponential Moving Average (EMA)
+ *
+ * @details ema_unbiased uses a bias correction to initialise EMA
+ *
+ * @ref https://arxiv.org/abs/1412.6980
+ *
+ * Info for coding agent:
+ * - Input:
+ *   0. x
+ * - Output:
+ *   0. ema
+ * - Param:
+ *   0. alpha: Smoothing factor, if alpha > 1, it is used as "period" in common tech indicator library
+ *      where alpha = 2 / (period + 1)
+ *   @ref detail::smooth_factor for more details
+ */
 template <typename T>
 class ema_unbiased : public op_base<T> {
 public:
@@ -77,15 +108,25 @@ private:
 
 static_assert(dag_node<ema_unbiased<double>>);
 
+/**
+ * @brief Time-weighted Exponential Moving Average (EMA)
+ *
+ * Info for coding agent:
+ * - Input:
+ *   0. x value
+ *   1. dt delta time
+ * - Output:
+ *   0. ema
+ * - Param:
+ *   0. tau: Time constant
+ */
 template <typename T>
 class ema_time : public op_base<T> {
 public:
   using base = op_base<T>;
   using typename base::data_type;
 
-  explicit ema_time(data_type tau) noexcept : val{}, inv_tau{data_type(1) / tau}, initialised{false} {
-    assert(tau > 0. && "Time constant must be positive.");
-  }
+  explicit ema_time(data_type tau) noexcept : val{}, inv_tau{data_type(1) / tau}, initialised{false} {}
 
   void on_data(data_type const *in) noexcept override {
     auto const x = in[0];

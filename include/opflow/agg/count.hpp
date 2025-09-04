@@ -12,9 +12,7 @@ struct count : public agg_base<Data> {
     *out = static_cast<data_type>(n);
   }
 
-  size_t num_inputs() const noexcept override { return 0; }
-  size_t num_outputs() const noexcept override { return 1; }
-
+  OPFLOW_INOUT(0, 1)
   OPFLOW_CLONEABLE(count)
 };
 } // namespace opflow::agg
