@@ -109,6 +109,8 @@ concept dag_node_ptr = (std::is_pointer_v<T> && dag_node<std::remove_pointer_t<T
 template <std::floating_point T>
 constexpr inline T feps = std::numeric_limits<T>::epsilon(); ///< Epsilon constant
 template <std::floating_point T>
+constexpr inline T feps10 = T(10) * feps<T>; ///< Epsilon constant scaled by 10
+template <std::floating_point T>
 constexpr inline T feps100 = T(100) * feps<T>; ///< Epsilon constant scaled by 100
 template <std::floating_point T>
 constexpr inline T fnan = std::numeric_limits<T>::quiet_NaN(); ///< NaN constant
@@ -118,6 +120,11 @@ template <std::floating_point T>
 constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double value
 template <std::floating_point T>
 constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
+
+template <std::floating_point T>
+constexpr bool very_small(T v) {
+  return std::abs(v) < feps100<T>;
+}
 
 template <size_t N = 6, std::uniform_random_bit_generator G>
 std::string random_string(G &gen, std::string_view prefix = "") {
