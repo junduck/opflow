@@ -118,3 +118,11 @@ OPFLOW_FN_BINARY_FN(fmod, detail::fmod);
 template <std::floating_point T>
 using lerp = functor<T, detail::lerp<T>>;
 } // namespace opflow::fn
+
+#ifdef OPFLOW_FN_UNARY_FN
+#undef OPFLOW_FN_UNARY_FN
+#endif
+
+#ifdef OPFLOW_FN_BINARY_FN
+#undef OPFLOW_FN_BINARY_FN
+#endif
