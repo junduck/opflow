@@ -21,12 +21,19 @@ struct first_arg<> {
 template <typename... Args>
 using first_arg_t = typename first_arg<Args...>::type;
 
+template <typename T>
+struct return_size_impl : std::integral_constant<size_t, 1> {};
+
+template <typename... Ts>
+struct return_size_impl<std::tuple<Ts...>> : std::integral_constant<size_t, sizeof...(Ts)> {};
+
 template <typename Ret, typename... Args>
 struct callable_trait_impl {
   using return_type = Ret;
   using data_type = first_arg_t<Args...>;
 
   constexpr static size_t arity = sizeof...(Args);
+  constexpr static size_t return_size = return_size_impl<return_type>::value;
 };
 
 template <typename Ret, typename... Args>

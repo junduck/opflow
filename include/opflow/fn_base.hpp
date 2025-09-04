@@ -57,9 +57,7 @@ struct fn_root : fn_base<T> {
     }
   }
 
-  size_t num_inputs() const noexcept override { return input_size; }
-  size_t num_outputs() const noexcept override { return input_size; }
-
+  OPFLOW_INOUT(input_size, input_size)
   OPFLOW_CLONEABLE(fn_root)
 };
 

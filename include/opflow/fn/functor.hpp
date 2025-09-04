@@ -10,6 +10,10 @@
 namespace opflow::fn {
 template <typename T, typename Fn>
 class functor : public fn_base<T> {
+  using fn_trait = detail::callable_trait_t<Fn>;
+  constexpr static size_t arity = fn_trait::arity;
+  constexpr static size_t return_size = fn_trait::return_size;
+
 public:
   using data_type = T;
 
@@ -17,26 +21,17 @@ public:
   functor(Args &&...args) : fn(std::forward<Args>(args)...) {}
 
   void on_data(data_type const *in, data_type *out) noexcept override {
-    call_impl(in, out, std::make_index_sequence<detail::callable_trait_t<Fn>::arity>{});
+    on_data_impl(in, out, std::make_index_sequence<detail::callable_trait_t<Fn>::arity>{});
   }
 
-  size_t num_inputs() const noexcept override { return detail::callable_trait_t<Fn>::arity; }
-  size_t num_outputs() const noexcept override {
-    using trait = detail::callable_trait_t<Fn>;
-    if constexpr (detail::is_tuple_v<typename trait::return_type>) {
-      return std::tuple_size_v<typename trait::return_type>;
-    } else {
-      return 1;
-    }
-  }
-
+  OPFLOW_INOUT(arity, return_size)
   OPFLOW_CLONEABLE(functor)
 
 private:
   OPFLOW_NO_UNIQUE_ADDRESS Fn fn;
 
   template <size_t... Is>
-  void call_impl(data_type const *in, data_type *out, std::index_sequence<Is...>) noexcept {
+  void on_data_impl(data_type const *in, data_type *out, std::index_sequence<Is...>) noexcept {
     data_type *OPFLOW_RESTRICT cast = out;
     write_out_impl(cast, fn(in[Is]...));
   }
@@ -45,12 +40,12 @@ private:
 
   template <typename... Ts>
   void write_out_impl(data_type *OPFLOW_RESTRICT out, std::tuple<Ts...> const &v) noexcept {
-    write_out_tup_impl(out, v, std::index_sequence_for<Ts...>{});
-  }
-
-  template <size_t... Is, typename Tup>
-  void write_out_tup_impl(data_type *OPFLOW_RESTRICT out, Tup const &v, std::index_sequence<Is...>) noexcept {
-    ((out[Is] = std::get<Is>(v)), ...);
+    std::apply(
+        [out](auto... vals) {
+          size_t i = 0;
+          ((out[i++] = vals), ...);
+        },
+        v);
   }
 };
 } // namespace opflow::fn
