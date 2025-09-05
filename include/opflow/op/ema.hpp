@@ -3,7 +3,7 @@
 #include "opflow/def.hpp"
 #include "opflow/op_base.hpp"
 
-#include "detail/accum.hpp"
+#include "opflow/detail/accum.hpp"
 
 namespace opflow::op {
 

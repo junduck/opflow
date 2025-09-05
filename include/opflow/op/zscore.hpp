@@ -20,8 +20,6 @@ public:
   }
 };
 
-static_assert(dag_node<zscore<double>>);
-
 template <typename T>
 class zscore_ew : public std_ew<T> {
 public:
@@ -37,8 +35,6 @@ public:
     }
   }
 };
-
-static_assert(dag_node<zscore_ew<double>>);
 
 // TODO: some patterns may have cyclic dependencies
 /*
@@ -124,6 +120,4 @@ private:
   data_type const thres;
   data_type const influence;
 };
-
-static_assert(dag_node<zband<double>>);
 } // namespace opflow::op

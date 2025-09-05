@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "opflow/op/detail/accum.hpp"
+#include "opflow/detail/accum.hpp"
 
 namespace opflow::op {
 struct s2_exp_weighted_sta {

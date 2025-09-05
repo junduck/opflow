@@ -3,7 +3,7 @@
 #include <cmath>
 #include <concepts>
 
-namespace opflow::op::detail {
+namespace opflow::detail {
 /**
  * @brief Default accumulator
  *
@@ -103,4 +103,4 @@ U smooth_wilders(U alpha) noexcept {
   }
   return alpha;
 }
-} // namespace opflow::op::detail
+} // namespace opflow::detail

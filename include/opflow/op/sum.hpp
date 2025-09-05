@@ -1,7 +1,7 @@
 #pragma once
 
-#include "detail/accum.hpp"
 #include "opflow/def.hpp"
+#include "opflow/detail/accum.hpp"
 #include "opflow/op_base.hpp"
 
 namespace opflow::op {
