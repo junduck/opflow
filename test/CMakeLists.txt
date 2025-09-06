@@ -78,10 +78,15 @@ target_link_libraries(test_column_store GTest::gtest_main opflow::headers)
 add_executable(test_agg_exec agg_exec_test.cpp)
 target_link_libraries(test_agg_exec GTest::gtest_main opflow::headers)
 
+# graph_node_named tests
+add_executable(test_graph_node_named graph_node_named_test.cpp)
+target_link_libraries(test_graph_node_named GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_dag_store)
 gtest_discover_tests(test_vector_store)
+gtest_discover_tests(test_graph_node_named)
 gtest_discover_tests(test_agg_exec)
 gtest_discover_tests(test_column_store)
 gtest_discover_tests(test_graph_node)

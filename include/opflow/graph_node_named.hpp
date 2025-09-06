@@ -1,0 +1,523 @@
+#pragma once
+
+#include <cassert>
+#include <charconv>
+#include <memory>
+#include <ranges>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+#include "common.hpp"
+#include "detail/utils.hpp"
+
+namespace opflow {
+namespace detail {
+template <typename T>
+concept string_like = std::convertible_to<T, std::string_view>;
+
+template <typename T>
+concept has_data_type = requires { typename T::data_type; };
+
+struct graph_edge {
+  std::string name;
+  uint32_t port;
+
+  graph_edge(std::string_view name, uint32_t port) : name(name), port(port) {}
+
+  graph_edge(std::string_view desc) {
+    // find last dot
+    auto dot_pos = desc.find_last_of('.');
+    if (dot_pos == std::string_view::npos) {
+      name = desc;
+      port = 0;
+    } else {
+      name = desc.substr(0, dot_pos);
+      auto port_str = desc.substr(dot_pos + 1);
+      auto [_, ec] = std::from_chars(port_str.data(), port_str.data() + port_str.size(), port);
+      if (ec != std::errc{}) {
+        switch (ec) {
+        case std::errc::invalid_argument:
+          throw std::invalid_argument("Invalid port number in edge description: " + std::string(desc));
+        case std::errc::result_out_of_range:
+          throw std::out_of_range("Port number out of range in edge description: " + std::string(desc));
+        default:
+          throw std::runtime_error("Unknown error parsing port number in edge description: " + std::string(desc));
+        }
+      }
+    }
+  }
+
+  operator std::string() const {
+    if (port == 0) {
+      return name;
+    } else {
+      return name + "." + std::to_string(port);
+    }
+  }
+
+  bool operator==(graph_edge const &) const noexcept = default;
+};
+} // namespace detail
+
+struct ctor_args_tag {};
+constexpr inline ctor_args_tag ctor_args{};
+
+template <typename T>
+class graph_node {
+  using Hash = detail::str_hash;
+  using Equal = std::equal_to<>;
+
+public:
+  using node_type = std::shared_ptr<T>;
+  using edge_type = detail::graph_edge;
+  using NodeSet = std::unordered_set<std::string, Hash, Equal>;
+  using NodeArgsSet = std::vector<edge_type>;
+  using NodeMap = std::unordered_map<std::string, NodeSet, Hash, Equal>;
+  using NodeArgsMap = std::unordered_map<std::string, NodeArgsSet, Hash, Equal>;
+  using NodeStore = std::unordered_map<std::string, node_type, Hash, Equal>;
+
+  template <typename Node, typename... Ts>
+  void add(std::string const &name, Ts &&...preds_and_ctor_args) {
+    ensure_adjacency_list(name);
+    add_impl<Node>(name, std::forward<Ts>(preds_and_ctor_args)...);
+  }
+
+  template <typename Node, range_of<edge_type> R, typename... Ts>
+  void add(std::string const &name, R &&preds, Ts &&...args) {
+    ensure_adjacency_list(name);
+    add_impl<Node>(name, ctor_args, std::forward<Ts>(args)...);
+    for (auto const &pred : preds) {
+      add_edge_impl(name, pred);
+    }
+  }
+
+  template <typename Node, range_of<std::string_view> R, typename... Ts>
+  void add(std::string const &name, R &&preds, Ts &&...args) {
+    auto view = std::views::all(preds) |
+                std::views::transform([](auto const &s) { return detail::graph_edge(std::string_view(s)); });
+    add<Node>(name, view, std::forward<Ts>(args)...);
+  }
+
+  template <template <typename> typename Node, typename... Ts>
+  void add(std::string const &name, Ts &&...preds_and_ctor_args)
+    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using NodeT = Node<typename T::data_type>;
+    add<NodeT>(name, std::forward<Ts>(preds_and_ctor_args)...);
+  }
+
+  void root(std::string const &name, size_t root_input_size)
+    requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    add<dag_root_type<T>>(name, root_input_size);
+  }
+
+  template <typename Root, typename... Ts>
+  void root(std::string const &name, Ts &&...args) {
+    add<Root>(name, ctor_args, std::forward<Ts>(args)...);
+  }
+
+  template <template <typename> typename Root, typename... Ts>
+  void root(std::string const &name, Ts &&...args)
+    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using RootT = Root<typename T::data_type>;
+    add<RootT>(name, ctor_args, std::forward<Ts>(args)...);
+  }
+
+  template <range_of<std::string_view> R>
+  void set_output(R &&outputs) {
+    output.clear();
+    for (auto const &name : outputs) {
+      output.emplace_back(name);
+    }
+  }
+
+  template <range_of<std::string_view> R>
+  void add_output(R &&outputs) {
+    for (auto const &name : outputs) {
+      output.emplace_back(name);
+    }
+  }
+
+  void add_output(std::string const &name) { output.push_back(name); }
+
+  // Removal
+
+  void rm(std::string const &name) {
+    if (predecessor.find(name) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+
+    // Remove this node from pred map of all successors
+    for (auto const &succ : successor[name]) {
+      predecessor[succ].erase(name);
+      [[maybe_unused]] auto n = std::erase_if(argmap[succ], [&](auto const &edge) { return edge.name == name; });
+      assert(n && "[BUG] Inconsistent graph state.");
+    }
+
+    // Remove this node from succ map of all predecessors
+    for (auto const &pred : predecessor[name]) {
+      successor[pred].erase(name);
+    }
+
+    // Remove the node from adj maps and store
+    predecessor.erase(name);
+    argmap.erase(name);
+    successor.erase(name);
+    store.erase(name);
+  }
+
+  // Edge manipulation
+
+  template <range_of<edge_type> R>
+  void add_edge(std::string const &name, R &&preds) {
+    for (auto const &pred : preds) {
+      add_edge_impl(name, pred);
+    }
+  }
+
+  template <range_of<std::string_view> R>
+  void add_edge(std::string const &name, R &&preds) {
+    for (auto const &pred : preds) {
+      add_edge_impl(name, detail::graph_edge(std::string_view(pred)));
+    }
+  }
+
+  void add_edge(std::string const &name, std::string_view pred) { add_edge_impl(name, pred); }
+
+  void add_edge(std::string const &name, edge_type const &pred) { add_edge_impl(name, pred); }
+
+  template <range_of<edge_type> R>
+  void rm_edge(std::string const &name, R &&preds) {
+    if (predecessor.find(name) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    for (auto const &pred : preds) {
+      rm_edge_impl(name, pred);
+    }
+  }
+
+  template <range_of<std::string_view> R>
+  void rm_edge(std::string const &name, R &&preds) {
+    if (predecessor.find(name) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    for (auto const &pred : preds) {
+      rm_edge_impl(name, detail::graph_edge(std::string_view(pred)));
+    }
+  }
+
+  void rm_edge(std::string const &name, edge_type const &pred) {
+    if (predecessor.find(name) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    rm_edge_impl(name, pred);
+  }
+
+  // Replacement
+
+  void rename(std::string const &old_name, std::string const &new_name) {
+    if (predecessor.find(old_name) == predecessor.end()) {
+      return; // Old node doesn't exist
+    }
+    if (predecessor.find(new_name) != predecessor.end()) {
+      return; // Can't replace with an existing node
+    }
+    if (old_name == new_name) {
+      return; // No change needed
+    }
+
+    // Copy all adjacency information from old_name to new_name
+    predecessor.emplace(new_name, std::move(predecessor[old_name]));
+    argmap.emplace(new_name, std::move(argmap[old_name]));
+    successor.emplace(new_name, std::move(successor[old_name]));
+    store.emplace(new_name, std::move(store[old_name]));
+
+    // Update all predecessors to point to new_name instead of old_name
+    for (auto const &pred : predecessor[new_name]) {
+      successor[pred].erase(old_name);
+      successor[pred].insert(new_name);
+    }
+
+    // Update all successors to depend on new_name instead of old_name
+    for (auto const &succ : successor[new_name]) {
+      predecessor[succ].erase(old_name);
+      predecessor[succ].insert(new_name);
+
+      // Update args to replace old_name with new_name
+      for (auto &arg : argmap[succ]) {
+        if (arg.name == old_name) {
+          arg.name = new_name;
+        }
+      }
+    }
+
+    // Update output references
+    for (auto &out : output) {
+      if (out == old_name) {
+        out = new_name;
+      }
+    }
+
+    // Remove old_name from all maps
+    predecessor.erase(old_name);
+    argmap.erase(old_name);
+    successor.erase(old_name);
+    store.erase(old_name);
+  }
+
+  template <typename Node, typename... Ts>
+  void replace(std::string const &old_node, std::string const &new_node, Ts &&...args) {
+    if (predecessor.find(old_node) == predecessor.end()) {
+      return; // Old node doesn't exist
+    }
+    if (predecessor.find(new_node) != predecessor.end()) {
+      return; // Can't replace with an existing node
+    }
+    // Rename, so adjacency lists point to new_node
+    rename(old_node, new_node);
+    // Replace the stored node
+    store[new_node] = std::make_shared<Node>(std::forward<Ts>(args)...);
+  }
+
+  template <template <typename> typename Node, typename... Ts>
+  void replace(std::string const &old_node, std::string const &new_node, Ts &&...args)
+    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using NodeT = Node<typename T::data_type>;
+    replace<NodeT>(old_node, new_node, std::forward<Ts>(args)...);
+  }
+
+  void replace(std::string const &node, edge_type const &old_pred, edge_type const &new_pred) {
+    if (predecessor.find(node) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    if (predecessor.find(new_pred.name) == predecessor.end()) {
+      return; // Node doesn't exist
+    }
+    if (old_pred == new_pred) {
+      return; // No change needed
+    }
+
+    auto &args = argmap[node];
+
+    if (std::find(args.begin(), args.end(), old_pred) == args.end()) {
+      return; // Old edge doesn't exist, nothing to replace
+    }
+
+    // Ensure new predecessor node exists in adjacency lists
+    ensure_adjacency_list(new_pred.name);
+
+    // Update adjacency maps
+    predecessor[node].emplace(new_pred.name);
+    successor[new_pred.name].emplace(node);
+
+    // Replace old_pred with new_pred in argmap
+    for (auto &arg : args) {
+      if (arg.name == old_pred.name && arg.port == old_pred.port) {
+        arg = new_pred;
+      }
+    }
+
+    cleanup_adj(node, old_pred.name); // Check if old_pred is still needed
+  }
+
+  // Utilities
+
+  size_t size() const noexcept { return predecessor.size(); }
+
+  bool empty() const noexcept { return predecessor.empty(); }
+
+  void clear() noexcept {
+    predecessor.clear();
+    argmap.clear();
+    successor.clear();
+    output.clear();
+    store.clear();
+  }
+
+  void clear_output() noexcept { output.clear(); }
+
+  bool contains(std::string const &name) const noexcept { return predecessor.find(name) != predecessor.end(); }
+
+  NodeSet const &pred_of(std::string const &name) const {
+    static NodeSet empty_set{};
+    auto it = predecessor.find(name);
+    return (it != predecessor.end()) ? it->second : empty_set;
+  }
+
+  NodeMap const &get_pred() const noexcept { return predecessor; }
+
+  NodeArgsSet const &args_of(std::string const &name) const {
+    static NodeArgsSet empty_set{};
+    auto it = argmap.find(name);
+    return (it != argmap.end()) ? it->second : empty_set;
+  }
+
+  NodeArgsMap const &get_args() const noexcept { return argmap; }
+
+  NodeSet const &succ_of(std::string const &name) const {
+    static NodeSet empty_set{};
+    auto it = successor.find(name);
+    return (it != successor.end()) ? it->second : empty_set;
+  }
+
+  NodeMap const &get_succ() const noexcept { return successor; }
+
+  auto const &get_output() const noexcept { return output; }
+
+  node_type get_node(std::string const &name) const {
+    auto it = store.find(name);
+    return (it != store.end()) ? it->second : nullptr;
+  }
+
+  NodeStore const &get_store() const noexcept { return store; }
+
+  bool is_root(std::string const &name) const {
+    auto it = predecessor.find(name);
+    return (it != predecessor.end() && it->second.empty());
+  }
+
+  bool is_leaf(std::string const &name) const {
+    auto it = successor.find(name);
+    return (it != successor.end() && it->second.empty());
+  }
+
+  auto get_roots() const {
+    std::vector<std::string> roots;
+    for (auto const &[name, preds] : predecessor) {
+      if (preds.empty()) {
+        roots.push_back(name);
+      }
+    }
+    return roots;
+  }
+
+  auto get_leaves() const {
+    std::vector<std::string> leaves;
+    for (auto const &[name, succs] : successor) {
+      if (succs.empty()) {
+        leaves.push_back(name);
+      }
+    }
+    return leaves;
+  }
+
+  void merge(graph_node const &other) {
+    // Collect new nodes to add
+    std::unordered_set<std::string, Hash, Equal> nodes_to_add{};
+    for (auto const &[other_name, _] : other.predecessor) {
+      if (!contains(other_name)) {
+        nodes_to_add.emplace(other_name);
+      }
+    }
+
+    // Add all new nodes to the graph
+    for (auto const &new_name : nodes_to_add) {
+      auto other_node = other.get_node(new_name);
+      assert(other_node && "[BUG] Node in other graph has no associated instance in store.");
+
+      // Add edges
+      ensure_adjacency_list(new_name);
+      for (auto const &edge : other.args_of(new_name)) {
+        add_edge_impl(new_name, edge);
+      }
+
+      // Copy the node from other's store
+      store.emplace(new_name, other_node);
+    }
+  }
+
+  graph_node &operator+=(graph_node const &rhs) {
+    merge(rhs);
+    return *this;
+  }
+
+  friend graph_node operator+(graph_node const &lhs, graph_node const &rhs) {
+    graph_node result(lhs);
+    result.merge(rhs);
+    return result;
+  }
+
+private:
+  void ensure_adjacency_list(std::string const &name) {
+    if (predecessor.find(name) == predecessor.end()) {
+      predecessor.emplace(name, NodeSet{});
+    }
+    if (argmap.find(name) == argmap.end()) {
+      argmap.emplace(name, NodeArgsSet{});
+    }
+    if (successor.find(name) == successor.end()) {
+      successor.emplace(name, NodeSet{});
+    }
+  }
+
+  template <typename Node, detail::string_like T0, typename... Ts>
+  void add_impl(std::string const &name, T0 &&edge_desc, Ts &&...args) {
+    auto edge = detail::graph_edge(edge_desc);
+    add_edge_impl(name, edge);
+
+    add_impl<Node>(name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, typename... Ts>
+  void add_impl(std::string const &name, Ts &&...args) {
+    store[name] = std::make_shared<Node>(std::forward<Ts>(args)...);
+  }
+
+  /*
+  g.add<my_node>("node1", "input.0", "input.3", 2.3, v); // OK, no ambiguity since first arg to ctor is not string like
+  g.add<my_node2>("node2", "input.1", ctor_args, "first_ctor_arg", 2.3, v); // Need explicit splitter for pack
+  */
+  template <typename Node, typename... Ts>
+  void add_impl(std::string const &name, ctor_args_tag, Ts &&...args) {
+    store[name] = std::make_shared<Node>(std::forward<Ts>(args)...);
+  }
+
+  void add_edge_impl(std::string const &name, edge_type const &pred) {
+    predecessor[name].emplace(pred.name);
+    argmap[name].emplace_back(pred);
+    successor[pred.name].emplace(name);
+  }
+
+  // remove all edges name -> [pred:port]
+  void rm_edge_impl(std::string const &name, edge_type const &pred) {
+    auto &args = argmap[name];
+
+    if (std::find(args.begin(), args.end(), pred) == args.end()) {
+      return; // Edge doesn't exist, nothing to remove
+    }
+
+    // Remove all edges [pred:port]
+    std::erase(args, pred);
+
+    // Cleanup adjacency maps
+    cleanup_adj(name, pred.name);
+  }
+
+  void cleanup_adj(std::string const &name, std::string const &pred) {
+    auto const &args = argmap[name];
+    bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &arg) { return arg.name == pred; });
+    if (!has_conn) {
+      assert(predecessor[name].find(pred) != predecessor[name].end() &&
+             "[BUG] Inconsistent graph state: predecessor not found in adj map.");
+      assert(successor[pred].find(name) != successor[pred].end() &&
+             "[BUG] Inconsistent graph state: successor not found in reverse_adj map.");
+      // If no other connections exist, remove old predecessor from adjacency maps
+      predecessor[name].erase(pred);
+      successor[pred].erase(name);
+    }
+  }
+
+protected:
+  NodeMap predecessor;             ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  NodeArgsMap argmap;              ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  NodeMap successor;               ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  std::vector<std::string> output; ///< Output nodes
+  NodeStore store;                 ///< Store for actual node instances
+};
+} // namespace opflow
