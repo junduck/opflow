@@ -12,17 +12,17 @@
 
 #ifndef OPFLOW_CLONEABLE
 #ifndef OPFLOW_CLONEABLE
-#define OPFLOW_CLONEABLE(Type)                                                                                         \
-  Type *clone_at(void *mem_) const noexcept override { return new (mem_) Type(*this); }                                \
-  size_t clone_size() const noexcept override { return sizeof(Type); }                                                 \
-  size_t clone_align() const noexcept override { return alignof(Type); }
+#define OPFLOW_CLONEABLE(Type__)                                                                                       \
+  Type__ *clone_at(void *mem__) const noexcept override { return new (mem__) Type__(*this); }                          \
+  size_t clone_size() const noexcept override { return sizeof(Type__); }                                               \
+  size_t clone_align() const noexcept override { return alignof(Type__); }
 #endif
 #endif
 
 #ifndef OPFLOW_INOUT
-#define OPFLOW_INOUT(InVal, OutVal)                                                                                    \
-  size_t num_inputs() const noexcept override { return InVal; }                                                        \
-  size_t num_outputs() const noexcept override { return OutVal; }
+#define OPFLOW_INOUT(InVal__, OutVal__)                                                                                \
+  size_t num_inputs() const noexcept override { return InVal__; }                                                      \
+  size_t num_outputs() const noexcept override { return OutVal__; }
 #endif
 
 #ifndef OPFLOW_NO_UNIQUE_ADDRESS
