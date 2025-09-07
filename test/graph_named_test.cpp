@@ -64,39 +64,47 @@ protected:
   graph_named<int> graph_int;
 };
 
-// Test graph_edge parsing
+// Test graph_named_edge parsing
 TEST(GraphEdgeTest, DefaultPort) {
-  detail::edge_named edge("node");
+  detail::graph_named_edge edge("node");
   EXPECT_EQ(edge.name, "node");
   EXPECT_EQ(edge.port, 0u);
   EXPECT_EQ(std::string(edge), "node");
+
+  detail::graph_named_edge edge2("node.abc");
+  EXPECT_EQ(edge2.name, "node.abc");
+  EXPECT_EQ(edge2.port, 0u);
+  EXPECT_EQ(std::string(edge2), "node.abc");
 }
 
 TEST(GraphEdgeTest, ExplicitPort) {
-  detail::edge_named edge("node.5");
+  detail::graph_named_edge edge("node.5");
   EXPECT_EQ(edge.name, "node");
   EXPECT_EQ(edge.port, 5u);
   EXPECT_EQ(std::string(edge), "node.5");
 }
 
-TEST(GraphEdgeTest, InvalidPort) { EXPECT_THROW(detail::edge_named("node.abc"), std::invalid_argument); }
-
 TEST(GraphEdgeTest, PortOutOfRange) {
-  EXPECT_THROW(detail::edge_named("node.999999999999999999999"), std::out_of_range);
+  EXPECT_THROW(detail::graph_named_edge("node.999999999999999999999"), std::out_of_range);
 }
 
 TEST(GraphEdgeTest, ConstructorWithNameAndPort) {
-  detail::edge_named edge("test_node", 42);
+  detail::graph_named_edge edge("test_node", 42);
   EXPECT_EQ(edge.name, "test_node");
   EXPECT_EQ(edge.port, 42u);
   EXPECT_EQ(std::string(edge), "test_node.42");
+
+  detail::graph_named_edge edge2("test.node.42");
+  EXPECT_EQ(edge2.name, "test.node");
+  EXPECT_EQ(edge2.port, 42u);
+  EXPECT_EQ(std::string(edge2), "test.node.42");
 }
 
 TEST(GraphEdgeTest, Equality) {
-  detail::edge_named edge1("node", 5);
-  detail::edge_named edge2("node", 5);
-  detail::edge_named edge3("node", 6);
-  detail::edge_named edge4("other", 5);
+  detail::graph_named_edge edge1("node", 5);
+  detail::graph_named_edge edge2("node", 5);
+  detail::graph_named_edge edge3("node", 6);
+  detail::graph_named_edge edge4("other", 5);
 
   EXPECT_EQ(edge1, edge2);
   EXPECT_NE(edge1, edge3);
@@ -180,7 +188,6 @@ TEST_F(GraphNodeNamedTest, AddNodeWithRangeDependencies) {
   graph.add<dummy_node>("input1", 1, "input1");
   graph.add<dummy_node>("input2", 2, "input2");
 
-  // std::vector<detail::graph_edge> deps = {{"input1", 0}, {"input2", 5}};
   std::vector<std::string> deps = {"input1.0", "input2.5"};
   graph.add<dummy_node>("processor", deps, 3, "processor");
 
@@ -270,15 +277,6 @@ TEST_F(GraphNodeNamedTest, AddOutput) {
   EXPECT_EQ(output[2], "node3");
 }
 
-TEST_F(GraphNodeNamedTest, ClearOutput) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  graph.add_output("node1");
-  EXPECT_EQ(graph.get_output().size(), 1u);
-
-  graph.clear_output();
-  EXPECT_EQ(graph.get_output().size(), 0u);
-}
-
 // Node removal
 TEST_F(GraphNodeNamedTest, RemoveNode) {
   graph.add<dummy_node>("node1", 1, "node1");
@@ -333,7 +331,7 @@ TEST_F(GraphNodeNamedTest, AddMultipleEdges) {
   graph.add<dummy_node>("node2", 2, "node2");
   graph.add<dummy_node>("node3", 3, "node3");
 
-  std::vector<detail::edge_named> edges = {{"node1", 0}, {"node2", 5}};
+  std::vector<detail::graph_named_edge> edges = {{"node1", 0}, {"node2", 5}};
   graph.add_edge("node3", edges);
 
   auto pred = graph.pred_of("node3");
@@ -355,7 +353,7 @@ TEST_F(GraphNodeNamedTest, RemoveEdge) {
 
   EXPECT_EQ(graph.pred_of("node2").size(), 1u);
 
-  graph.rm_edge("node2", detail::edge_named("node1", 0));
+  graph.rm_edge("node2", detail::graph_named_edge("node1", 0));
 
   auto pred = graph.pred_of("node2");
   EXPECT_EQ(pred.size(), 0u);
@@ -372,7 +370,7 @@ TEST_F(GraphNodeNamedTest, RemoveNonexistentEdge) {
   graph.add<dummy_node>("node2", 2, "node2");
 
   // Should not crash or affect existing state
-  graph.rm_edge("node2", detail::edge_named("node1", 0));
+  graph.rm_edge("node2", detail::graph_named_edge("node1", 0));
   EXPECT_EQ(graph.pred_of("node2").size(), 0u);
 }
 
@@ -450,7 +448,7 @@ TEST_F(GraphNodeNamedTest, ReplaceEdge) {
   graph.add<dummy_node>("new_pred", 2, "new_pred");
   graph.add<dummy_node>("node", "old_pred.5", 3, "node");
 
-  graph.replace("node", detail::edge_named("old_pred", 5), detail::edge_named("new_pred", 7));
+  graph.replace("node", detail::graph_named_edge("old_pred", 5), detail::graph_named_edge("new_pred", 7));
 
   auto pred = graph.pred_of("node");
   EXPECT_EQ(pred.size(), 1u);
