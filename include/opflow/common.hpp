@@ -104,6 +104,12 @@ template <typename T>
 concept dag_node_ptr = (std::is_pointer_v<T> && dag_node<std::remove_pointer_t<T>>) ||
                        (detail::smart_ptr<T> && dag_node<typename std::remove_cvref_t<T>::element_type>);
 
+template <typename T>
+concept dag_node_base = std::is_abstract_v<T> && dag_node<T>;
+
+template <typename T>
+concept dag_node_impl = !std::is_abstract_v<T> && dag_node<T>;
+
 // Utilities
 
 template <std::floating_point T>

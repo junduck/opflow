@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-#include "opflow/graph_node_named.hpp"
+#include "opflow/graph_named.hpp"
 
 using namespace opflow;
 
@@ -60,43 +60,43 @@ protected:
     graph_int.clear();
   }
 
-  graph_node<base_node> graph;
-  graph_node<int> graph_int;
+  graph_named<base_node> graph;
+  graph_named<int> graph_int;
 };
 
 // Test graph_edge parsing
 TEST(GraphEdgeTest, DefaultPort) {
-  detail::graph_edge edge("node");
+  detail::edge_named edge("node");
   EXPECT_EQ(edge.name, "node");
   EXPECT_EQ(edge.port, 0u);
   EXPECT_EQ(std::string(edge), "node");
 }
 
 TEST(GraphEdgeTest, ExplicitPort) {
-  detail::graph_edge edge("node.5");
+  detail::edge_named edge("node.5");
   EXPECT_EQ(edge.name, "node");
   EXPECT_EQ(edge.port, 5u);
   EXPECT_EQ(std::string(edge), "node.5");
 }
 
-TEST(GraphEdgeTest, InvalidPort) { EXPECT_THROW(detail::graph_edge("node.abc"), std::invalid_argument); }
+TEST(GraphEdgeTest, InvalidPort) { EXPECT_THROW(detail::edge_named("node.abc"), std::invalid_argument); }
 
 TEST(GraphEdgeTest, PortOutOfRange) {
-  EXPECT_THROW(detail::graph_edge("node.999999999999999999999"), std::out_of_range);
+  EXPECT_THROW(detail::edge_named("node.999999999999999999999"), std::out_of_range);
 }
 
 TEST(GraphEdgeTest, ConstructorWithNameAndPort) {
-  detail::graph_edge edge("test_node", 42);
+  detail::edge_named edge("test_node", 42);
   EXPECT_EQ(edge.name, "test_node");
   EXPECT_EQ(edge.port, 42u);
   EXPECT_EQ(std::string(edge), "test_node.42");
 }
 
 TEST(GraphEdgeTest, Equality) {
-  detail::graph_edge edge1("node", 5);
-  detail::graph_edge edge2("node", 5);
-  detail::graph_edge edge3("node", 6);
-  detail::graph_edge edge4("other", 5);
+  detail::edge_named edge1("node", 5);
+  detail::edge_named edge2("node", 5);
+  detail::edge_named edge3("node", 6);
+  detail::edge_named edge4("other", 5);
 
   EXPECT_EQ(edge1, edge2);
   EXPECT_NE(edge1, edge3);
@@ -333,7 +333,7 @@ TEST_F(GraphNodeNamedTest, AddMultipleEdges) {
   graph.add<dummy_node>("node2", 2, "node2");
   graph.add<dummy_node>("node3", 3, "node3");
 
-  std::vector<detail::graph_edge> edges = {{"node1", 0}, {"node2", 5}};
+  std::vector<detail::edge_named> edges = {{"node1", 0}, {"node2", 5}};
   graph.add_edge("node3", edges);
 
   auto pred = graph.pred_of("node3");
@@ -355,7 +355,7 @@ TEST_F(GraphNodeNamedTest, RemoveEdge) {
 
   EXPECT_EQ(graph.pred_of("node2").size(), 1u);
 
-  graph.rm_edge("node2", detail::graph_edge("node1", 0));
+  graph.rm_edge("node2", detail::edge_named("node1", 0));
 
   auto pred = graph.pred_of("node2");
   EXPECT_EQ(pred.size(), 0u);
@@ -372,7 +372,7 @@ TEST_F(GraphNodeNamedTest, RemoveNonexistentEdge) {
   graph.add<dummy_node>("node2", 2, "node2");
 
   // Should not crash or affect existing state
-  graph.rm_edge("node2", detail::graph_edge("node1", 0));
+  graph.rm_edge("node2", detail::edge_named("node1", 0));
   EXPECT_EQ(graph.pred_of("node2").size(), 0u);
 }
 
@@ -450,7 +450,7 @@ TEST_F(GraphNodeNamedTest, ReplaceEdge) {
   graph.add<dummy_node>("new_pred", 2, "new_pred");
   graph.add<dummy_node>("node", "old_pred.5", 3, "node");
 
-  graph.replace("node", detail::graph_edge("old_pred", 5), detail::graph_edge("new_pred", 7));
+  graph.replace("node", detail::edge_named("old_pred", 5), detail::edge_named("new_pred", 7));
 
   auto pred = graph.pred_of("node");
   EXPECT_EQ(pred.size(), 1u);
@@ -511,7 +511,7 @@ TEST_F(GraphNodeNamedTest, MergeGraphs) {
   graph.add<dummy_node>("node2", "node1", 2, "node2");
 
   // Setup second graph
-  graph_node<base_node> other_graph;
+  graph_named<base_node> other_graph;
   other_graph.add<dummy_node>("node3", 3, "node3");
   other_graph.add<dummy_node>("node4", "node3", 4, "node4");
 
@@ -537,7 +537,7 @@ TEST_F(GraphNodeNamedTest, MergeWithOverlap) {
   graph.add<dummy_node>("node1", "shared", 2, "node1");
 
   // Setup second graph with same node name
-  graph_node<base_node> other_graph;
+  graph_named<base_node> other_graph;
   other_graph.add<dummy_node>("shared", 99, "different");
   other_graph.add<dummy_node>("node2", "shared", 3, "node2");
 
@@ -564,7 +564,7 @@ TEST_F(GraphNodeNamedTest, GraphAdditionOperator) {
   graph.add<dummy_node>("node1", 1, "node1");
 
   // Setup second graph
-  graph_node<base_node> other_graph;
+  graph_named<base_node> other_graph;
   other_graph.add<dummy_node>("node2", 2, "node2");
 
   auto combined = graph + other_graph;
@@ -583,7 +583,7 @@ TEST_F(GraphNodeNamedTest, GraphCompoundAssignment) {
   graph.add<dummy_node>("node1", 1, "node1");
 
   // Setup second graph
-  graph_node<base_node> other_graph;
+  graph_named<base_node> other_graph;
   other_graph.add<dummy_node>("node2", 2, "node2");
 
   graph += other_graph;
@@ -595,7 +595,7 @@ TEST_F(GraphNodeNamedTest, GraphCompoundAssignment) {
 
 // Template node testing
 TEST_F(GraphNodeNamedTest, TemplateNodes) {
-  graph_node<base_node> template_graph;
+  graph_named<base_node> template_graph;
 
   template_graph.add<template_node<int>>("int_node", 42);
 

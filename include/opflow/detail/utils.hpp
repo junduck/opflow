@@ -75,4 +75,10 @@ struct alignas(Align) aligned_type : public T {
 
 template <typename Alloc, typename T>
 using rebind_alloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+
+template <typename T>
+concept string_like = std::convertible_to<T, std::string_view>;
+
+template <typename T>
+concept has_data_type = requires { typename T::data_type; };
 } // namespace opflow::detail
