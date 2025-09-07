@@ -407,7 +407,64 @@ public:
     return leaves;
   }
 
+  bool validate() const noexcept {
+    for (auto const &[name, preds] : predecessor) {
+      for (auto const &pred : preds) {
+        if (successor.find(pred) == successor.end() || successor.at(pred).find(name) == successor.at(pred).end()) {
+          return false; // Inconsistent: pred missing in successor map
+        }
+      }
+    }
+
+    for (auto const &[name, succs] : successor) {
+      for (auto const &succ : succs) {
+        if (predecessor.find(succ) == predecessor.end() ||
+            predecessor.at(succ).find(name) == predecessor.at(succ).end()) {
+          return false; // Inconsistent: succ missing in predecessor map
+        }
+      }
+    }
+
+    for (auto const &[name, args] : argmap) {
+      for (auto const &arg : args) {
+        if (predecessor.find(name) == predecessor.end() ||
+            predecessor.at(name).find(arg.name) == predecessor.at(name).end()) {
+          return false; // Inconsistent: arg missing in predecessor map
+        }
+        if (successor.find(arg.name) == successor.end() ||
+            successor.at(arg.name).find(name) == successor.at(arg.name).end()) {
+          return false; // Inconsistent: arg missing in successor map
+        }
+      }
+    }
+
+    for (auto const &[name, _] : predecessor) {
+      if (store.find(name) == store.end()) {
+        return false; // Inconsistent: node missing in store
+      }
+    }
+    for (auto const &[name, _] : successor) {
+      if (store.find(name) == store.end()) {
+        return false; // Inconsistent: node missing in store
+      }
+    }
+    for (auto const &[name, _] : store) {
+      if (predecessor.find(name) == predecessor.end()) {
+        return false; // Inconsistent: node missing in predecessor map
+      }
+      if (successor.find(name) == successor.end()) {
+        return false; // Inconsistent: node missing in successor map
+      }
+    }
+
+    return true;
+  }
+
   void merge(graph_node const &other) {
+    if (!other.validate()) {
+      throw std::invalid_argument("Cannot merge: other graph is invalid.");
+    }
+
     // Collect new nodes to add
     std::unordered_set<std::string, Hash, Equal> nodes_to_add{};
     for (auto const &[other_name, _] : other.predecessor) {
@@ -419,7 +476,6 @@ public:
     // Add all new nodes to the graph
     for (auto const &new_name : nodes_to_add) {
       auto other_node = other.get_node(new_name);
-      assert(other_node && "[BUG] Node in other graph has no associated instance in store.");
 
       // Add edges
       ensure_adjacency_list(new_name);

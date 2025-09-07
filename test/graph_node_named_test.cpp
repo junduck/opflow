@@ -55,9 +55,13 @@ struct template_node : public base_node {
 
 class GraphNodeNamedTest : public ::testing::Test {
 protected:
-  void SetUp() override { graph.clear(); }
+  void SetUp() override {
+    graph.clear();
+    graph_int.clear();
+  }
 
   graph_node<base_node> graph;
+  graph_node<int> graph_int;
 };
 
 // Test graph_edge parsing
@@ -207,6 +211,19 @@ TEST_F(GraphNodeNamedTest, AddNodeWithCtorArgsTag) {
   auto pred = graph.pred_of("processor");
   EXPECT_EQ(pred.size(), 1u);
   EXPECT_TRUE(pred.contains("input"));
+}
+
+TEST_F(GraphNodeNamedTest, AddNodeWithNonExistingPred) {
+  graph.add<dummy_node>("processor", "nonexistent", 3, "processor");
+  EXPECT_TRUE(graph.contains("processor"));
+  EXPECT_FALSE(graph.validate());
+
+  auto preds = graph.pred_of("processor");
+  EXPECT_EQ(preds.size(), 1u);
+  EXPECT_TRUE(preds.contains("nonexistent"));
+
+  graph.add<dummy_node>("nonexistent", 0, "nonexistent");
+  EXPECT_TRUE(graph.validate());
 }
 
 // Root node operations
@@ -608,4 +625,51 @@ TEST_F(GraphNodeNamedTest, GetEmptySuccessorSet) {
 TEST_F(GraphNodeNamedTest, GetEmptyArgsList) {
   auto args = graph.args_of("nonexistent");
   EXPECT_EQ(args.size(), 0u);
+}
+
+// Test generic nature of graph_node with primitive types
+TEST_F(GraphNodeNamedTest, GenericWithPrimitiveTypes) {
+  // Test that graph_node can work with primitive types like int
+  graph_int.add<int>("value1", 42);
+  graph_int.add<int>("value2", 100);
+  graph_int.add<int>("sum", "value1", "value2", 142);
+
+  EXPECT_EQ(graph_int.size(), 3u);
+  EXPECT_TRUE(graph_int.contains("value1"));
+  EXPECT_TRUE(graph_int.contains("value2"));
+  EXPECT_TRUE(graph_int.contains("sum"));
+
+  // Check that sum depends on both values
+  auto pred = graph_int.pred_of("sum");
+  EXPECT_EQ(pred.size(), 2u);
+  EXPECT_TRUE(pred.contains("value1"));
+  EXPECT_TRUE(pred.contains("value2"));
+
+  // Check the stored values
+  auto value1_node = graph_int.get_node("value1");
+  auto value2_node = graph_int.get_node("value2");
+  auto sum_node = graph_int.get_node("sum");
+
+  ASSERT_NE(value1_node, nullptr);
+  ASSERT_NE(value2_node, nullptr);
+  ASSERT_NE(sum_node, nullptr);
+
+  EXPECT_EQ(*value1_node, 42);
+  EXPECT_EQ(*value2_node, 100);
+  EXPECT_EQ(*sum_node, 142);
+
+  // Test graph operations work with primitive types
+  auto roots = graph_int.get_roots();
+  EXPECT_EQ(roots.size(), 2u);
+  EXPECT_TRUE(std::find(roots.begin(), roots.end(), "value1") != roots.end());
+  EXPECT_TRUE(std::find(roots.begin(), roots.end(), "value2") != roots.end());
+
+  auto leaves = graph_int.get_leaves();
+  EXPECT_EQ(leaves.size(), 1u);
+  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), "sum") != leaves.end());
+
+  EXPECT_TRUE(graph_int.is_root("value1"));
+  EXPECT_TRUE(graph_int.is_root("value2"));
+  EXPECT_TRUE(graph_int.is_leaf("sum"));
+  EXPECT_FALSE(graph_int.is_root("sum"));
 }
