@@ -12,7 +12,7 @@ enum class fill_policy {
   oldest ///< fill oldest value if no value
 };
 
-template <typename T, fill_policy Policy = fill_policy::nan>
+template <typename T, fill_policy Policy>
 class lag : public win_base<T> {
 public:
   using base = win_base<T>;
