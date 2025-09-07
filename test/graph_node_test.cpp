@@ -103,7 +103,7 @@ TEST_F(GraphNodeTest, AddNodeWithMultiplePredecessors) {
   auto nodeB = make_node("B");
   auto nodeC = make_node("C");
 
-  g.add(nodeC, {nodeA, nodeB});
+  g.add(nodeC, nodeA, nodeB);
 
   EXPECT_EQ(g.size(), 3);
 
@@ -126,7 +126,7 @@ TEST_F(GraphNodeTest, AddNodeWithPortSpecification) {
   auto nodeB = make_node("B");
   auto nodeC = make_node("C");
 
-  g.add(nodeC, {nodeA | 0, nodeB | 1});
+  g.add(nodeC, nodeA | 0, nodeB | 1);
 
   auto const &args_C = g.args_of(nodeC);
   EXPECT_EQ(args_C.size(), 2);
@@ -141,7 +141,7 @@ TEST_F(GraphNodeTest, AddNodeWithMakeEdge) {
   auto nodeB = make_node("B");
   auto nodeC = make_node("C");
 
-  g.add(nodeC, {make_edge(nodeA, 2), make_edge(nodeB, 3)});
+  g.add(nodeC, make_edge(nodeA, 2), make_edge(nodeB, 3));
 
   auto const &args_C = g.args_of(nodeC);
   EXPECT_EQ(args_C.size(), 2);
@@ -156,7 +156,7 @@ TEST_F(GraphNodeTest, InPlaceConstructionWithPredecessors) {
   auto nodeA = make_node("A");
   auto nodeB = make_node("B");
 
-  auto nodeC = g.add<dummy_node>({nodeA, nodeB}, "C", 42);
+  auto nodeC = g.add<dummy_node>(nodeA, nodeB, "C", 42);
 
   EXPECT_EQ(g.size(), 3);
   verify_node(nodeC, "C", 42);
@@ -171,7 +171,7 @@ TEST_F(GraphNodeTest, InPlaceConstructionWithInitializerList) {
   auto nodeA = make_node("A");
   auto nodeB = make_node("B");
 
-  auto nodeC = g.add<dummy_node>({nodeA, nodeB}, "C", 99);
+  auto nodeC = g.add<dummy_node>(nodeA, nodeB, "C", 99);
 
   verify_node(nodeC, "C", 99);
   EXPECT_EQ(g.size(), 3);
@@ -236,7 +236,7 @@ TEST_F(GraphNodeTest, DuplicateEdges) {
   auto nodeB = make_node("B");
 
   // Add multiple edges from B to A with different ports
-  g.add(nodeB, {nodeA | 0, nodeA | 1, nodeA | 0});
+  g.add(nodeB, nodeA | 0, nodeA | 1, nodeA | 0);
 
   auto const &pred_B = g.pred_of(nodeB);
   EXPECT_EQ(pred_B.size(), 1); // Only one unique predecessor
@@ -259,7 +259,7 @@ TEST_F(GraphNodeTest, RemoveNode) {
   auto nodeC = make_node("C");
   auto nodeD = make_node("D");
 
-  g.add(nodeC, {nodeA, nodeB});
+  g.add(nodeC, nodeA, nodeB);
   g.add(nodeD, nodeC);
 
   EXPECT_EQ(g.size(), 4);
@@ -299,7 +299,7 @@ TEST_F(GraphNodeTest, RemoveEdge) {
   auto nodeA = make_node("A");
   auto nodeB = make_node("B");
 
-  g.add(nodeB, {nodeA | 0, nodeA | 1});
+  g.add(nodeB, nodeA | 0, nodeA | 1);
 
   g.rm_edge(nodeB, nodeA | 1);
 
@@ -318,7 +318,7 @@ TEST_F(GraphNodeTest, RemoveAllEdgesToSamePredecessor) {
   auto nodeA = make_node("A");
   auto nodeB = make_node("B");
 
-  g.add(nodeB, {nodeA | 0, nodeA | 1});
+  g.add(nodeB, nodeA | 0, nodeA | 1);
 
   // Remove all edges to A
   g.rm_edge(nodeB, nodeA | 0);
@@ -368,7 +368,7 @@ TEST_F(GraphNodeTest, ReplaceNode) {
   auto nodeE = make_node("E");
   auto nodeX = make_node("X");
 
-  g.add(nodeC, {nodeA, nodeB});
+  g.add(nodeC, nodeA, nodeB);
   g.add(nodeD, nodeC);
   g.add(nodeE, nodeC);
 
@@ -442,7 +442,7 @@ TEST_F(GraphNodeTest, ReplaceEdge) {
   auto nodeC = make_node("C");
   auto nodeX = make_node("X");
 
-  g.add(nodeC, {nodeA | 0, nodeB | 1});
+  g.add(nodeC, nodeA | 0, nodeB | 1);
 
   g.replace(nodeC, nodeA | 0, nodeX | 2);
 
@@ -565,9 +565,9 @@ TEST_F(GraphNodeTest, ComplexDAG) {
 
   g.add(nodeA);
   g.add(nodeB);
-  g.add(nodeC, {nodeA, nodeB});
+  g.add(nodeC, nodeA, nodeB);
   g.add(nodeD, nodeA);
-  g.add(nodeE, {nodeC, nodeD});
+  g.add(nodeE, nodeC, nodeD);
 
   // Check roots and leaves
   auto roots = g.get_roots();
@@ -603,7 +603,7 @@ TEST_F(GraphNodeTest, SelfLoopWithMultiplePorts) {
   auto nodeA = make_node("A");
 
   // Node depends on itself through multiple ports
-  g.add(nodeA, {nodeA | 0, nodeA | 1, nodeA | 2});
+  g.add(nodeA, nodeA | 0, nodeA | 1, nodeA | 2);
 
   auto const &pred_A = g.pred_of(nodeA);
   auto const &args_A = g.args_of(nodeA);
@@ -661,7 +661,7 @@ TEST_F(GraphNodeTest, RemoveSpecificDuplicateEdge) {
   auto nodeA = make_node("A");
   auto nodeC = make_node("C");
 
-  g.add(nodeC, {nodeA | 1, nodeA | 2, nodeA | 1, nodeA | 3});
+  g.add(nodeC, nodeA | 1, nodeA | 2, nodeA | 1, nodeA | 3);
 
   // Remove all A:1 edges (should remove 2 edges)
   g.rm_edge(nodeC, nodeA | 1);
@@ -685,7 +685,7 @@ TEST_F(GraphNodeTest, ConsistencyAfterOperations) {
   auto nodeC = make_node("C");
   auto nodeD = make_node("D");
 
-  g.add(nodeC, {nodeA, nodeB});
+  g.add(nodeC, nodeA, nodeB);
   g.add(nodeD, nodeC);
 
   // Remove C and check consistency
@@ -768,7 +768,7 @@ TEST_F(GraphNodeTest, TemplateBasedInPlaceConstruction) {
   auto nodeB = make_node("B");
 
   // Test template-based construction using the data_type
-  auto nodeC = g.add<dummy_node>({nodeA, nodeB}, "C", 42);
+  auto nodeC = g.add<dummy_node>(nodeA, nodeB, "C", 42);
 
   EXPECT_EQ(g.size(), 3);
   verify_node(nodeC, "C", 42);
@@ -873,7 +873,7 @@ TEST_F(GraphNodeTest, ComplexPortMapping) {
   auto nodeC = make_node("C");
 
   // Create complex port mapping
-  g.add(nodeC, {nodeA | 100, nodeB | 200, nodeA | 150, nodeB | 250});
+  g.add(nodeC, nodeA | 100, nodeB | 200, nodeA | 150, nodeB | 250);
 
   auto const &args = g.args_of(nodeC);
   EXPECT_EQ(args.size(), 4);
@@ -900,7 +900,7 @@ TEST_F(GraphNodeTest, ReplaceEdgeComplexCase) {
   auto nodeX = make_node("X");
 
   // Setup: C depends on A through multiple ports and B once
-  g.add(nodeC, {nodeA | 1, nodeA | 2, nodeB | 3, nodeA | 4});
+  g.add(nodeC, nodeA | 1, nodeA | 2, nodeB | 3, nodeA | 4);
 
   // Replace one of the A edges
   g.replace(nodeC, nodeA | 2, nodeX | 5);

@@ -22,7 +22,7 @@ protected:
     root = g.root(1);
     sum_left = g.add<op::sum>(root | 0, 2);   // 2-period rolling sum
     sum_right = g.add<sum_type>(root | 0, 5); // 5-period rolling sum
-    add2 = g.add<add2_type>({sum_left | 0, sum_right | 0});
+    add2 = g.add<add2_type>(sum_left | 0, sum_right | 0);
     g.set_output({sum_left, sum_right, add2});
 
     // Create executor with 3 groups

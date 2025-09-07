@@ -149,4 +149,7 @@ struct dag_root;
 
 template <dag_node T>
 using dag_root_type = typename dag_root<T>::type;
+
+struct ctor_args_tag {};
+constexpr inline ctor_args_tag ctor_args{};
 } // namespace opflow

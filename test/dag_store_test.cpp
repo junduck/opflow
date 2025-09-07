@@ -100,7 +100,7 @@ protected:
     g.add(nodeA);
     g.add(nodeB, nodeA);
     g.add(nodeC, nodeA);
-    g.add(nodeD, {nodeB, nodeC});
+    g.add(nodeD, nodeB, nodeC);
 
     out_nodes = {nodeD};
     g.set_output(out_nodes);
@@ -118,9 +118,9 @@ protected:
     g.add(nodeA);
     g.add(nodeB, nodeA);
     g.add(nodeC, nodeA);
-    g.add(nodeD, {nodeB, nodeC});
+    g.add(nodeD, nodeB, nodeC);
     g.add(nodeE, nodeB);
-    g.add(nodeF, {nodeC, nodeE});
+    g.add(nodeF, nodeC, nodeE);
 
     out_nodes = {nodeD, nodeF};
     g.set_output(out_nodes);
@@ -528,7 +528,7 @@ TEST_F(GraphTopoFanoutTest, ComplexCyclicGraphDetection) {
   g.add(nodeB, nodeA);
   g.add(nodeC, nodeB);
   g.add(nodeD, nodeC);
-  g.add(nodeE, {nodeD, nodeA}); // E depends on both D and A
+  g.add(nodeE, nodeD, nodeA); // E depends on both D and A
   // Create cycle: A -> B -> C -> D, and then make A depend on E
   g.add(nodeA, nodeE); // This creates a cycle
 

@@ -12,42 +12,55 @@
 namespace opflow {
 namespace detail {
 template <typename T>
-struct graph_edge {
+struct graph_node_edge {
   T node;
   uint32_t port;
 
-  graph_edge(T const &node, uint32_t port) : node(node), port(port) {}
-  graph_edge(T &&node, uint32_t port) : node(std::move(node)), port(port) {}
+  graph_node_edge(T const &node, uint32_t port) : node(node), port(port) {}
+  graph_node_edge(T &&node, uint32_t port) : node(std::move(node)), port(port) {}
 
-  friend bool operator==(graph_edge const &lhs, graph_edge const &rhs) noexcept = default;
+  explicit graph_node_edge(T const &node) : node(node), port(0) {}
+  explicit graph_node_edge(T &&node) : node(std::move(node)), port(0) {}
+
+  friend bool operator==(graph_node_edge const &lhs, graph_node_edge const &rhs) noexcept = default;
 };
 } // namespace detail
 
-template <dag_node_ptr T>
-auto operator|(T &&node, uint32_t pos) {
-  using DT = std::decay_t<T>;
-  return detail::graph_edge<DT>{std::forward<T>(node), pos};
+template <typename T>
+auto operator|(std::shared_ptr<T> const &node, uint32_t pos) {
+  return detail::graph_node_edge<std::shared_ptr<T>>{node, pos};
 }
 
-template <dag_node_ptr T>
-auto make_edge(T &&node, uint32_t pos = 0) {
-  using DT = std::decay_t<T>;
-  return detail::graph_edge<DT>{std::forward<T>(node), pos};
+template <typename T>
+auto make_edge(std::shared_ptr<T> const &node, uint32_t pos = 0) {
+  return detail::graph_node_edge<std::shared_ptr<T>>{node, pos};
 }
 
-template <dag_node T>
+template <typename T>
 class graph_node {
-  using data_type = typename T::data_type; ///< underlying data type
-  using Hash = detail::ptr_hash<T>;        ///< transparent hashing for pointer to T
-  using Equal = std::equal_to<>;           ///< transparent equality for pointer to T
+  using Hash = detail::ptr_hash<T>; ///< transparent hashing for pointer to T
+  using Equal = std::equal_to<>;    ///< transparent equality for pointer to T
 
 public:
+  using key_type = std::shared_ptr<T>;                                 ///< key type, shared_ptr to T
   using node_type = std::shared_ptr<T>;                                ///< node type, shared_ptr to T
-  using edge_type = detail::graph_edge<node_type>;                     ///< edge type, represents an arg passed to node
+  using edge_type = detail::graph_node_edge<node_type>;                ///< edge type, represents an arg passed to node
   using NodeSet = std::unordered_set<node_type, Hash, Equal>;          ///< set of nodes
   using NodeArgsSet = std::vector<edge_type>;                          ///< set of node arguments
   using NodeMap = std::unordered_map<node_type, NodeSet, Hash, Equal>; ///< node -> adjacent nodes
   using NodeArgsMap = std::unordered_map<node_type, NodeArgsSet, Hash, Equal>; ///< node -> call arguments
+
+  template <range_of<edge_type> R>
+  void add(node_type const &node, R &&preds) {
+    if (!node)
+      return;
+    ensure_node(node);
+
+    for (auto const &pred : preds) {
+      ensure_node(pred.node);
+      add_edge_impl(node, pred);
+    }
+  }
 
   template <range_of<node_type> R>
   void add(node_type const &node, R &&preds) {
@@ -57,54 +70,16 @@ public:
 
     for (auto pred : preds) {
       ensure_node(pred);
-      add_edge_impl(node, pred, 0); // Add with default port 0
+      add_edge_impl(node, edge_type(pred, 0)); // Add with default port 0
     };
   }
 
-  template <range_of<edge_type> R>
-  void add(node_type const &node, R &&preds) {
-    if (!node)
-      return;
-    ensure_node(node);
-
-    for (auto const &[pred, port] : preds) {
-      ensure_node(pred);
-      add_edge_impl(node, pred, port);
-    }
-  }
-
-  void add(node_type const &node, std::initializer_list<node_type> preds) {
-    std::vector<node_type> preds_list(preds);
+  template <typename... Ts>
+  void add(node_type const &node, Ts &&...preds) {
+    std::vector<edge_type> preds_list{};
+    preds_list.reserve(sizeof...(preds));
+    (preds_list.emplace_back(std::forward<Ts>(preds)), ...);
     add(node, preds_list);
-  }
-
-  void add(node_type const &node, std::initializer_list<edge_type> preds) {
-    std::vector<edge_type> preds_list(preds);
-    add(node, preds_list);
-  }
-
-  void add(node_type const &node, node_type const &pred) {
-    if (!node)
-      return;
-    ensure_node(node);
-
-    ensure_node(pred);
-    add_edge_impl(node, pred, 0);
-  }
-
-  void add(node_type const &node, edge_type const &pred) {
-    if (!node)
-      return;
-    ensure_node(node);
-
-    ensure_node(pred.node);
-    add_edge_impl(node, pred.node, pred.port);
-  }
-
-  void add(node_type const &node) {
-    if (!node)
-      return;
-    ensure_node(node);
   }
 
   // In-place construction
@@ -119,76 +94,35 @@ public:
   }
 
   template <typename U, typename... Args>
-  node_type add(std::initializer_list<node_type> preds, Args &&...args) {
-    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
-    add(node, preds);
-    return node;
-  }
-
-  template <typename U, typename... Args>
-  node_type add(std::initializer_list<edge_type> preds, Args &&...args) {
-    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
-    add(node, preds);
-    return node;
-  }
-
-  template <typename U, typename... Args>
-  node_type add(node_type const &pred, Args &&...args) {
-    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
-    add(node, pred);
-    return node;
-  }
-
-  template <typename U, typename... Args>
-  node_type add(edge_type const &pred, Args &&...args) {
-    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
-    add(node, pred);
-    return node;
+  node_type add(Args &&...preds_and_args) {
+    std::vector<edge_type> preds_list{};
+    preds_list.reserve(sizeof...(preds_and_args));
+    return add_inplace_impl<U>(preds_list, std::forward<Args>(preds_and_args)...);
   }
 
   template <template <typename> typename U, typename R, typename... Args>
   node_type add(R &&preds, Args &&...args)
-    requires(range_of<R, node_type> || range_of<R, edge_type>)
+    requires(detail::has_data_type<T> && (range_of<R, node_type> || range_of<R, edge_type>))
   {
-    using UT = U<data_type>;
+    using UT = U<typename T::data_type>;
     node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
     add(node, std::forward<R>(preds));
     return node;
   }
 
   template <template <typename> typename U, typename... Args>
-  node_type add(std::initializer_list<node_type> preds, Args &&...args) {
-    using UT = U<data_type>;
-    node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
-    add(node, preds);
-    return node;
+  node_type add(Args &&...preds_and_args)
+    requires(detail::has_data_type<T>)
+  {
+    using UT = U<typename T::data_type>;
+    std::vector<edge_type> preds_list{};
+    preds_list.reserve(sizeof...(preds_and_args));
+    return add_inplace_impl<UT>(preds_list, std::forward<Args>(preds_and_args)...);
   }
 
-  template <template <typename> typename U, typename... Args>
-  node_type add(std::initializer_list<edge_type> preds, Args &&...args) {
-    using UT = U<data_type>;
-    node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
-    add(node, preds);
-    return node;
-  }
-
-  template <template <typename> typename U, typename... Args>
-  node_type add(node_type const &pred, Args &&...args) {
-    using UT = U<data_type>;
-    node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
-    add(node, pred);
-    return node;
-  }
-
-  template <template <typename> typename U, typename... Args>
-  node_type add(edge_type const &pred, Args &&...args) {
-    using UT = U<data_type>;
-    node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
-    add(node, pred);
-    return node;
-  }
-
-  node_type root(size_t root_input_size) {
+  node_type root(size_t root_input_size)
+    requires(dag_node_base<T>)
+  {
     node_type node = std::make_shared<dag_root_type<T>>(root_input_size);
     add(node);
     return node;
@@ -202,8 +136,10 @@ public:
   }
 
   template <template <typename> typename U, typename... Args>
-  node_type root(Args &&...args) {
-    using UT = U<data_type>;
+  node_type root(Args &&...args)
+    requires(detail::has_data_type<T>)
+  {
+    using UT = U<typename T::data_type>;
     node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
     add(node);
     return node;
@@ -404,8 +340,6 @@ public:
     output.clear();
   }
 
-  void clear_output() noexcept { output.clear(); }
-
   bool contains(node_type const &node) const noexcept { return predecessor.find(node) != predecessor.end(); }
 
   NodeSet const &pred_of(node_type const &node) const {
@@ -433,6 +367,13 @@ public:
   NodeMap const &get_succ() const noexcept { return successor; }
 
   auto const &get_output() const noexcept { return output; }
+
+  node_type get_node(key_type const &node) const {
+    if (predecessor.find(node) == predecessor.end()) {
+      return nullptr; // Node doesn't exist
+    }
+    return node;
+  }
 
   bool is_root(node_type const &node) const {
     auto it = predecessor.find(node);
@@ -504,11 +445,37 @@ private:
     }
   }
 
+  template <typename U, typename... Ts>
+  node_type add_inplace_impl(std::vector<edge_type> &preds_list, edge_type pred, Ts &&...args) {
+    preds_list.emplace_back(pred);
+    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+  }
+
+  template <typename U, typename... Ts>
+  node_type add_inplace_impl(std::vector<edge_type> &preds_list, node_type pred, Ts &&...args) {
+    preds_list.emplace_back(pred, 0); // Add with default port 0
+    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+  }
+
+  template <typename U, typename... Ts>
+  node_type add_inplace_impl(std::vector<edge_type> &preds_list, Ts &&...args) {
+    auto node = std::make_shared<U>(std::forward<Ts>(args)...);
+    add(node, preds_list);
+    return node;
+  }
+
+  template <typename U, typename... Ts>
+  node_type add_inplace_impl(std::vector<edge_type> &preds_list, ctor_args_tag, Ts &&...args) {
+    auto node = std::make_shared<U>(std::forward<Ts>(args)...);
+    add(node, preds_list);
+    return node;
+  }
+
   // add edge node -> [pred:port]
-  void add_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
-    predecessor[node].emplace(pred);
-    argmap[node].emplace_back(pred, port);
-    successor[pred].emplace(node);
+  void add_edge_impl(node_type const &node, edge_type const &pred) {
+    predecessor[node].emplace(pred.node);
+    argmap[node].emplace_back(pred);
+    successor[pred.node].emplace(node);
   }
 
   // remove all edges node -> [pred:port]
