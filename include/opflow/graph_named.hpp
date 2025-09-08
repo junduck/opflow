@@ -101,8 +101,9 @@ public:
     add_impl<Node>(name, ctor_args, std::forward<Ts>(args)...);
 
     for (auto const &pred : preds) {
-      ensure_adjacency_list(pred);
-      add_edge_impl(name, edge_type(str_view(pred)));
+      auto edge = edge_type(str_view(pred));
+      ensure_adjacency_list(edge.name);
+      add_edge_impl(name, edge);
     }
     return *this;
   }
