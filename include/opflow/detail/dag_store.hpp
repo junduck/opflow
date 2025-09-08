@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "opflow/common.hpp"
-#include "opflow/graph_node.hpp"
 
 #include "fixed_buffer_resource.hpp"
 #include "flat_multivect.hpp"
@@ -28,20 +27,29 @@ public:
   using node_type = std::unique_ptr<base_type, arena_deleter<base_type>>;
   using shared_node_type = std::shared_ptr<base_type>;
 
-  dag_store(graph_node<base_type> const &g, size_t n_group = 1, Alloc alloc = Alloc{})
+  template <typename G>
+  dag_store(G const &g, size_t n_group = 1, Alloc alloc = Alloc{})
       : arena_storage(alloc), arena(nullptr, 0), n_grp(n_group), n_nodes(g.size()), ptrs(), record_size(),
         record_offset(alloc), input_offset(alloc), output_offset(alloc) {
     if (n_group == 0) {
       throw std::invalid_argument("Number of groups must be greater than 0.");
     }
 
-    std::unordered_map<shared_node_type, u32, ptr_hash<base_type>, std::equal_to<>> in_degree, sorted_id;
-    std::queue<shared_node_type> ready;
-    std::vector<shared_node_type> sorted;
+    using key_type = typename G::key_type;
+    using key_hash = typename G::key_hash;
+
+    std::unordered_map<key_type, u32, key_hash, std::equal_to<>> in_degree;
+    std::queue<key_type> ready;
+
+    std::vector<key_type> sorted;
+    std::vector<shared_node_type> sorted_nodes;
+    std::unordered_map<key_type, u32, key_hash, std::equal_to<>> sorted_id;
 
     in_degree.reserve(n_nodes);
-    sorted_id.reserve(n_nodes);
+
     sorted.reserve(n_nodes);
+    sorted_nodes.reserve(n_nodes);
+    sorted_id.reserve(n_nodes);
 
     for (auto const &[node, preds] : g.get_pred()) {
       auto n_pred = preds.size();
@@ -73,12 +81,13 @@ public:
     // Build the sorted_id mapping first
     for (u32 i = 0; i < sorted.size(); ++i) {
       sorted_id[sorted[i]] = i;
+      sorted_nodes.push_back(g.get_node(sorted[i]));
     }
 
     // prepare arena and copy nodes
 
-    init_arena(sorted);
-    copy_nodes(sorted);
+    init_arena(sorted_nodes);
+    copy_nodes(sorted_nodes);
 
     size_t num_edges = 0;
     for (auto const &[_, args] : g.get_args()) {
@@ -97,7 +106,7 @@ public:
     for (size_t i = 0; i < n_nodes; ++i) {
       args.clear();
       for (auto const &[node, port] : g.args_of(sorted[i])) {
-        if (port >= node->num_outputs()) {
+        if (port >= g.get_node(node)->num_outputs()) {
           throw std::runtime_error("Incompatible node connections in graph.");
         }
         args.push_back(record_offset[sorted_id[node]] + port);
@@ -112,7 +121,7 @@ public:
       if (it == sorted_id.end()) {
         throw std::runtime_error("Output node not found in graph.");
       }
-      output_offset.emplace_back(record_offset[it->second], node->num_outputs());
+      output_offset.emplace_back(record_offset[it->second], g.get_node(node)->num_outputs());
     }
   }
 

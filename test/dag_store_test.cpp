@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "opflow/detail/dag_store.hpp"
+#include "opflow/graph_named.hpp"
 #include "opflow/graph_node.hpp"
 
 #include <chrono>
@@ -674,4 +675,258 @@ TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
   ASSERT_NE(nodeB_idx, SIZE_MAX);
   ASSERT_NE(nodeC_idx, SIZE_MAX);
   EXPECT_NE(nodeB_idx, nodeC_idx); // Should be different nodes at different indices
+}
+
+// Test class for testing dag_store compatibility with graph_named
+class DagStoreGraphNamedTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    // Create some shared nodes for testing
+    nodeA = std::make_shared<dummy_node>("A", 1);
+    nodeB = std::make_shared<dummy_node>("B", 2);
+    nodeC = std::make_shared<dummy_node>("C", 3);
+    nodeD = std::make_shared<dummy_node>("D", 4);
+  }
+
+  graph_named<dummy_node> g;
+  std::shared_ptr<dummy_node> nodeA, nodeB, nodeC, nodeD;
+
+  // Helper to create simple linear graph: A -> B -> C
+  void create_linear_graph_named() {
+    g.add<dummy_node>("A", ctor_args, "A", 1);
+    g.add<dummy_node>("B", "A", ctor_args, "B", 2);
+    g.add<dummy_node>("C", "B", ctor_args, "C", 3);
+    g.add_output("C");
+  }
+
+  // Helper to create diamond graph: A -> B, A -> C, B -> D, C -> D
+  void create_diamond_graph_named() {
+    g.add<dummy_node>("A", ctor_args, "A", 1);
+    g.add<dummy_node>("B", "A", ctor_args, "B", 2);
+    g.add<dummy_node>("C", "A", ctor_args, "C", 3);
+    g.add<dummy_node>("D", std::vector<std::string>{"B", "C"}, "D", 4);
+    g.add_output("D");
+  }
+};
+
+TEST_F(DagStoreGraphNamedTest, SingleNodeGraphNamed) {
+  g.add<dummy_node>("single", ctor_args, "single", 42);
+  g.add_output("single");
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 1);
+  EXPECT_EQ(topo.num_nodes(), 1);
+  EXPECT_EQ(topo.num_groups(), 1);
+
+  auto nodes_span = topo[0];
+  ASSERT_EQ(nodes_span.size(), 1);
+  EXPECT_EQ(nodes_span[0]->name, "single");
+  EXPECT_EQ(nodes_span[0]->value, 42);
+
+  // Verify output mapping
+  EXPECT_EQ(topo.output_offset.size(), 1);
+  EXPECT_EQ(topo.output_offset[0].size, 1);
+}
+
+TEST_F(DagStoreGraphNamedTest, LinearGraphNamedTopologicalOrder) {
+  create_linear_graph_named();
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 3);
+  EXPECT_EQ(topo.output_offset.size(), 1); // One output node
+
+  auto nodes_span = topo[0];
+  ASSERT_EQ(nodes_span.size(), 3);
+
+  // Verify topological order: A should come before B, B should come before C
+  bool found_A = false, found_B = false, found_C = false;
+  size_t idx_A = 0, idx_B = 0, idx_C = 0;
+
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    if (nodes_span[i]->name == "A") {
+      found_A = true;
+      idx_A = i;
+    } else if (nodes_span[i]->name == "B") {
+      found_B = true;
+      idx_B = i;
+    } else if (nodes_span[i]->name == "C") {
+      found_C = true;
+      idx_C = i;
+    }
+  }
+
+  EXPECT_TRUE(found_A && found_B && found_C);
+  EXPECT_LT(idx_A, idx_B);
+  EXPECT_LT(idx_B, idx_C);
+
+  // Verify input/output structure through record offsets
+  EXPECT_EQ(topo.record_offset.size(), 3);
+  EXPECT_EQ(topo.input_offset.size(), 3);
+}
+
+TEST_F(DagStoreGraphNamedTest, DiamondGraphNamedCorrectPredecessors) {
+  create_diamond_graph_named();
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 4);
+
+  // Verify the diamond structure is preserved in topological order
+  auto nodes_span = topo[0];
+
+  // Find indices of each node
+  std::unordered_map<std::string, size_t> name_to_idx;
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    name_to_idx[nodes_span[i]->name] = i;
+  }
+
+  // Verify diamond structure through topological ordering constraints
+  // A should come before B and C, B and C should come before D
+  EXPECT_LT(name_to_idx["A"], name_to_idx["B"]);
+  EXPECT_LT(name_to_idx["A"], name_to_idx["C"]);
+  EXPECT_LT(name_to_idx["B"], name_to_idx["D"]);
+  EXPECT_LT(name_to_idx["C"], name_to_idx["D"]);
+
+  // Verify input structure through input_offset
+  EXPECT_EQ(topo.input_offset.size(), 4);
+
+  // Node D should have 2 inputs (from B and C)
+  auto nodeD_inputs = topo.input_offset[name_to_idx["D"]];
+  EXPECT_EQ(nodeD_inputs.size(), 2);
+}
+
+TEST_F(DagStoreGraphNamedTest, MultipleGroupsGraphNamed) {
+  create_linear_graph_named();
+
+  constexpr size_t num_groups = 5;
+  dag_store<dummy_node> topo(g, num_groups);
+
+  EXPECT_EQ(topo.num_groups(), num_groups);
+  EXPECT_EQ(topo.size(), 3);
+
+  // Verify each group has independent copies
+  for (size_t grp = 0; grp < num_groups; ++grp) {
+    auto nodes_span = topo[grp];
+    ASSERT_EQ(nodes_span.size(), 3);
+
+    // Verify topological order is consistent
+    std::unordered_map<std::string, size_t> name_to_idx;
+    for (size_t i = 0; i < nodes_span.size(); ++i) {
+      name_to_idx[nodes_span[i]->name] = i;
+    }
+
+    EXPECT_LT(name_to_idx["A"], name_to_idx["B"]);
+    EXPECT_LT(name_to_idx["B"], name_to_idx["C"]);
+  }
+}
+
+TEST_F(DagStoreGraphNamedTest, PortMappingGraphNamed) {
+  // Test explicit port mapping with graph_named
+  g.add<dummy_node>("A", ctor_args, "A", 1);
+  g.add<dummy_node>("B", ctor_args, "B", 2);
+  g.add<dummy_node>("C", std::vector<std::string>{"A.0", "B.0"}, "C", 3);
+  // g.add<dummy_node>("C", "A.0", "B.0", ctor_args, "C", 3);
+  g.add_output("C");
+  EXPECT_TRUE(g.validate());
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 3);
+
+  auto nodes_span = topo[0];
+  std::unordered_map<std::string, size_t> name_to_idx;
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    name_to_idx[nodes_span[i]->name] = i;
+  }
+
+  // Node C should have 2 inputs
+  auto nodeC_inputs = topo.input_offset[name_to_idx["C"]];
+  EXPECT_EQ(nodeC_inputs.size(), 2);
+
+  // Verify topological constraints
+  EXPECT_LT(name_to_idx["A"], name_to_idx["C"]);
+  EXPECT_LT(name_to_idx["B"], name_to_idx["C"]);
+}
+
+TEST_F(DagStoreGraphNamedTest, CyclicGraphNamedDetection) {
+  // Create a cyclic graph using graph_named
+  g.add<dummy_node>("A", ctor_args, "A", 1);
+  g.add<dummy_node>("B", "A", ctor_args, "B", 2);
+  g.add<dummy_node>("C", "B", ctor_args, "C", 3);
+
+  // Create cycle by making A depend on C
+  g.add_edge("A", "C");
+  g.add_output("C");
+
+  EXPECT_THROW(dag_store<dummy_node> topo(g, 1), std::runtime_error);
+}
+
+TEST_F(DagStoreGraphNamedTest, MultipleOutputsGraphNamed) {
+  g.add<dummy_node>("A", ctor_args, "A", 1);
+  g.add<dummy_node>("B", "A", ctor_args, "B", 2);
+  g.add<dummy_node>("C", "A", ctor_args, "C", 3);
+  g.add<dummy_node>("D", "B", ctor_args, "D", 4);
+  g.add<dummy_node>("E", "C", ctor_args, "E", 5);
+
+  // Set multiple outputs
+  std::vector<std::string> outputs = {"D", "E"};
+  g.set_output(outputs);
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 5);
+  EXPECT_EQ(topo.output_offset.size(), 2); // Two output nodes
+
+  auto nodes_span = topo[0];
+
+  // Verify all nodes are present
+  std::unordered_set<std::string> found_names;
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    found_names.insert(nodes_span[i]->name);
+  }
+
+  EXPECT_EQ(found_names.size(), 5);
+  EXPECT_TRUE(found_names.count("A"));
+  EXPECT_TRUE(found_names.count("B"));
+  EXPECT_TRUE(found_names.count("C"));
+  EXPECT_TRUE(found_names.count("D"));
+  EXPECT_TRUE(found_names.count("E"));
+}
+
+TEST_F(DagStoreGraphNamedTest, EmptyGraphNamed) {
+  // Test with empty graph_named
+  EXPECT_EQ(g.size(), 0);
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 0);
+  EXPECT_EQ(topo.num_nodes(), 0);
+  EXPECT_EQ(topo.output_offset.size(), 0);
+}
+
+TEST_F(DagStoreGraphNamedTest, GraphNamedWithEdgeTypes) {
+  // Test using make_edge helper function
+  g.add<dummy_node>("A", ctor_args, "A", 1);
+  g.add<dummy_node>("B", ctor_args, "B", 2);
+
+  // Add edge using make_edge
+  auto edge = make_edge("A", 0);
+  g.add<dummy_node>("C", std::vector<decltype(edge)>{edge, make_edge("B", 0)}, "C", 3);
+  g.add_output("C");
+
+  dag_store<dummy_node> topo(g, 1);
+
+  EXPECT_EQ(topo.size(), 3);
+
+  auto nodes_span = topo[0];
+  std::unordered_map<std::string, size_t> name_to_idx;
+  for (size_t i = 0; i < nodes_span.size(); ++i) {
+    name_to_idx[nodes_span[i]->name] = i;
+  }
+
+  // Node C should have 2 inputs from A and B
+  auto nodeC_inputs = topo.input_offset[name_to_idx["C"]];
+  EXPECT_EQ(nodeC_inputs.size(), 2);
 }

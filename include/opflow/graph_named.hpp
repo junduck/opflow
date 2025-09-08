@@ -62,19 +62,19 @@ inline auto make_edge(std::string_view name, uint32_t port = 0) { return detail:
 
 template <typename T>
 class graph_named {
-  using Hash = detail::str_hash;
   using Equal = std::equal_to<>;
 
 public:
   using str_view = std::string_view;
   using key_type = std::string;
+  using key_hash = detail::str_hash;
   using node_type = std::shared_ptr<T>;
   using edge_type = detail::graph_named_edge;
-  using NodeSet = std::unordered_set<key_type, Hash, Equal>;
+  using NodeSet = std::unordered_set<key_type, key_hash, Equal>;
   using NodeArgsSet = std::vector<edge_type>;
-  using NodeMap = std::unordered_map<key_type, NodeSet, Hash, Equal>;
-  using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, Hash, Equal>;
-  using NodeStore = std::unordered_map<key_type, node_type, Hash, Equal>;
+  using NodeMap = std::unordered_map<key_type, NodeSet, key_hash, Equal>;
+  using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
+  using NodeStore = std::unordered_map<key_type, node_type, key_hash, Equal>;
 
   template <typename Node, typename... Ts>
   graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args) {

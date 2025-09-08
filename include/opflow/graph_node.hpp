@@ -38,17 +38,17 @@ auto make_edge(std::shared_ptr<T> const &node, uint32_t pos = 0) {
 
 template <typename T>
 class graph_node {
-  using Hash = detail::ptr_hash<T>; ///< transparent hashing for pointer to T
-  using Equal = std::equal_to<>;    ///< transparent equality for pointer to T
+  using Equal = std::equal_to<>; ///< transparent equality for pointer to T
 
 public:
-  using key_type = std::shared_ptr<T>;                                 ///< key type, shared_ptr to T
-  using node_type = std::shared_ptr<T>;                                ///< node type, shared_ptr to T
-  using edge_type = detail::graph_node_edge<node_type>;                ///< edge type, represents an arg passed to node
-  using NodeSet = std::unordered_set<node_type, Hash, Equal>;          ///< set of nodes
-  using NodeArgsSet = std::vector<edge_type>;                          ///< set of node arguments
-  using NodeMap = std::unordered_map<node_type, NodeSet, Hash, Equal>; ///< node -> adjacent nodes
-  using NodeArgsMap = std::unordered_map<node_type, NodeArgsSet, Hash, Equal>; ///< node -> call arguments
+  using key_type = std::shared_ptr<T>;                            ///< key type, shared_ptr to T
+  using key_hash = detail::ptr_hash<T>;                           ///< transparent hashing for pointer to T
+  using node_type = std::shared_ptr<T>;                           ///< node type, shared_ptr to T
+  using edge_type = detail::graph_node_edge<node_type>;           ///< edge type, represents an arg passed to node
+  using NodeSet = std::unordered_set<node_type, key_hash, Equal>; ///< set of nodes
+  using NodeArgsSet = std::vector<edge_type>;                     ///< set of node arguments
+  using NodeMap = std::unordered_map<node_type, NodeSet, key_hash, Equal>;         ///< node -> adjacent nodes
+  using NodeArgsMap = std::unordered_map<node_type, NodeArgsSet, key_hash, Equal>; ///< node -> call arguments
 
   template <range_of<edge_type> R>
   void add(node_type const &node, R &&preds) {
