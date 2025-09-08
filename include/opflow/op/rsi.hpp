@@ -46,13 +46,6 @@ public:
     }
   }
 
-  void reset() noexcept override {
-    avg_gain.reset();
-    avg_loss.reset();
-    last_x = data_type();
-    init = false;
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(rsi)
 

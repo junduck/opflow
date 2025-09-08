@@ -29,11 +29,6 @@ public:
     return {.timestamp = time, .size = cnt, .offset = 0, .evict = cnt};
   }
 
-  void reset() noexcept override {
-    time = {};
-    count = 0;
-  }
-
   OPFLOW_CLONEABLE(counter);
 
 private:

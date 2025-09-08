@@ -42,12 +42,6 @@ public:
 
   void value(data_type *out) const noexcept override { *out = s / total_weight; }
 
-  void reset() noexcept override {
-    total_weight.reset();
-    a1_n = 1;
-    s = 0;
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(ewma)
 

@@ -1,8 +1,6 @@
 #include "opflow/win/tumbling.hpp"
 #include "gtest/gtest.h"
 
-#include <chrono>
-
 using namespace opflow;
 using namespace opflow::win;
 
@@ -131,18 +129,4 @@ TEST(TumblingWindow_DoubleTime, FloatingPointTimeFmodPath) {
   EXPECT_DOUBLE_EQ(s1.timestamp, 1.0);
   EXPECT_EQ(s1.size, 3u);
   EXPECT_EQ(s1.evict, 3u); // 0.5, 0.51, 0.99
-}
-
-TEST(TumblingWindow_Reset, ClearsState) {
-  tumbling<int> w(10);
-  EXPECT_FALSE(w.on_data(1, nullptr));
-  EXPECT_FALSE(w.on_data(2, nullptr));
-  w.reset();
-  // After reset, first call realigns from scratch; previous pending size must be cleared
-  EXPECT_FALSE(w.on_data(5, nullptr)); // size becomes 1
-  ASSERT_TRUE(w.on_data(15, nullptr)); // emit [0,10) with size=1
-  auto s = w.emit();
-  EXPECT_EQ(s.timestamp, 10);
-  EXPECT_EQ(s.size, 1u);
-  EXPECT_EQ(s.evict, 1u);
 }

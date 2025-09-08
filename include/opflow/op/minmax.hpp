@@ -51,11 +51,6 @@ public:
 
   void value(data_type *out) const noexcept override { out[0] = vec[head_idx]; }
 
-  void reset() noexcept override {
-    vec.clear();
-    head_idx = 0;
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(min)
 
@@ -110,11 +105,6 @@ public:
   }
 
   void value(data_type *out) const noexcept override { out[0] = vec[head_idx]; }
-
-  void reset() noexcept override {
-    vec.clear();
-    head_idx = 0;
-  }
 
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(max)

@@ -40,13 +40,6 @@ public:
 
   void value(data_type *out) const noexcept override { out[0] = mean; }
 
-  void reset() noexcept override {
-    sum = 0;
-    count = 0;
-    mean = 0;
-    m2 = 0;
-  }
-
   bool is_dynamic() const noexcept override { return true; }
 
   OPFLOW_INOUT(1, 1)

@@ -19,7 +19,6 @@ namespace opflow {
  *    - engine guarantees non-aliased in and out pointers.
  * - Number of input elements is given by num_inputs().
  * - Number of output elements is given by num_outputs().
- * - reset() restores the functor to its initial state.
  * - The execution engine guarantees valid pointers and correct array sizes.
  *
  * @tparam T data type
@@ -29,7 +28,6 @@ struct fn_base {
   using data_type = T;
 
   virtual void on_data(data_type const *in, data_type *out) noexcept = 0;
-  virtual void reset() noexcept {}
 
   virtual size_t num_inputs() const noexcept = 0;
   virtual size_t num_outputs() const noexcept = 0;

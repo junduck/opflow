@@ -91,12 +91,6 @@ public:
     return std::exchange(emitting, {});
   }
 
-  void reset() noexcept override {
-    next_tick = max_time<data_type>();
-    count = 0;
-    emitting = {};
-  }
-
   OPFLOW_CLONEABLE(tumbling)
 
 private:

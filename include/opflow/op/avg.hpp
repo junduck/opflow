@@ -28,11 +28,6 @@ public:
 
   void value(data_type *out) const noexcept override { out[0] = val; }
 
-  void reset() noexcept override {
-    val.reset();
-    n = 0;
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(avg)
 
@@ -66,11 +61,6 @@ public:
   }
 
   void value(data_type *out) const noexcept override { out[0] = val; }
-
-  void reset() noexcept override {
-    val.reset();
-    w_sum.reset();
-  }
 
   OPFLOW_INOUT(2, 1)
   OPFLOW_CLONEABLE(avg_weighted)

@@ -65,10 +65,6 @@ public:
     return std::exchange(curr, {});
   }
 
-  void reset() noexcept override {
-    *this = cusum_filter{thres}; // Reset to a new instance with the same parameters
-  }
-
   OPFLOW_CLONEABLE(cusum_filter)
 
 private:

@@ -30,7 +30,6 @@ constexpr inline time_window_tag time_window{};
  * - To retrieve the current result, value() is called with an array of T to write: T* out.
  * - Number of input elements is given by num_inputs().
  * - Number of output elements is given by num_outputs().
- * - reset() restores the functor to its initial state if the functor is stateful.
  * - Execution engine guarantees valid pointers and correct array sizes.
  * - Operator should avoid buffering window data.
  * - Operator should aim for O(1) space and time online algorithms.
@@ -55,7 +54,6 @@ struct op_base {
   virtual void on_data(data_type const *in) noexcept = 0;
   virtual void on_evict(data_type const *rm) noexcept { std::ignore = rm; }
   virtual void value(data_type *out) const noexcept = 0;
-  virtual void reset() noexcept = 0;
 
   virtual size_t num_inputs() const noexcept = 0;
   virtual size_t num_outputs() const noexcept = 0;
@@ -203,7 +201,6 @@ struct op_root : op_base<T> {
       cast[i] = mem[i];
     }
   }
-  void reset() noexcept override {}
 
   OPFLOW_INOUT(input_size, input_size)
   OPFLOW_CLONEABLE(op_root)

@@ -34,13 +34,6 @@ public:
     out[2] = hist; // Output the histogram value
   }
 
-  void reset() noexcept override {
-    sig.reset();
-    cd = 0.;
-    hist = 0.;
-    init = false;
-  }
-
   OPFLOW_INOUT(1, 3)
   OPFLOW_CLONEABLE(macd)
 

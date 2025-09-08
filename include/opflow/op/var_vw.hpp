@@ -54,14 +54,6 @@ public:
     }
   }
 
-  void reset() noexcept override {
-    m.reset();
-    w_sum.reset();
-    w2_sum.reset();
-    m2.reset();
-    n = 0;
-  }
-
   OPFLOW_INOUT(2, 2)
   OPFLOW_CLONEABLE(var_vw)
 

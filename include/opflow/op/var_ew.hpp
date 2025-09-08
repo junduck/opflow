@@ -36,12 +36,6 @@ public:
     out[1] = s2;
   }
 
-  void reset() noexcept override {
-    m.reset();
-    s2.reset();
-    initialised = false;
-  }
-
   OPFLOW_INOUT(1, 2)
   OPFLOW_CLONEABLE(var_ew)
 

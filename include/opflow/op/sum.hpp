@@ -16,7 +16,6 @@ public:
   void on_data(data_type const *in) noexcept override { val.add(in[0]); }
   void on_evict(data_type const *rm) noexcept override { val.sub(rm[0]); }
   void value(data_type *out) const noexcept override { out[0] = val; }
-  void reset() noexcept override { val.reset(); }
 
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(sum)
@@ -24,8 +23,6 @@ public:
 private:
   detail::accum<data_type> val; ///< accumulated value
 };
-
-static_assert(dag_node<sum<double>>);
 
 #ifndef NDEBUG
 // for testing purpose
@@ -40,7 +37,6 @@ struct add2 : op_base<U> {
 
   void on_data(data_type const *in) noexcept override { val = in[0] + in[1]; }
   void value(data_type *out) const noexcept override { out[0] = val; }
-  void reset() noexcept override { val = 0; }
 
   OPFLOW_INOUT(2, 1)
   OPFLOW_CLONEABLE(add2)

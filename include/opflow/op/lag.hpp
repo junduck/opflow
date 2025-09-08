@@ -40,14 +40,6 @@ public:
 
   void value(data_type *out) const noexcept override { out[0] = lagged; }
 
-  void reset() noexcept override {
-    if constexpr (Policy == fill_policy::zero) {
-      lagged = 0;
-    } else {
-      lagged = fnan<data_type>;
-    }
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(lag)
 

@@ -46,12 +46,6 @@ public:
     out[1] = m2;
   }
 
-  void reset() noexcept override {
-    m.reset();
-    m2.reset();
-    n = 0;
-  }
-
   OPFLOW_INOUT(1, 2)
   OPFLOW_CLONEABLE(moment2)
 

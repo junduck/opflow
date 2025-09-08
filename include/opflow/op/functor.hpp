@@ -29,9 +29,6 @@ public:
     }
   }
 
-  // TODO: we expect stateless functor here
-  virtual void reset() noexcept override {}
-
   OPFLOW_INOUT(arity, return_size)
   OPFLOW_CLONEABLE(functor)
 

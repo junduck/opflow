@@ -40,11 +40,6 @@ public:
 
   void value(data_type *out) const noexcept override { out[0] = val; }
 
-  void reset() noexcept override {
-    val.reset();
-    initialised = false;
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(ema)
 
@@ -92,11 +87,6 @@ public:
     *out = val / (data_type(1) - bias); // Apply bias correction
   }
 
-  void reset() noexcept override {
-    val.reset();
-    bias = 1.;
-  }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(ema_unbiased)
 
@@ -142,11 +132,6 @@ public:
   }
 
   void value(data_type *out) const noexcept override { out[0] = val; }
-
-  void reset() noexcept override {
-    val.reset();
-    initialised = false;
-  }
 
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(ema_time)

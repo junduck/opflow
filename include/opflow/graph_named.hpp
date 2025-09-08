@@ -83,14 +83,23 @@ public:
     return *this;
   }
 
+  template <template <typename> typename Node, typename... Ts>
+  graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args)
+    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using NodeT = Node<typename T::data_type>;
+    add<NodeT>(name, std::forward<Ts>(preds_and_ctor_args)...);
+    return *this;
+  }
+
   template <typename Node, range_of<edge_type> R, typename... Ts>
   graph_named &add(key_type const &name, R &&preds, Ts &&...args) {
     ensure_adjacency_list(name);
     add_impl<Node>(name, ctor_args, std::forward<Ts>(args)...);
 
-    for (auto const &pred : preds) {
-      ensure_adjacency_list(pred.name);
-      add_edge_impl(name, pred);
+    for (auto const &edge : preds) {
+      ensure_adjacency_list(edge.name);
+      add_edge_impl(name, edge);
     }
     return *this;
   }
@@ -105,15 +114,6 @@ public:
       ensure_adjacency_list(edge.name);
       add_edge_impl(name, edge);
     }
-    return *this;
-  }
-
-  template <template <typename> typename Node, typename... Ts>
-  graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args)
-    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    using NodeT = Node<typename T::data_type>;
-    add<NodeT>(name, std::forward<Ts>(preds_and_ctor_args)...);
     return *this;
   }
 

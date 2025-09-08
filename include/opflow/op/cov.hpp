@@ -58,13 +58,6 @@ public:
     }
   }
 
-  void reset() noexcept override {
-    mx.reset();
-    my.reset();
-    mxy.reset();
-    n = 0;
-  }
-
   OPFLOW_INOUT(2, 3)
   OPFLOW_CLONEABLE(cov)
 

@@ -32,7 +32,6 @@ struct agg_base {
    * @param out pointer to the output data, index dimension: (col)
    */
   virtual void on_data(size_t n, data_type const *const *in, data_type *out) noexcept = 0;
-  virtual void reset() noexcept {}
 
   virtual size_t num_inputs() const noexcept = 0;
   virtual size_t num_outputs() const noexcept = 0;

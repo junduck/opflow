@@ -39,13 +39,6 @@ public:
     out[2] = s2xy; // covariance
   }
 
-  void reset() noexcept override {
-    mx.reset();
-    my.reset();
-    s2xy.reset();
-    initialised = false;
-  }
-
   OPFLOW_INOUT(2, 3)
   OPFLOW_CLONEABLE(cov_ew)
 
