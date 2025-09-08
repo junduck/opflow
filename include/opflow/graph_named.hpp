@@ -76,6 +76,8 @@ public:
   using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
   using NodeStore = std::unordered_map<key_type, node_type, key_hash, Equal>;
 
+  // Add
+
   template <typename Node, typename... Ts>
   graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args) {
     ensure_adjacency_list(name);
@@ -139,6 +141,8 @@ public:
     return *this;
   }
 
+  // Output
+
   template <range_of<str_view> R>
   graph_named &add_output(R &&outputs) {
     for (auto const &name : outputs) {
@@ -147,8 +151,9 @@ public:
     return *this;
   }
 
-  graph_named &add_output(key_type const &name) {
-    output.push_back(name);
+  template <typename... Ts>
+  graph_named &add_output(Ts &&...names) {
+    (output.emplace_back(std::forward<Ts>(names)), ...);
     return *this;
   }
 
@@ -156,6 +161,13 @@ public:
   graph_named &set_output(R &&outputs) {
     output.clear();
     add_output(std::forward<R>(outputs));
+    return *this;
+  }
+
+  template <typename... Ts>
+  graph_named &set_output(Ts &&...names) {
+    output.clear();
+    add_output(std::forward<Ts>(names)...);
     return *this;
   }
 
@@ -349,7 +361,7 @@ public:
 
     // Replace old_pred with new_pred in argmap
     for (auto &arg : args) {
-      if (arg.name == old_pred.name && arg.port == old_pred.port) {
+      if (arg == old_pred) {
         arg = new_pred;
       }
     }

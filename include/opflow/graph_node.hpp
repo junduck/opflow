@@ -50,6 +50,8 @@ public:
   using NodeMap = std::unordered_map<node_type, NodeSet, key_hash, Equal>;         ///< node -> adjacent nodes
   using NodeArgsMap = std::unordered_map<node_type, NodeArgsSet, key_hash, Equal>; ///< node -> call arguments
 
+  // Add
+
   template <range_of<edge_type> R>
   void add(node_type const &node, R &&preds) {
     if (!node)
@@ -145,11 +147,37 @@ public:
     return node;
   }
 
+  // Output
+
+  template <range_of<node_type> R>
+  void add_output(R &&outputs) {
+    for (auto const &node : outputs) {
+      output.push_back(node);
+    }
+  }
+
+  template <typename... Ts>
+  void add_output(Ts &&...outputs) {
+    (output.emplace_back(std::forward<Ts>(outputs)), ...);
+  }
+
+  template <range_of<node_type> R>
+  void set_output(R &&outputs) {
+    output.clear();
+    add_output(std::forward<R>(outputs));
+  }
+
+  template <typename... Ts>
+  void set_output(Ts &&...outputs) {
+    output.clear();
+    add_output(std::forward<Ts>(outputs)...);
+  }
+
   // Removal
 
-  void rm(node_type const &node) {
+  bool rm(node_type const &node) {
     if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
+      return false; // Node doesn't exist
     }
 
     // Remove this node from pred map of all successors
@@ -168,9 +196,11 @@ public:
     predecessor.erase(node);
     argmap.erase(node);
     successor.erase(node);
+
+    return true;
   }
 
-  // Edge
+  // Edge manipulation
 
   template <range_of<node_type> R>
   void add_edge(node_type const &node, R &&preds) {
@@ -201,40 +231,42 @@ public:
   }
 
   template <range_of<edge_type> R>
-  void rm_edge(node_type const &node, R &&preds) {
+  bool rm_edge(node_type const &node, R &&preds) {
     if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
+      return false; // Node doesn't exist
     }
+    bool removed = false;
     for (auto const &[pred, port] : preds) {
-      rm_edge_impl(node, pred, port);
+      removed |= rm_edge_impl(node, pred, port);
     }
+    return removed;
   }
 
-  void rm_edge(node_type const &node, node_type const &pred) {
+  bool rm_edge(node_type const &node, node_type const &pred) {
     if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
+      return false; // Node doesn't exist
     }
-    rm_edge_impl(node, pred, 0);
+    return rm_edge_impl(node, pred, 0);
   }
 
-  void rm_edge(node_type const &node, edge_type const &pred) {
+  bool rm_edge(node_type const &node, edge_type const &pred) {
     if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
+      return false; // Node doesn't exist
     }
-    rm_edge_impl(node, pred.node, pred.port);
+    return rm_edge_impl(node, pred.node, pred.port);
   }
 
   // Replacement
 
-  void replace(node_type const &new_node, node_type const &old_node) {
+  bool replace(node_type const &new_node, node_type const &old_node) {
     if (predecessor.find(old_node) == predecessor.end()) {
-      return; // Old node doesn't exist
+      return false; // Old node doesn't exist
     }
     if (predecessor.find(new_node) != predecessor.end()) {
-      return; // Can't replace with an existing node
+      return false; // Can't replace with an existing node
     }
     if (old_node == new_node) {
-      return; // No change needed
+      return true; // No change needed
     }
 
     // Copy all adjacency information from old_node to new_node
@@ -265,20 +297,22 @@ public:
     predecessor.erase(old_node);
     argmap.erase(old_node);
     successor.erase(old_node);
+
+    return true;
   }
 
-  void replace(node_type const &node, edge_type const &old_pred, edge_type const &new_pred) {
+  bool replace(node_type const &node, edge_type const &old_pred, edge_type const &new_pred) {
     if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
+      return false; // Node doesn't exist
     }
     if (old_pred == new_pred) {
-      return; // No change needed
+      return true; // No change needed
     }
 
     auto &args = argmap[node];
 
     if (std::find(args.begin(), args.end(), old_pred) == args.end()) {
-      return; // Old edge doesn't exist, nothing to replace
+      return false; // Old edge doesn't exist, nothing to replace
     }
 
     // Ensure new predecessor node exists
@@ -295,37 +329,11 @@ public:
       }
     }
 
-    cleanup_adj(node, old_pred.node); // Check if old_pred is still needed
+    // Check if old_pred is still needed
+    cleanup_adj(node, old_pred.node);
+
+    return true;
   }
-
-  // Output
-
-  template <range_of<node_type> R>
-  void set_output(R &&outputs) {
-    output.clear();
-    for (auto const &node : outputs) {
-      output.push_back(node);
-    }
-  }
-
-  void set_output(std::initializer_list<node_type> outputs) { output = std::vector<node_type>(outputs); }
-
-  void set_output(node_type const &node) { output = {node}; }
-
-  template <range_of<node_type> R>
-  void add_output(R &&outputs) {
-    for (auto const &node : outputs) {
-      output.push_back(node);
-    }
-  }
-
-  void add_output(std::initializer_list<node_type> outputs) {
-    for (auto const &node : outputs) {
-      output.push_back(node);
-    }
-  }
-
-  void add_output(node_type const &node) { output.push_back(node); }
 
   // Utilities
 
