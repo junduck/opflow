@@ -499,6 +499,12 @@ public:
       }
     }
 
+    for (auto const &out : output) {
+      if (store.find(out) == store.end()) {
+        return false; // Inconsistent: output node missing in store
+      }
+    }
+
     return true;
   }
 
