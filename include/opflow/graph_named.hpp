@@ -94,31 +94,6 @@ public:
     return *this;
   }
 
-  template <typename Node, range_of<edge_type> R, typename... Ts>
-  graph_named &add(key_type const &name, R &&preds, Ts &&...args) {
-    ensure_adjacency_list(name);
-    add_impl<Node>(name, ctor_args, std::forward<Ts>(args)...);
-
-    for (auto const &edge : preds) {
-      ensure_adjacency_list(edge.name);
-      add_edge_impl(name, edge);
-    }
-    return *this;
-  }
-
-  template <typename Node, range_of<str_view> R, typename... Ts>
-  graph_named &add(key_type const &name, R &&preds, Ts &&...args) {
-    ensure_adjacency_list(name);
-    add_impl<Node>(name, ctor_args, std::forward<Ts>(args)...);
-
-    for (auto const &pred : preds) {
-      auto edge = edge_type(str_view(pred));
-      ensure_adjacency_list(edge.name);
-      add_edge_impl(name, edge);
-    }
-    return *this;
-  }
-
   graph_named &root(key_type const &name, size_t root_input_size)
     requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
@@ -560,14 +535,47 @@ private:
     }
   }
 
+  // add - edge
+
   template <typename Node, detail::string_like T0, typename... Ts>
   void add_impl(key_type const &name, T0 &&edge_desc, Ts &&...args) {
-    auto edge = detail::graph_named_edge(edge_desc);
+    auto edge = detail::graph_named_edge(std::forward<T0>(edge_desc));
     ensure_adjacency_list(edge.name);
     add_edge_impl(name, edge);
 
     add_impl<Node>(name, std::forward<Ts>(args)...);
   }
+
+  template <typename Node, typename... Ts>
+  void add_impl(key_type const &name, edge_type edge, Ts &&...args) {
+    ensure_adjacency_list(edge.name);
+    add_edge_impl(name, edge);
+
+    add_impl<Node>(name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, range_of<edge_type> R, typename... Ts>
+  void add_impl(key_type const &name, R &&edges, Ts &&...args) {
+    ensure_adjacency_list(name);
+    for (auto const &edge : edges) {
+      ensure_adjacency_list(edge.name);
+      add_edge_impl(name, edge);
+    }
+    add_impl<Node>(name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, range_of<str_view> R, typename... Ts>
+  void add_impl(key_type const &name, R &&edges, Ts &&...args) {
+    ensure_adjacency_list(name);
+    for (auto const &edge_desc : edges) {
+      auto edge = detail::graph_named_edge(edge_desc);
+      ensure_adjacency_list(edge.name);
+      add_edge_impl(name, edge);
+    }
+    add_impl<Node>(name, std::forward<Ts>(args)...);
+  }
+
+  // add - ctor
 
   template <typename Node, typename... Ts>
   void add_impl(key_type const &name, Ts &&...args) {

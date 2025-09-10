@@ -146,7 +146,7 @@ TEST_F(GraphNodeNamedTest, AddMultipleNodes) {
 
 TEST_F(GraphNodeNamedTest, AddNodeWithDependencies) {
   graph.add<dummy_node>("root", 0, "root");
-  graph.add<dummy_node>("child", "root", 1, "child");
+  graph.add<dummy_node>("child", make_edge("root"), 1, "child");
 
   EXPECT_EQ(graph.size(), 2u);
 
