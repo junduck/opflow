@@ -3,8 +3,7 @@
 | Stage     | Role        | Product                                   | Notes                                                               |
 |-----------|-------------|-------------------------------------------|---------------------------------------------------------------------|
 | 0 (Src)   | DataSource  | Raw data                                  | External file, DB, message queue, etc.                              |
-| 1 (Src)   | Parse       | (timestamp, key/group, data)              | Converts raw data to structured messages                            |
-| 3 (Pre)   | Select      | (timestamp_as_datatype, key/group, data)  | Optional: filters/selects relevant messages                         |
+| 1 (Pre)   | Preprocessor| (timestamp, key/group id, data)           | Cleans and prepares raw data for processing                         |
 | 4 (Exec)  | Algo Exec   | (timestamp_as_datatype, data)             | Executes algorithms defined as DAGs                                 |
 | 5 (Out)   | Observer    | (timestamp, Side effects)                 | Observes output, can be used for monitoring or further processing   |
 
@@ -46,7 +45,7 @@ auto ma_diff   = algo0_dag.add<fn::ema>(diff | 0, 9);        // specify port: ou
 auto sum_left  = algo0_dag.add<fn::sum>(root | 1, 2);        // output[1] of root node
 auto sum_right = algo0_dag.add<fn::sum>(root | 2, 5);
 auto add2      = algo0_dag.add<fn::add2>({sum_left | 0, sum_right | 0});
-algo0_dag.set_output({diff, ma_diff, add2}); // exec will produce outputs of diff, ma_diff and add2
+algo0_dag.output({diff, ma_diff, add2}); // exec will produce outputs of diff, ma_diff and add2
 
 fn_exec<double> algo0(algo0_dag);
 ```
@@ -65,7 +64,7 @@ algo0_dag.root("root", 3)
    .add<fn::sum>("sum_left", "root.1", 2)
    .add<fn::sum>("sum_right", "root.2", 5)
    .add<fn::add2>("add2", std::vector<std::string>{"sum_left.0", "sum_right.0"}) // can also provide a range of predecessors
-   .set_output("diff", "ma_diff", "add2"); // exec will produce outputs of diff, ma_diff and add2
+   .output("diff", "ma_diff", "add2"); // exec will produce outputs of diff, ma_diff and add2
 
 fn_exec<double> algo0(algo0_dag);
 ```
