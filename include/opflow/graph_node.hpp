@@ -487,12 +487,12 @@ private:
   }
 
   // remove all edges node -> [pred:port]
-  void rm_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
+  bool rm_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
     auto &args = argmap[node];
     auto rm = make_edge(pred, port);
 
     if (std::find(args.begin(), args.end(), rm) == args.end()) {
-      return; // Edge doesn't exist, nothing to remove
+      return false; // Edge doesn't exist, nothing to remove
     }
 
     // Remove all edges [pred:port]
@@ -500,6 +500,8 @@ private:
 
     // Cleanup adjacency maps
     cleanup_adj(node, pred);
+
+    return true;
   }
 
   void cleanup_adj(node_type const &node, node_type const &pred) {
