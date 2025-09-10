@@ -21,75 +21,77 @@ public:
   using window_type = std::shared_ptr<window_base<data_type>>;
 
   template <typename Win, typename... Args>
-  window_type window(Args &&...args) {
+  graph_agg &window(Args &&...args) {
     win = std::make_shared<Win>(std::forward<Args>(args)...);
     win_cols.clear();
-    return win;
+    return *this;
   }
 
   template <template <typename> typename Win, typename... Args>
-  window_type window(Args &&...args) {
+  graph_agg &window(Args &&...args) {
     return window<Win<data_type>>(std::forward<Args>(args)...);
   }
 
   template <range_of<size_t> R, typename Win, typename... Args>
-  window_type window(R &&colidx, Args &&...args) {
+  graph_agg &window(R &&colidx, Args &&...args) {
     win = std::make_shared<Win>(std::forward<Args>(args)...);
     win_cols.assign(std::ranges::begin(colidx), std::ranges::end(colidx));
-    return win;
+    return *this;
   }
 
   template <range_of<size_t> R, template <typename> typename Win, typename... Args>
-  window_type window(R &&colidx, Args &&...args) {
+  graph_agg &window(R &&colidx, Args &&...args) {
     return window<Win<data_type>>(std::forward<R>(colidx), std::forward<Args>(args)...);
   }
 
   template <typename Win, typename... Args>
-  window_type window(std::initializer_list<size_t> colidx, Args &&...args) {
+  graph_agg &window(std::initializer_list<size_t> colidx, Args &&...args) {
     win = std::make_shared<Win>(std::forward<Args>(args)...);
     win_cols.assign(colidx.begin(), colidx.end());
-    return win;
+    return *this;
   }
 
   template <template <typename> typename Win, typename... Args>
-  window_type window(std::initializer_list<size_t> colidx, Args &&...args) {
+  graph_agg &window(std::initializer_list<size_t> colidx, Args &&...args) {
     return window<Win<data_type>>(colidx, std::forward<Args>(args)...);
   }
 
   template <range_of<size_t> R>
-  void add(node_type agg, R &&colidx) {
+  graph_agg &add(node_type agg, R &&colidx) {
     aggs.push_back(agg);
     cols.push_back(std::forward<R>(colidx));
+    return *this;
   }
 
-  void add(node_type agg, std::initializer_list<size_t> colidx) {
+  graph_agg &add(node_type agg, std::initializer_list<size_t> colidx) {
     aggs.push_back(agg);
     cols.push_back(colidx);
+    return *this;
   }
 
   template <range_of<size_t> R, typename AggType, typename... Args>
-  node_type add(R &&colidx, Args &&...args) {
+  graph_agg &add(R &&colidx, Args &&...args) {
     auto agg = std::make_shared<AggType>(std::forward<Args>(args)...);
     aggs.push_back(agg);
     cols.push_back(std::forward<R>(colidx));
-    return agg;
+    return *this;
   }
 
   template <typename AggType, typename... Args>
-  node_type add(std::initializer_list<size_t> colidx, Args &&...args) {
+  graph_agg &add(std::initializer_list<size_t> colidx, Args &&...args) {
     auto agg = std::make_shared<AggType>(std::forward<Args>(args)...);
     aggs.push_back(agg);
     cols.push_back(colidx);
-    return aggs.back();
+    return *this;
   }
 
   template <range_of<size_t> R, template <typename> typename Agg, typename... Args>
-  node_type add(R &&colidx, Args &&...args) {
+  graph_agg &add(R &&colidx, Args &&...args) {
     return add<Agg<data_type>>(std::forward<R>(colidx), std::forward<Args>(args)...);
   }
 
   template <template <typename> typename Agg, typename... Args>
-  node_type add(std::initializer_list<size_t> colidx, Args &&...args) {
+  graph_agg &add(std::initializer_list<size_t> colidx, Args &&...args) {
     return add<Agg<data_type>>(colidx, std::forward<Args>(args)...);
   }
 
