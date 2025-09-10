@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "def.hpp"
 #include "fn_base.hpp"
 
 #include "detail/dag_store.hpp"
@@ -15,9 +16,10 @@ public:
   using fn_type = fn_base<data_type>;
   using graph_node_type = std::shared_ptr<fn_type>;
 
-  fn_exec(graph_node<fn_type> const &g, size_t num_groups, Alloc const &alloc = Alloc{})
+  template <typename G>
+  fn_exec(G const &g, size_t num_groups, Alloc const &alloc = Alloc{})
       : // DAG
-        ngrp(num_groups), dag(g, ngrp),
+        ngrp(num_groups), dag(g, ngrp, alloc),
         // data
         history(0, ngrp, alloc),
         // tmp

@@ -2,7 +2,6 @@
 
 #include "common.hpp"
 #include "def.hpp"
-#include "graph_node.hpp"
 #include "op_base.hpp"
 
 #include "detail/dag_store.hpp"
@@ -22,9 +21,10 @@ public:
   using op_type = op_base<data_type>;
   using graph_node_type = std::shared_ptr<op_type>;
 
-  op_exec(graph_node<op_type> const &g, size_t num_groups, size_t history_size_hint = 256, Alloc const &alloc = Alloc{})
+  template <typename G>
+  op_exec(G const &g, size_t num_groups, size_t history_size_hint = 256, Alloc const &alloc = Alloc{})
       : // DAG
-        ngrp(num_groups), dag(g, ngrp),
+        ngrp(num_groups), dag(g, ngrp, alloc),
         // data
         history(alloc),
         // window
@@ -37,14 +37,14 @@ public:
     init_window();
   }
 
-  template <sized_range_of<size_t> S>
-  op_exec(graph_node<op_type> const &g, size_t num_groups, S &&hints_by_grp, Alloc const &alloc = Alloc{})
+  template <typename G, range_idx S>
+  op_exec(G const &g, size_t num_groups, S &&hints_by_grp, Alloc const &alloc = Alloc{})
       : // DAG
-        ngrp(num_groups), dag(g, ngrp),
+        ngrp(num_groups), dag(g, ngrp, alloc),
         // data
         history(alloc),
         // window
-        all_cumulative(), win_desc(alloc), step_count(dag.size(), ngrp),
+        all_cumulative(), win_desc(alloc), step_count(dag.size(), ngrp, alloc),
         // tmp
         curr_args(0, ngrp, alloc) {
     if (std::ranges::size(hints_by_grp) != ngrp) {
