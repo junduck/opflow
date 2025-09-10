@@ -12,7 +12,7 @@
 #include "utils.hpp"
 
 namespace opflow::detail {
-template <dag_node T, typename Alloc = std::allocator<T>>
+template <dag_node_base T, typename Alloc = std::allocator<T>>
 struct agg_store {
   using byte_alloc = rebind_alloc<Alloc, std::byte>;
   std::vector<std::byte, byte_alloc> arena_storage;
@@ -29,9 +29,10 @@ public:
   using node_type = std::unique_ptr<base_type, arena_deleter<base_type>>;
   using shared_node_type = std::shared_ptr<base_type>;
 
-  agg_store(graph_agg<T> const &g, size_t n_group = 1, Alloc alloc = Alloc{})
+  template <typename G>
+  agg_store(G const &g, size_t n_group = 1, Alloc alloc = Alloc{})
       : arena_storage(alloc), arena(nullptr, 0), n_grp(n_group), n_nodes(g.size()), win_ptrs(), node_ptrs(),
-        record_size(), record_offset(), input_column() {
+        record_size(), record_offset(alloc), input_column(alloc), win_column(alloc) {
     if (n_group == 0) {
       throw std::invalid_argument("Number of groups must be greater than 0.");
     }
@@ -48,8 +49,17 @@ public:
       record_size += nodes[i]->num_outputs();
     }
 
-    input_column.copy_from(g.get_input_column());
-    win_column.assign(g.window_input_column().begin(), g.window_input_column().end());
+    size_t total = 0;
+    for (size_t i = 0; i < n_nodes; ++i) {
+      total += g.input_column(i).size();
+    }
+    input_column.reserve(n_nodes, total);
+    for (size_t i = 0; i < n_nodes; ++i) {
+      input_column.push_back(g.input_column(i));
+    }
+
+    auto win_col = g.window_input_column();
+    win_column.assign(win_col.begin(), win_col.end());
   }
 
   window_type const &window(size_t igrp) const noexcept { return win_ptrs[igrp]; }
@@ -63,7 +73,8 @@ public:
   size_t num_groups() const noexcept { return n_grp; }
 
 private:
-  void init_arena(graph_agg<T> const &graph) {
+  template <typename G>
+  void init_arena(G const &graph) {
     // Memory layout:
     // | ptr win | ..... | ptr node | ..... | PADDING | node grp | PADDING | ... | node grp | ... |
     // | <---CONCURRENT READONLY ACCESS---> |
@@ -114,13 +125,17 @@ private:
     node_ptrs.reserve(n_grp * n_nodes);
   }
 
-  void copy_nodes(graph_agg<T> const &graph) {
+  template <typename G>
+  void copy_nodes(G const &graph) {
     auto nodes = graph.get_nodes();
+    auto const &win = graph.get_window();
+
+    auto win_size = win->clone_size();
+    auto win_align = std::max(cacheline_size, win->clone_align());
 
     void *mem = nullptr;
     for (size_t i_copy = 0; i_copy < n_grp; ++i_copy) {
-      auto const &win = graph.get_window();
-      mem = arena.allocate(win->clone_size(), std::max(cacheline_size, win->clone_align()));
+      mem = arena.allocate(win_size, win_align);
       win_ptrs.emplace_back(win->clone_at(mem));
       for (auto const &node : nodes) {
         mem = arena.allocate(node->clone_size(), node->clone_align());

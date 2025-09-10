@@ -82,13 +82,11 @@ public:
 
   auto get_window() const noexcept { return win; }
 
-  auto const &window_input_column() const noexcept { return win_cols; }
-
   auto get_nodes() const noexcept { return std::span(aggs); }
 
-  auto input_column(size_t id) const noexcept { return cols[id]; }
+  auto window_input_column() const noexcept { return std::span(win_cols); }
 
-  auto const &get_input_column() const noexcept { return cols; }
+  auto input_column(size_t id) const noexcept { return cols[id]; }
 
 private:
   // add window - cols
