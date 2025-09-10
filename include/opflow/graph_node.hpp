@@ -111,24 +111,24 @@ public:
   template <range_of<node_type> R>
   void add_output(R &&outputs) {
     for (auto const &node : outputs) {
-      output.push_back(node);
+      out.push_back(node);
     }
   }
 
   template <typename... Ts>
   void add_output(Ts &&...outputs) {
-    (output.emplace_back(std::forward<Ts>(outputs)), ...);
+    (out.emplace_back(std::forward<Ts>(outputs)), ...);
   }
 
   template <range_of<node_type> R>
-  void set_output(R &&outputs) {
-    output.clear();
+  void output(R &&outputs) {
+    out.clear();
     add_output(std::forward<R>(outputs));
   }
 
   template <typename... Ts>
-  void set_output(Ts &&...outputs) {
-    output.clear();
+  void output(Ts &&...outputs) {
+    out.clear();
     add_output(std::forward<Ts>(outputs)...);
   }
 
@@ -304,7 +304,7 @@ public:
     predecessor.clear();
     argmap.clear();
     successor.clear();
-    output.clear();
+    out.clear();
   }
 
   bool contains(node_type const &node) const noexcept { return predecessor.find(node) != predecessor.end(); }
@@ -333,7 +333,7 @@ public:
 
   NodeMap const &get_succ() const noexcept { return successor; }
 
-  auto const &get_output() const noexcept { return output; }
+  auto const &get_output() const noexcept { return out; }
 
   node_type get_node(key_type const &node) const {
     if (predecessor.find(node) == predecessor.end()) {
@@ -523,9 +523,9 @@ private:
   }
 
 protected:
-  NodeMap predecessor;           ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  NodeArgsMap argmap;            ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;             ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
-  std::vector<node_type> output; ///< Output nodes
+  NodeMap predecessor;        ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  NodeArgsMap argmap;         ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  NodeMap successor;          ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  std::vector<node_type> out; ///< Output nodes
 };
 } // namespace opflow

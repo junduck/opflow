@@ -88,7 +88,7 @@ protected:
     g.add(nodeC, nodeB);
 
     out_nodes = {nodeC};
-    g.set_output(out_nodes);
+    g.output(out_nodes);
   }
 
   // Helper to create diamond graph: A -> B, A -> C, B -> D, C -> D
@@ -104,7 +104,7 @@ protected:
     g.add(nodeD, nodeB, nodeC);
 
     out_nodes = {nodeD};
-    g.set_output(out_nodes);
+    g.output(out_nodes);
   }
 
   // Helper to create complex graph with multiple outputs
@@ -124,7 +124,7 @@ protected:
     g.add(nodeF, nodeC, nodeE);
 
     out_nodes = {nodeD, nodeF};
-    g.set_output(out_nodes);
+    g.output(out_nodes);
   }
 
   std::shared_ptr<dummy_node> nodeA, nodeB, nodeC, nodeD;
@@ -567,7 +567,7 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
   for (size_t i = first_leaf; i < nodes.size(); ++i) {
     out_nodes.push_back(nodes[i]);
   }
-  g.set_output(out_nodes);
+  g.output(out_nodes);
 
   // Measure construction time (basic performance check)
   auto start = std::chrono::high_resolution_clock::now();
@@ -643,7 +643,7 @@ TEST_F(GraphTopoFanoutTest, EmptyOutputNodesList) {
   create_linear_graph();
 
   std::vector<std::shared_ptr<dummy_node>> empty_out_nodes;
-  g.set_output(empty_out_nodes);
+  g.output(empty_out_nodes);
 
   dag_store<dummy_node> topo(g, 1);
 
@@ -655,7 +655,7 @@ TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
 
   // Add the same output node multiple times
   std::vector<std::shared_ptr<dummy_node>> duplicate_out_nodes = {nodeC, nodeC, nodeB, nodeC};
-  g.set_output(duplicate_out_nodes);
+  g.output(duplicate_out_nodes);
 
   dag_store<dummy_node> topo(g, 1);
 
@@ -872,7 +872,7 @@ TEST_F(DagStoreGraphNamedTest, MultipleOutputsGraphNamed) {
 
   // Set multiple outputs
   std::vector<std::string> outputs = {"D", "E"};
-  g.set_output(outputs);
+  g.output(outputs);
 
   dag_store<dummy_node> topo(g, 1);
 

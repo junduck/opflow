@@ -253,7 +253,7 @@ TEST_F(GraphNodeNamedTest, SetOutput) {
   graph.add<dummy_node>("node2", 2, "node2");
 
   std::vector<std::string> outputs = {"node1", "node2"};
-  graph.set_output(outputs);
+  graph.output(outputs);
 
   auto output = graph.get_output();
   EXPECT_EQ(output.size(), 2u);

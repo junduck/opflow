@@ -121,27 +121,27 @@ public:
   template <range_of<str_view> R>
   graph_named &add_output(R &&outputs) {
     for (auto const &name : outputs) {
-      output.emplace_back(name);
+      out.emplace_back(name);
     }
     return *this;
   }
 
   template <typename... Ts>
   graph_named &add_output(Ts &&...names) {
-    (output.emplace_back(std::forward<Ts>(names)), ...);
+    (out.emplace_back(std::forward<Ts>(names)), ...);
     return *this;
   }
 
   template <range_of<str_view> R>
-  graph_named &set_output(R &&outputs) {
-    output.clear();
+  graph_named &output(R &&outputs) {
+    out.clear();
     add_output(std::forward<R>(outputs));
     return *this;
   }
 
   template <typename... Ts>
-  graph_named &set_output(Ts &&...names) {
-    output.clear();
+  graph_named &output(Ts &&...names) {
+    out.clear();
     add_output(std::forward<Ts>(names)...);
     return *this;
   }
@@ -271,9 +271,9 @@ public:
     }
 
     // Update output references
-    for (auto &out : output) {
-      if (out == old_name) {
-        out = new_name;
+    for (auto &o : out) {
+      if (o == old_name) {
+        o = new_name;
       }
     }
 
@@ -357,7 +357,7 @@ public:
     predecessor.clear();
     argmap.clear();
     successor.clear();
-    output.clear();
+    out.clear();
     store.clear();
   }
 
@@ -387,7 +387,7 @@ public:
 
   NodeMap const &get_succ() const noexcept { return successor; }
 
-  auto const &get_output() const noexcept { return output; }
+  auto const &get_output() const noexcept { return out; }
 
   node_type get_node(key_type const &name) const {
     auto it = store.find(name);
@@ -474,8 +474,8 @@ public:
       }
     }
 
-    for (auto const &out : output) {
-      if (store.find(out) == store.end()) {
+    for (auto const &o : out) {
+      if (store.find(o) == store.end()) {
         return false; // Inconsistent: output node missing in store
       }
     }
@@ -629,10 +629,10 @@ private:
   }
 
 protected:
-  NodeMap predecessor;          ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  NodeArgsMap argmap;           ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;            ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
-  std::vector<key_type> output; ///< Output nodes
-  NodeStore store;              ///< Store for actual node instances
+  NodeMap predecessor;       ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  NodeArgsMap argmap;        ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  NodeMap successor;         ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  std::vector<key_type> out; ///< Output nodes
+  NodeStore store;           ///< Store for actual node instances
 };
 } // namespace opflow

@@ -23,7 +23,7 @@ protected:
     sum_left = g.add<op::sum>(root | 0, 2);   // 2-period rolling sum
     sum_right = g.add<sum_type>(root | 0, 5); // 5-period rolling sum
     add2 = g.add<add2_type>(sum_left | 0, sum_right | 0);
-    g.set_output(sum_left, sum_right, add2);
+    g.output(sum_left, sum_right, add2);
 
     // Create executor with 3 groups
     num_groups = 3;
@@ -43,7 +43,7 @@ TEST_F(GraphExecFanoutTest, BasicConstructor) {
 }
 
 TEST_F(GraphExecFanoutTest, InitializerListConstructor) {
-  g.set_output(sum_left, sum_right, add2);
+  g.output(sum_left, sum_right, add2);
   auto exec2 = std::make_unique<exec_type>(g, 2);
   EXPECT_EQ(exec2->num_groups(), 2);
   EXPECT_EQ(exec2->num_inputs(), 1);
@@ -169,7 +169,7 @@ TEST_F(GraphExecFanoutTest, InputBufferAPI) {
 TEST_F(GraphExecFanoutTest, TimeBasedWindowing) {
   // Create executor with time-based windows
   auto time_sum = g.add<op::sum<double>>(root | 0, 5.0); // 5-second time window
-  g.set_output(time_sum);
+  g.output(time_sum);
   auto time_exec = std::make_unique<exec_type>(g, 1);
 
   std::vector<double> input = {1.0};
@@ -190,7 +190,7 @@ TEST_F(GraphExecFanoutTest, StressTestMultipleGroups) {
   // Stress test with many groups and data points
   const size_t large_num_groups = 10;
   std::vector<graph_node_type> outputs = {add2};
-  g.set_output(outputs);
+  g.output(outputs);
   auto stress_exec = std::make_unique<exec_type>(g, large_num_groups);
 
   std::vector<double> input = {1.0};
