@@ -52,64 +52,23 @@ public:
 
   // Add
 
-  template <range_of<edge_type> R>
-  void add(node_type const &node, R &&preds) {
-    if (!node)
-      return;
-    ensure_node(node);
-
-    for (auto const &pred : preds) {
-      ensure_node(pred.node);
-      add_edge_impl(node, pred);
-    }
-  }
-
-  template <range_of<node_type> R>
-  void add(node_type const &node, R &&preds) {
-    if (!node)
-      return;
-    ensure_node(node);
-
-    for (auto pred : preds) {
-      ensure_node(pred);
-      add_edge_impl(node, edge_type(pred, 0)); // Add with default port 0
-    };
-  }
-
   template <typename... Ts>
   void add(node_type const &node, Ts &&...preds) {
+    if (!node)
+      return;
+
     std::vector<edge_type> preds_list{};
     preds_list.reserve(sizeof...(preds));
-    (preds_list.emplace_back(std::forward<Ts>(preds)), ...);
-    add(node, preds_list);
+    add_impl(preds_list, node, std::forward<Ts>(preds)...);
   }
 
   // In-place construction
-
-  template <typename U, typename R, typename... Args>
-  node_type add(R &&preds, Args &&...args)
-    requires(range_of<R, node_type> || range_of<R, edge_type>)
-  {
-    node_type node = std::make_shared<U>(std::forward<Args>(args)...);
-    add(node, std::forward<R>(preds));
-    return node;
-  }
 
   template <typename U, typename... Args>
   node_type add(Args &&...preds_and_args) {
     std::vector<edge_type> preds_list{};
     preds_list.reserve(sizeof...(preds_and_args));
     return add_inplace_impl<U>(preds_list, std::forward<Args>(preds_and_args)...);
-  }
-
-  template <template <typename> typename U, typename R, typename... Args>
-  node_type add(R &&preds, Args &&...args)
-    requires(detail::has_data_type<T> && (range_of<R, node_type> || range_of<R, edge_type>))
-  {
-    using UT = U<typename T::data_type>;
-    node_type node = std::make_shared<UT>(std::forward<Args>(args)...);
-    add(node, std::forward<R>(preds));
-    return node;
   }
 
   template <template <typename> typename U, typename... Args>
@@ -453,6 +412,35 @@ private:
     }
   }
 
+  // add
+
+  template <typename... Ts, range_of<edge_type> R>
+  void add_impl(std::vector<edge_type> &preds_list, node_type const &node, R &&preds, Ts &&...args) {
+    preds_list.insert(preds_list.end(), std::ranges::begin(preds), std::ranges::end(preds));
+    add_impl(preds_list, node, std::forward<Ts>(args)...);
+  }
+
+  template <typename... Ts, range_of<node_type> R>
+  void add_impl(std::vector<edge_type> &preds_list, node_type const &node, R &&preds, Ts &&...args) {
+    for (auto const &pred : preds) {
+      preds_list.emplace_back(pred, 0); // Add with default port 0
+    }
+    add_impl(preds_list, node, std::forward<Ts>(args)...);
+  }
+
+  template <typename... Ts>
+  void add_impl(std::vector<edge_type> &preds_list, node_type const &node, Ts &&...preds) {
+    (preds_list.emplace_back(std::forward<Ts>(preds)), ...);
+
+    ensure_node(node);
+    for (auto const &pred : preds_list) {
+      ensure_node(pred.node);
+      add_edge_impl(node, pred);
+    }
+  }
+
+  // add inplace - edge
+
   template <typename U, typename... Ts>
   node_type add_inplace_impl(std::vector<edge_type> &preds_list, edge_type pred, Ts &&...args) {
     preds_list.emplace_back(pred);
@@ -464,6 +452,22 @@ private:
     preds_list.emplace_back(pred, 0); // Add with default port 0
     return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
   }
+
+  template <typename U, range_of<edge_type> R, typename... Ts>
+  node_type add_inplace_impl(std::vector<edge_type> &preds_list, R &&preds, Ts &&...args) {
+    preds_list.insert(preds_list.end(), std::ranges::begin(preds), std::ranges::end(preds));
+    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+  }
+
+  template <typename U, range_of<node_type> R, typename... Ts>
+  node_type add_inplace_impl(std::vector<edge_type> &preds_list, R &&preds, Ts &&...args) {
+    for (auto const &pred : preds) {
+      preds_list.emplace_back(pred, 0); // Add with default port 0
+    }
+    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+  }
+
+  // add inplace - ctor
 
   template <typename U, typename... Ts>
   node_type add_inplace_impl(std::vector<edge_type> &preds_list, Ts &&...args) {
