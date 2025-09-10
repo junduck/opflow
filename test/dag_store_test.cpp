@@ -63,10 +63,10 @@ struct alignas(64) aligned_dummy_node {
   bool operator==(aligned_dummy_node const &other) const { return name == other.name && value == other.value; }
 };
 
-static_assert(dag_node<dummy_node>);
+static_assert(dag_node_base<dummy_node>);
 static_assert(dag_node_ptr<std::shared_ptr<dummy_node>>);
 static_assert(dag_node_ptr<dummy_node const *>);
-static_assert(dag_node<aligned_dummy_node>);
+static_assert(dag_node_base<aligned_dummy_node>);
 
 class GraphTopoFanoutTest : public ::testing::Test {
 protected:

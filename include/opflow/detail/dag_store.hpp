@@ -14,7 +14,7 @@
 #include "utils.hpp"
 
 namespace opflow::detail {
-template <dag_node T, typename Alloc = std::allocator<T>>
+template <dag_node_base T, typename Alloc = std::allocator<T>>
 class dag_store {
   using byte_alloc = rebind_alloc<Alloc, std::byte>;
   std::vector<std::byte, byte_alloc> arena_storage;

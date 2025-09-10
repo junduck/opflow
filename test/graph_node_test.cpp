@@ -28,7 +28,7 @@ struct dummy_node {
   bool operator==(dummy_node const &other) const { return name == other.name && value == other.value; }
 };
 
-static_assert(dag_node<dummy_node>);
+static_assert(dag_node_base<dummy_node>);
 static_assert(dag_node_ptr<std::shared_ptr<dummy_node>>);
 static_assert(dag_node_ptr<dummy_node const *>);
 
