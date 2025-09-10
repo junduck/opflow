@@ -24,16 +24,16 @@ template <typename Time>
 using duration_t = decltype(std::declval<Time>() - std::declval<Time>());
 
 template <typename Time>
-Time min_time() noexcept {
+constexpr Time min_time() noexcept {
   if constexpr (std::is_arithmetic_v<Time>) {
-    return std::numeric_limits<Time>::min();
+    return std::numeric_limits<Time>::lowest();
   } else {
     return Time::min(); // Use min time for non-arithmetic types
   }
 }
 
 template <typename Time>
-Time max_time() noexcept {
+constexpr Time max_time() noexcept {
   if constexpr (std::is_arithmetic_v<Time>) {
     return std::numeric_limits<Time>::max();
   } else {
@@ -94,7 +94,7 @@ template <typename T>
 concept arithmetic = std::is_arithmetic_v<T>;
 
 template <typename T>
-concept dag_node = requires(T const *t) {
+concept dag_node_base = requires(T const *t) {
   typename T::data_type;
   { t->num_inputs() } -> std::convertible_to<size_t>;
   { t->num_outputs() } -> std::convertible_to<size_t>;
@@ -105,14 +105,11 @@ concept dag_node = requires(T const *t) {
 };
 
 template <typename T>
-concept dag_node_ptr = (std::is_pointer_v<T> && dag_node<std::remove_pointer_t<T>>) ||
-                       (detail::smart_ptr<T> && dag_node<typename std::remove_cvref_t<T>::element_type>);
+concept dag_node_ptr = (std::is_pointer_v<T> && dag_node_base<std::remove_pointer_t<T>>) ||
+                       (detail::smart_ptr<T> && dag_node_base<typename std::remove_cvref_t<T>::element_type>);
 
 template <typename T>
-concept dag_node_base = std::is_abstract_v<T> && dag_node<T>;
-
-template <typename T>
-concept dag_node_impl = !std::is_abstract_v<T> && dag_node<T>;
+concept dag_node_impl = !std::is_abstract_v<T> && dag_node_base<T>;
 
 // Utilities
 
@@ -148,10 +145,10 @@ std::string random_string(G &gen, std::string_view prefix = "") {
   return str;
 }
 
-template <dag_node T>
+template <dag_node_base T>
 struct dag_root;
 
-template <dag_node T>
+template <dag_node_base T>
 using dag_root_type = typename dag_root<T>::type;
 
 struct ctor_args_tag {};

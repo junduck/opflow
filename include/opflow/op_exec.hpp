@@ -55,11 +55,11 @@ public:
     init_window();
   }
 
-  void on_data(data_type timestamp, data_type const *input_data, size_t igrp) {
+  void on_data(data_type timestamp, data_type const *in, size_t igrp) {
     auto [_, record] = history[igrp].push(timestamp);
 
     auto nodes = dag[igrp];
-    nodes[0]->on_data(input_data);
+    nodes[0]->on_data(in);
     nodes[0]->value(out_ptr(record, 0));
 
     commit_input_buffer(igrp);
