@@ -77,6 +77,10 @@ using chrono_h_conv = chrono_conv<Data, std::chrono::hours::period>;
 
 // Concepts
 
+// For disambiguation of string literals -> range_of<decltype("test"), size_t>
+template <typename R>
+concept range_idx = std::ranges::forward_range<R> && std::unsigned_integral<std::ranges::range_value_t<R>>;
+
 template <typename R, typename U>
 concept range_of = std::ranges::forward_range<R> && std::convertible_to<std::ranges::range_value_t<R>, U>;
 

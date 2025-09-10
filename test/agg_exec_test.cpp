@@ -22,9 +22,10 @@ protected:
 
   void SetUp() override {
     // Basic setup with OHLC and count for most tests
-    g.window<win::tumbling>(3.0); // 3-unit tumbling window
-    g.add<agg::ohlc>({0});        // OHLC on column 0
-    g.add<agg::count>({});        // Count aggregation
+    g.input("val");
+    g.window<win::tumbling>("val", 3.0); // 3-unit tumbling window
+    g.add<agg::ohlc>("val");             // OHLC on column "val"
+    g.add<agg::count>();                 // Count aggregation
 
     size_t num_groups = 2;
     exec = std::make_unique<exec_type>(g, 1, num_groups);
@@ -133,10 +134,11 @@ TEST_F(AggExecTest, MultipleGroups) {
 TEST_F(AggExecTest, MultipleAggregations) {
   // Create a more complex graph with multiple aggregations
   graph_agg<op_type> complex_graph;
+  complex_graph.input("col0", "col1");
   complex_graph.window<win::counter>(2);
-  complex_graph.add<agg::sum>({0, 1}, 2); // Sum of columns 0 and 1
-  complex_graph.add<agg::avg>({0}, 1);    // Average of column 0
-  complex_graph.add<agg::count>({});      // Count
+  complex_graph.add<agg::sum>("col0", "col1", 2); // Sum of columns 0 and 1
+  complex_graph.add<agg::avg>("col0", 1);         // Average of column 0
+  complex_graph.add<agg::count>();                // Count
 
   auto complex_exec = std::make_unique<exec_type>(complex_graph, 2, 1);
 
@@ -179,8 +181,9 @@ TEST_F(AggExecTest, MultipleAggregations) {
 TEST_F(AggExecTest, CounterWindow) {
   // Test counter window that emits every N events
   graph_agg<op_type> counter_graph;
+  counter_graph.input("val");
   counter_graph.window<win::counter>(3); // Emit every 3 events
-  counter_graph.add<agg::sum>({0}, 1);
+  counter_graph.add<agg::sum>("val", 1);
 
   auto counter_exec = std::make_unique<exec_type>(counter_graph, 1, 1);
 
@@ -241,8 +244,9 @@ TEST_F(AggExecTest, SingleDataPoint) {
 TEST_F(AggExecTest, MultiColumnInput) {
   // Test with multiple input columns using explicit graph construction
   graph_agg<op_type> multi_graph;
+  multi_graph.input("col0", "col1", "col2");
   multi_graph.window<win::counter>(3);
-  multi_graph.add<agg::sum>({0, 1, 2}, 3); // Sum over 3 columns
+  multi_graph.add<agg::sum>("col0", "col1", "col2", 3); // Sum over 3 columns
 
   auto multi_exec = std::make_unique<exec_type>(multi_graph, 3, 1);
 
@@ -267,9 +271,10 @@ TEST_F(AggExecTest, MultiColumnInput) {
 TEST_F(AggExecTest, LargeDataset) {
   // Test with larger dataset to verify performance and correctness
   graph_agg<op_type> large_graph;
+  large_graph.input("val");
   large_graph.window<win::counter>(100); // Emit every 100 events
-  large_graph.add<agg::sum>({0}, 1);
-  large_graph.add<agg::avg>({0}, 1);
+  large_graph.add<agg::sum>("val", 1);
+  large_graph.add<agg::avg>("val", 1);
 
   auto large_exec = std::make_unique<exec_type>(large_graph, 1, 1);
 
@@ -306,8 +311,9 @@ TEST_F(AggExecTest, QueryMethods) {
 
   // Test with different configuration
   graph_agg<op_type> simple_graph;
+  simple_graph.input("col0", "col1", "col2");
   simple_graph.window<win::tumbling>(3.0);
-  simple_graph.add<agg::sum>({0, 1, 2}, 3);
+  simple_graph.add<agg::sum>("col0", "col1", "col2", 3);
   auto simple_exec = std::make_unique<exec_type>(simple_graph, 3, 5);
 
   EXPECT_EQ(simple_exec->num_inputs(), 3);

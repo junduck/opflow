@@ -10,90 +10,65 @@ namespace opflow {
 
 // graph to define an aggregation. tho not truly a graph, it is designed to have similar interface to graph_node
 
-template <dag_node T>
+template <dag_node_base T>
 class graph_agg {
   using data_type = typename T::data_type;
-  using Hash = detail::ptr_hash<T>;
-  using Equal = std::equal_to<>;
 
 public:
   using node_type = std::shared_ptr<T>;
   using window_type = std::shared_ptr<window_base<data_type>>;
 
+  // Define input column names
+
+  template <range_of<std::string_view> R>
+  graph_agg &input(R &&col_names) {
+    size_t index = 0;
+    for (auto const &name : col_names) {
+      col_index.emplace(name, index++);
+    }
+    return *this;
+  }
+
+  template <typename... Ts>
+  graph_agg &input(Ts &&...col_names) {
+    size_t index = 0;
+    (col_index.emplace(std::string(std::forward<Ts>(col_names)), index++), ...);
+    return *this;
+  }
+
+  // Define window
+
   template <typename Win, typename... Args>
-  graph_agg &window(Args &&...args) {
-    win = std::make_shared<Win>(std::forward<Args>(args)...);
+  graph_agg &window(Args &&...cols_and_args) {
     win_cols.clear();
+    add_window_impl<Win>(std::forward<Args>(cols_and_args)...);
     return *this;
   }
 
   template <template <typename> typename Win, typename... Args>
-  graph_agg &window(Args &&...args) {
-    return window<Win<data_type>>(std::forward<Args>(args)...);
-  }
-
-  template <range_of<size_t> R, typename Win, typename... Args>
-  graph_agg &window(R &&colidx, Args &&...args) {
-    win = std::make_shared<Win>(std::forward<Args>(args)...);
-    win_cols.assign(std::ranges::begin(colidx), std::ranges::end(colidx));
+  graph_agg &window(Args &&...cols_and_args) {
+    win_cols.clear();
+    add_window_impl<Win<data_type>>(std::forward<Args>(cols_and_args)...);
     return *this;
   }
 
-  template <range_of<size_t> R, template <typename> typename Win, typename... Args>
-  graph_agg &window(R &&colidx, Args &&...args) {
-    return window<Win<data_type>>(std::forward<R>(colidx), std::forward<Args>(args)...);
-  }
+  // Add aggregation
 
-  template <typename Win, typename... Args>
-  graph_agg &window(std::initializer_list<size_t> colidx, Args &&...args) {
-    win = std::make_shared<Win>(std::forward<Args>(args)...);
-    win_cols.assign(colidx.begin(), colidx.end());
+  template <typename Agg, typename... Args>
+  graph_agg &add(Args &&...cols_and_args) {
+    std::vector<size_t> selected{};
+    add_agg_impl<Agg>(selected, std::forward<Args>(cols_and_args)...);
     return *this;
-  }
-
-  template <template <typename> typename Win, typename... Args>
-  graph_agg &window(std::initializer_list<size_t> colidx, Args &&...args) {
-    return window<Win<data_type>>(colidx, std::forward<Args>(args)...);
-  }
-
-  template <range_of<size_t> R>
-  graph_agg &add(node_type agg, R &&colidx) {
-    aggs.push_back(agg);
-    cols.push_back(std::forward<R>(colidx));
-    return *this;
-  }
-
-  graph_agg &add(node_type agg, std::initializer_list<size_t> colidx) {
-    aggs.push_back(agg);
-    cols.push_back(colidx);
-    return *this;
-  }
-
-  template <range_of<size_t> R, typename AggType, typename... Args>
-  graph_agg &add(R &&colidx, Args &&...args) {
-    auto agg = std::make_shared<AggType>(std::forward<Args>(args)...);
-    aggs.push_back(agg);
-    cols.push_back(std::forward<R>(colidx));
-    return *this;
-  }
-
-  template <typename AggType, typename... Args>
-  graph_agg &add(std::initializer_list<size_t> colidx, Args &&...args) {
-    auto agg = std::make_shared<AggType>(std::forward<Args>(args)...);
-    aggs.push_back(agg);
-    cols.push_back(colidx);
-    return *this;
-  }
-
-  template <range_of<size_t> R, template <typename> typename Agg, typename... Args>
-  graph_agg &add(R &&colidx, Args &&...args) {
-    return add<Agg<data_type>>(std::forward<R>(colidx), std::forward<Args>(args)...);
   }
 
   template <template <typename> typename Agg, typename... Args>
-  graph_agg &add(std::initializer_list<size_t> colidx, Args &&...args) {
-    return add<Agg<data_type>>(colidx, std::forward<Args>(args)...);
+  graph_agg &add(Args &&...args) {
+    std::vector<size_t> selected{};
+    add_agg_impl<Agg<data_type>>(selected, std::forward<Args>(args)...);
+    return *this;
   }
+
+  // Utilities
 
   size_t size() const noexcept { return aggs.size(); }
 
@@ -111,14 +86,106 @@ public:
 
   auto get_nodes() const noexcept { return std::span(aggs); }
 
-  auto input_column_of(size_t id) const noexcept { return cols[id]; }
+  auto input_column(size_t id) const noexcept { return cols[id]; }
 
   auto const &get_input_column() const noexcept { return cols; }
 
 private:
+  // add window - cols
+
+  template <typename W, detail::string_like T0, typename... Ts>
+  void add_window_impl(T0 &&col, Ts &&...args) {
+    auto name = std::string(std::forward<T0>(col));
+    auto it = col_index.find(name);
+    if (it == col_index.end()) {
+      throw std::invalid_argument("Column name '" + name + "' not found in input schema.");
+    }
+    win_cols.push_back(it->second);
+    add_window_impl<W>(std::forward<Ts>(args)...);
+  }
+
+  template <typename W, range_idx R, typename... Ts>
+  void add_window_impl(R &&colidx, Ts &&...args) {
+    win_cols.insert(win_cols.end(), std::ranges::begin(colidx), std::ranges::end(colidx));
+    add_window_impl<W>(std::forward<Ts>(args)...);
+  }
+
+  template <typename W, range_of<std::string_view> R, typename... Ts>
+  void add_window_impl(R &&colnames, Ts &&...args) {
+    for (auto const &name : colnames) {
+      auto it = col_index.find(name);
+      if (it == col_index.end()) {
+        throw std::invalid_argument("Column name '" + std::string(name) + "' not found in input schema.");
+      }
+      win_cols.push_back(it->second);
+    }
+    add_window_impl<W>(std::forward<Ts>(args)...);
+  }
+
+  // add window - ctor
+
+  template <typename W, typename... Ts>
+  void add_window_impl(Ts &&...args) {
+    win = std::make_shared<W>(std::forward<Ts>(args)...);
+  }
+
+  template <typename W, typename... Ts>
+  void add_window_impl(ctor_args_tag, Ts &&...args) {
+    win = std::make_shared<W>(std::forward<Ts>(args)...);
+  }
+
+  // add agg - cols
+
+  template <typename A, detail::string_like T0, typename... Ts>
+  void add_agg_impl(std::vector<size_t> &selected, T0 &&col, Ts &&...args) {
+    auto name = std::string(std::forward<T0>(col));
+    auto it = col_index.find(name);
+    if (it == col_index.end()) {
+      throw std::invalid_argument("Column name '" + name + "' not found in input schema.");
+    }
+    selected.push_back(it->second);
+    add_agg_impl<A>(selected, std::forward<Ts>(args)...);
+  }
+
+  template <typename A, range_idx R, typename... Ts>
+  void add_agg_impl(std::vector<size_t> &selected, R &&colidx, Ts &&...args) {
+    selected.insert(selected.end(), std::ranges::begin(colidx), std::ranges::end(colidx));
+    add_agg_impl<A>(selected, std::forward<Ts>(args)...);
+  }
+
+  template <typename A, range_of<std::string_view> R, typename... Ts>
+  void add_agg_impl(std::vector<size_t> &selected, R &&colnames, Ts &&...args) {
+    for (auto const &name : colnames) {
+      auto it = col_index.find(name);
+      if (it == col_index.end()) {
+        throw std::invalid_argument("Column name '" + std::string(name) + "' notfound in input schema.");
+      }
+      selected.push_back(it->second);
+    }
+    add_agg_impl<A>(selected, std::forward<Ts>(args)...);
+  }
+
+  // add agg - ctor
+
+  template <typename A, typename... Ts>
+  void add_agg_impl(std::vector<size_t> &selected, Ts &&...args) {
+    auto agg = std::make_shared<A>(std::forward<Ts>(args)...);
+    aggs.push_back(agg);
+    cols.push_back(std::move(selected));
+  }
+
+  template <typename A, typename... Ts>
+  void add_agg_impl(std::vector<size_t> &selected, ctor_args_tag, Ts &&...args) {
+    auto agg = std::make_shared<A>(std::forward<Ts>(args)...);
+    aggs.push_back(agg);
+    cols.push_back(std::move(selected));
+  }
+
   window_type win;
   std::vector<size_t> win_cols;
   std::vector<node_type> aggs;
   detail::flat_multivect<size_t> cols;
+
+  std::unordered_map<std::string, size_t, detail::str_hash, std::equal_to<>> col_index;
 };
 } // namespace opflow
