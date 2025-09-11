@@ -8,6 +8,7 @@
 #include "opflow/agg/ohlc.hpp"
 #include "opflow/agg/sum.hpp"
 #include "opflow/agg_exec.hpp"
+#include "opflow/graph_agg.hpp"
 #include "opflow/win/counter.hpp"
 #include "opflow/win/tumbling.hpp"
 
@@ -17,15 +18,15 @@ using namespace opflow;
 class AggExecTest : public ::testing::Test {
 protected:
   using op_type = agg_base<double>;
-  using exec_type = agg_exec<op_type>;
+  using exec_type = agg_exec<double>;
   using graph_node_type = std::shared_ptr<op_type>;
 
   void SetUp() override {
     // Basic setup with OHLC and count for most tests
-    g.input("val");
-    g.window<win::tumbling>("val", 3.0); // 3-unit tumbling window
-    g.add<agg::ohlc>("val");             // OHLC on column "val"
-    g.add<agg::count>();                 // Count aggregation
+    g.input("val")
+        .window<win::tumbling>("val", 3.0) // 3-unit tumbling window
+        .add<agg::ohlc>("val")             // OHLC on column "val"
+        .add<agg::count>();                // Count aggregation
 
     size_t num_groups = 2;
     exec = std::make_unique<exec_type>(g, 1, num_groups);

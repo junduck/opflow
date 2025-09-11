@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "opflow/common.hpp"
-#include "opflow/graph_agg.hpp"
 #include "opflow/window_base.hpp"
 
 #include "fixed_buffer_resource.hpp"
