@@ -19,6 +19,7 @@ class op_exec {
 public:
   using data_type = T;
   using op_type = op_base<data_type>;
+  using root_type = op_root<data_type>;
   using graph_node_type = std::shared_ptr<op_type>;
 
   template <typename G>
@@ -59,8 +60,9 @@ public:
     auto [_, record] = history[igrp].push(timestamp);
 
     auto nodes = dag[igrp];
-    nodes[0]->on_data(in);
-    nodes[0]->value(out_ptr(record, 0));
+    root_type *root = static_cast<root_type *>(nodes[0].get());
+    root->on_data(in);
+    root->value(out_ptr(record, 0));
 
     commit_input_buffer(igrp);
   }
@@ -82,8 +84,8 @@ public:
 
   void commit_input_buffer(size_t igrp) noexcept {
     auto [timestamp, record] = history[igrp].back();
-    auto nodes = dag[igrp];
 
+    auto nodes = dag[igrp];
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
       nodes[i]->on_data(in_ptr(record, i, igrp));
@@ -139,7 +141,7 @@ private:
   void validate() {
     auto nodes = dag[0];
     // validate root
-    if (!dynamic_cast<op_root<data_type> *>(nodes[0].get())) {
+    if (!dynamic_cast<root_type *>(nodes[0].get())) {
       throw std::runtime_error("Wrong root node type in graph.");
     }
     for (size_t i = 1; i < dag.size(); ++i) {

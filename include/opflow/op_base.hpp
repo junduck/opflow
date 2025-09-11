@@ -189,10 +189,10 @@ struct op_root : op_base<T> {
   using base = op_base<T>;
   using typename base::data_type;
 
-  data_type const *mem;
   size_t const input_size;
+  data_type *mem;
 
-  explicit op_root(size_t n) : mem(nullptr), input_size(n) {}
+  explicit op_root(size_t n) : input_size(n), mem(nullptr) {}
 
   void on_data(data_type const *in) noexcept override { mem = in; }
   void value(data_type *out) const noexcept override {

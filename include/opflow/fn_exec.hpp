@@ -14,6 +14,7 @@ class fn_exec {
 public:
   using data_type = T;
   using fn_type = fn_base<data_type>;
+  using root_type = fn_root<data_type>;
   using graph_node_type = std::shared_ptr<fn_type>;
 
   template <typename G>
@@ -32,7 +33,8 @@ public:
     auto record = history[igrp];
 
     auto nodes = dag[igrp];
-    nodes[0]->on_data(in, out_ptr(record, 0));
+    root_type *root = static_cast<root_type *>(nodes[0].get());
+    root->on_data(in, out_ptr(record, 0));
 
     commit_input_buffer(igrp);
   }
@@ -54,8 +56,8 @@ public:
 
   void commit_input_buffer(size_t igrp) noexcept {
     auto record = history[igrp];
-    auto nodes = dag[igrp];
 
+    auto nodes = dag[igrp];
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
       nodes[i]->on_data(in_ptr(record, i, igrp), out_ptr(record, i));
@@ -93,7 +95,7 @@ private:
   void validate() const {
     auto nodes = dag[0];
     // validate root
-    if (!dynamic_cast<fn_root<data_type> *>(nodes[0].get())) {
+    if (!dynamic_cast<root_type *>(nodes[0].get())) {
       throw std::runtime_error("Wrong root node type in graph.");
     }
     for (size_t i = 1; i < dag.size(); ++i) {

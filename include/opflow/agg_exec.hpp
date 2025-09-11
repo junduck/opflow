@@ -1,8 +1,7 @@
 #pragma once
 
-#include "common.hpp"
+#include "agg_base.hpp"
 #include "def.hpp"
-#include "graph_agg.hpp"
 #include "window_base.hpp"
 
 #include "detail/agg_store.hpp"
@@ -32,16 +31,17 @@ namespace opflow {
  * 3. Feed data using on_data() with group index
  * 4. Extract results using value() with group index
  *
- * @tparam T The DAG node type (must satisfy dag_node concept)
+ * @tparam T Data type
  * @tparam Alloc Allocator type for memory management
  */
-template <dag_node T, typename Alloc = std::allocator<T>>
+template <typename T, typename Alloc = std::allocator<T>>
 class agg_exec {
 public:
-  using data_type = typename T::data_type;
+  using data_type = T;
+  using agg_type = agg_base<data_type>;
 
-  agg_exec(graph_agg<T> const &graph, size_t n_input, size_t n_groups, size_t pre_alloc_rows = 256,
-           Alloc alloc = Alloc{})
+  template <typename G>
+  agg_exec(G const &graph, size_t n_input, size_t n_groups, size_t pre_alloc_rows = 256, Alloc alloc = Alloc{})
       : n_grp(n_groups), aggr(graph, n_groups, alloc), history(aggr.record_size, n_grp, alloc), dataframes(),
         curr_args(0, n_groups, alloc), win_args(0, n_groups, alloc) {
     // Initialize data frames for each group
@@ -110,8 +110,8 @@ private:
   void append_row(data_type const *in, size_t igrp) { dataframes[igrp].append(in); }
 
   data_type run_aggr(spec_type const &spec, size_t igrp) {
-    auto nodes = aggr[igrp];
 
+    auto nodes = aggr[igrp];
     for (size_t i = 0; i < nodes.size(); ++i) {
       nodes[i]->on_data(spec.size, in_ptr(i, spec.offset, igrp), out_ptr(i, igrp));
     }
@@ -147,7 +147,7 @@ private:
   }
 
   size_t n_grp;
-  detail::agg_store<T, Alloc> aggr;
+  detail::agg_store<agg_type, Alloc> aggr;
 
   detail::vector_store<data_type, Alloc> history;
 
