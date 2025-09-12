@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace opflow {
 
@@ -11,10 +12,10 @@ namespace opflow {
  */
 template <typename Time>
 struct window_spec {
-  Time timestamp; ///< Timestamp associated with this window
-  size_t offset;  ///< Offset of the window in the input data
-  size_t size;    ///< Size of the window in data points
-  size_t evict;   ///< Number of data points to evict from queue after window aggregation
+  Time timestamp;  ///< Timestamp associated with this window
+  uint32_t offset; ///< Offset of the window in the input data
+  uint32_t size;   ///< Size of the window in data points
+  uint32_t evict;  ///< Number of data points to evict from queue after window aggregation
 };
 
 /**

@@ -15,9 +15,6 @@ struct offset_type {
   friend bool operator==(offset_type const &lhs, offset_type const &rhs) noexcept = default;
 };
 
-using u32 = uint32_t;
-using offset_u32 = offset_type<u32>;
-
 template <typename... Ts>
 struct overload : Ts... {
   using Ts::operator()...;

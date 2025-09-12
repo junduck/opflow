@@ -190,7 +190,7 @@ struct op_root : op_base<T> {
   using typename base::data_type;
 
   size_t const input_size;
-  data_type *mem;
+  data_type const *mem;
 
   explicit op_root(size_t n) : input_size(n), mem(nullptr) {}
 
