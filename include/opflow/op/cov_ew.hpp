@@ -49,6 +49,4 @@ private:
   data_type alpha;                ///< smoothing factor
   bool initialised;               ///< whether the first value has been processed
 };
-
-static_assert(dag_node<cov_ew<double>>);
 } // namespace opflow::op

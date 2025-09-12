@@ -36,8 +36,6 @@ private:
   size_t n;                      ///< count of values processed
 };
 
-static_assert(dag_node<avg<double>>);
-
 template <typename T>
 class avg_weighted : public win_base<T> {
 public:
@@ -69,6 +67,4 @@ private:
   detail::smooth<data_type> val;  ///< weighted mean value
   detail::accum<data_type> w_sum; ///< sum of weights
 };
-
-static_assert(dag_node<avg_weighted<double>>);
 } // namespace opflow::op

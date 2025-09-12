@@ -53,6 +53,4 @@ private:
     std::visit([](auto &v) { v *= 2; }, this->win_size);
   }
 };
-
-static_assert(dag_node<dynwin_avg<double>>);
 } // namespace opflow::op

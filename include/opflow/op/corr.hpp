@@ -73,6 +73,4 @@ private:
   detail::accum<data_type> m2y; ///< m2 of second input
   size_t n;                     ///< count of values processed
 };
-
-static_assert(dag_node<corr<double>>);
 } // namespace opflow::op

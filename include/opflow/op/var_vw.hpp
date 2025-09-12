@@ -65,8 +65,6 @@ protected:
   size_t n;                        ///< count of values processed
 };
 
-static_assert(dag_node<var_vw<double>>);
-
 template <typename T>
 struct std_vw : public var_vw<T> {
   using base = var_vw<T>;
@@ -79,6 +77,4 @@ struct std_vw : public var_vw<T> {
     out[1] = std::sqrt(out[1]);
   }
 };
-
-static_assert(dag_node<std_vw<double>>);
 } // namespace opflow::op

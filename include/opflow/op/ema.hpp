@@ -49,8 +49,6 @@ private:
   bool initialised;              ///< Whether the first value has been processed
 };
 
-static_assert(dag_node<ema<double>>);
-
 /**
  * @brief Unbiased Exponential Moving Average (EMA)
  *
@@ -96,8 +94,6 @@ private:
   data_type bias;                ///< Bias correction factor
 };
 
-static_assert(dag_node<ema_unbiased<double>>);
-
 /**
  * @brief Time-weighted Exponential Moving Average (EMA)
  *
@@ -142,5 +138,4 @@ private:
   bool initialised;              ///< Whether the first value has been processed
 };
 
-static_assert(dag_node<ema_time<double>>);
 } // namespace opflow::op

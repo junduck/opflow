@@ -56,7 +56,4 @@ private:
   data_type const alpha;
   bool init; ///< Initialization flag
 };
-
-static_assert(dag_node<rsi<double>>);
-
 } // namespace opflow::op

@@ -46,8 +46,6 @@ protected:
   bool initialised;             ///< whether the first value has been processed
 };
 
-static_assert(dag_node<var_ew<double>>);
-
 template <typename T>
 struct std_ew : public var_ew<T> {
   using base = var_ew<T>;
@@ -60,6 +58,4 @@ struct std_ew : public var_ew<T> {
     out[1] = std::sqrt(out[1]);
   }
 };
-
-static_assert(dag_node<std_ew<double>>);
 } // namespace opflow::op

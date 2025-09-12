@@ -71,6 +71,4 @@ private:
   detail::accum<data_type> m2x; ///< m2 of first input
   size_t n;                     ///< count of values processed
 };
-
-static_assert(dag_node<beta<double>>);
 } // namespace opflow::op

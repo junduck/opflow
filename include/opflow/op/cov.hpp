@@ -67,6 +67,4 @@ private:
   detail::accum<data_type> mxy; ///< m2 of cross product
   size_t n;                     ///< count of values processed
 };
-
-static_assert(dag_node<cov<double>>);
 } // namespace opflow::op

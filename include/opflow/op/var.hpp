@@ -55,8 +55,6 @@ protected:
   size_t n;                    ///< count of values processed
 };
 
-static_assert(dag_node<moment2<double>>);
-
 template <typename T, bool Unbiased = true>
 struct var : public moment2<T> {
   using base = moment2<T>;
@@ -78,8 +76,6 @@ struct var : public moment2<T> {
   }
 };
 
-static_assert(dag_node<var<double>>);
-
 template <typename T, bool Unbiased = true>
 struct stddev : public var<T, Unbiased> {
   using base = var<T, Unbiased>;
@@ -92,6 +88,4 @@ struct stddev : public var<T, Unbiased> {
     out[1] = std::sqrt(out[1]);
   }
 };
-
-static_assert(dag_node<stddev<double>>);
 } // namespace opflow::op

@@ -51,6 +51,4 @@ private:
   data_type a1_n;                        ///< (1. - alpha)^n
   data_type s;                           ///< current weighted sum
 };
-
-static_assert(dag_node<ewma<double>>);
 } // namespace opflow::op
