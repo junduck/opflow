@@ -41,13 +41,14 @@ public:
   using typename base::spec_type;
 
   explicit tumbling(data_type window_size) noexcept
-      : window_size(window_size), next_tick(max_time<data_type>()), count(), emitting() {}
+      : window_size(window_size), next_tick(), count(), emitting(), init() {}
 
   bool on_data(data_type tick, data_type const *) noexcept override {
 
-    // Case 1: Initialization state - next_tick is max_time<data_type>()
-    if (next_tick == max_time<data_type>()) {
+    // Case 1: Initialization state
+    if (!init) {
       next_tick = aligned_next_window_begin(tick);
+      init = true;
     }
 
     // append data to window
@@ -98,6 +99,7 @@ private:
   data_type next_tick;         ///< Next tick time point for the tumbling window
   size_t count;                ///< Current number of elements pushed to window
   spec_type emitting;          ///< Window specification to emit
+  bool init;
 
   data_type aligned_next_window_begin(data_type tick) const noexcept {
     if constexpr (std::integral<data_type>) {
