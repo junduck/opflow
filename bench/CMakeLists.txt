@@ -27,3 +27,7 @@ target_link_libraries(bench_vtbl PRIVATE benchmark::benchmark opflow::headers)
 
 add_executable(bench_rolling_min rolling_min.cpp)
 target_link_libraries(bench_rolling_min PRIVATE benchmark::benchmark opflow::headers)
+
+# agg model benchmark
+add_executable(bench_agg_model agg_model.cpp)
+target_link_libraries(bench_agg_model PRIVATE benchmark::benchmark )
