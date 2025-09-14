@@ -140,7 +140,7 @@ static void BM_OnlineModel(benchmark::State &state) {
     }
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(TOTAL_DATA_POINTS * state.iterations()));
+  state.SetItemsProcessed(static_cast<int64_t>(TOTAL_DATA_POINTS * static_cast<size_t>(state.iterations())));
 }
 
 // Bulk model benchmark
@@ -167,7 +167,7 @@ static void BM_BulkModel(benchmark::State &state) {
     }
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(TOTAL_DATA_POINTS * state.iterations()));
+  state.SetItemsProcessed(static_cast<int64_t>(TOTAL_DATA_POINTS * static_cast<size_t>(state.iterations())));
 }
 
 // Register benchmarks
