@@ -14,7 +14,7 @@ public:
   using typename base::data_type;
   using typename base::spec_type;
 
-  explicit counter(size_t window_size) noexcept : window_size(window_size), time(), count() {}
+  explicit counter(u32 window_size) noexcept : window_size(window_size), count(), time() {}
 
   bool on_data(data_type ts, data_type const *) noexcept override {
     time = ts;
@@ -32,8 +32,8 @@ public:
   OPFLOW_CLONEABLE(counter);
 
 private:
-  size_t const window_size;
+  u32 const window_size;
+  u32 count;
   data_type time;
-  size_t count;
 };
 } // namespace opflow::win

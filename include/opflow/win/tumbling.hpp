@@ -97,7 +97,7 @@ public:
 private:
   data_type const window_size; ///< Size of the tumbling window
   data_type next_tick;         ///< Next tick time point for the tumbling window
-  size_t count;                ///< Current number of elements pushed to window
+  u32 count;                   ///< Current number of elements pushed to window
   spec_type emitting;          ///< Window specification to emit
   bool init;
 
