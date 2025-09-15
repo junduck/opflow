@@ -2,13 +2,13 @@
 
 #include "../common.hpp"
 #include "../def.hpp"
-#include "../window_base.hpp"
+#include "../win_base.hpp"
 
 namespace opflow::win {
 // Simple event counter tumbling window
 template <arithmetic T>
-class counter : public window_base<T> {
-  using base = window_base<T>;
+class counter : public win_base<T> {
+  using base = win_base<T>;
 
 public:
   using typename base::data_type;
