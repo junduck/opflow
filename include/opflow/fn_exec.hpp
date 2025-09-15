@@ -95,7 +95,7 @@ private:
   void validate() const {
     auto nodes = dag[0];
     // validate root
-    if (!dynamic_cast<root_type *>(nodes[0].get())) {
+    if (typeid(*nodes[0]) != typeid(root_type)) {
       throw std::runtime_error("Wrong root node type in graph.");
     }
     for (size_t i = 1; i < dag.size(); ++i) {
