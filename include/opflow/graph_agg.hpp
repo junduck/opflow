@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common.hpp"
-#include "window_base.hpp"
+#include "win_base.hpp"
 
 #include "detail/flat_multivect.hpp"
 #include "detail/utils.hpp"
@@ -16,7 +16,7 @@ class graph_agg {
 
 public:
   using node_type = std::shared_ptr<T>;
-  using window_type = std::shared_ptr<window_base<data_type>>;
+  using win_type = std::shared_ptr<win_base<data_type>>;
 
   // Define input column names
 
@@ -179,7 +179,7 @@ private:
     cols.push_back(std::move(selected));
   }
 
-  window_type win;
+  win_type win;
   std::vector<size_t> win_cols;
   std::vector<node_type> aggs;
   detail::flat_multivect<size_t> cols;

@@ -13,9 +13,9 @@ enum class fill_policy {
 };
 
 template <typename T, fill_policy Policy>
-class lag : public win_base<T> {
+class lag : public simple_rollop<T> {
 public:
-  using base = win_base<T>;
+  using base = simple_rollop<T>;
   using typename base::data_type;
   using typename base::win_type;
 

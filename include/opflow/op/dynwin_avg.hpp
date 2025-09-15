@@ -6,9 +6,9 @@
 namespace opflow::op {
 // This is a toy operator that demonstrate dynamic windowing
 template <typename T>
-class dynwin_avg : public win_base<T> {
+class dynwin_avg : public simple_rollop<T> {
 public:
-  using base = win_base<T>;
+  using base = simple_rollop<T>;
   using typename base::data_type;
 
   explicit dynwin_avg(size_t win_event, data_type thres) noexcept : base(win_event), thres(thres) {}

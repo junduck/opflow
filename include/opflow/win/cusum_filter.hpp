@@ -2,7 +2,7 @@
 
 #include "../common.hpp"
 #include "../def.hpp"
-#include "../window_base.hpp"
+#include "../win_base.hpp"
 
 namespace opflow::win {
 /**
@@ -19,8 +19,8 @@ namespace opflow::win {
  * @ref López de Prado, M. (2018). Advances in Financial Machine Learning
  */
 template <arithmetic T>
-class cusum_filter : public window_base<T> {
-  using base = window_base<T>;
+class cusum_filter : public win_base<T> {
+  using base = win_base<T>;
 
 public:
   using typename base::data_type;

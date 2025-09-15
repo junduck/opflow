@@ -9,7 +9,7 @@
 #include "detail/utils.hpp"
 
 namespace opflow {
-enum class win_type {
+enum class win_mode {
   event, ///< Event-based window
   time,  ///< Time-based window
 };
@@ -36,7 +36,7 @@ constexpr inline time_window_tag time_window{};
  * - Execution engine calls is_cumulative() once on init to determine if the operator is cumulative.
  * - If operator is cumulative, on_evict() won't be called. e.g. EMA, CMA
  * - If operator is non-cumulative
- *    - Execution engine calls window_type() once on init to determine the window type.
+ *    - Execution engine calls window_mode() once on init to determine the window type.
  *    - Execution engine calls is_dynamic() once on init to determine if the operator has dynamic windowing.
  *        - static window: engine calls window_size() once on init to determine the window size.
  *        - dynamic window: engine calls window_size() after every on_data() to determine the window size.
@@ -61,7 +61,7 @@ struct op_base {
   virtual bool is_cumulative() const noexcept { return true; }
   virtual bool is_dynamic() const noexcept { return false; }
 
-  virtual win_type window_type() const noexcept { return win_type::event; }
+  virtual win_mode window_mode() const noexcept { return win_mode::event; }
   virtual size_t window_size(event_window_tag) const noexcept { return 0; }
   virtual data_type window_size(time_window_tag) const noexcept { return data_type{}; }
 
@@ -72,90 +72,16 @@ struct op_base {
   virtual ~op_base() noexcept = default;
 };
 
-/**
- * @brief Simple windowed operator base class, strongly typed win_type
- *
- * The default implementation:
- * - Takes a single constructor argument for the window size.
- * - is_dynamic() returns false, derived class should override it if needed.
- * - is_cumulative() returns true if the window size is zero.
- * - window_size() returns this->win_event or this->win_time depending on the window type.
- *
- * @tparam T data type
- * @tparam WIN window type
- */
-template <typename T, win_type WIN>
-class win_typed_base : public op_base<T> {
-public:
-  using base = op_base<T>;
-  using typename base::data_type;
-
-  explicit win_typed_base(size_t win_event) noexcept
-    requires(WIN == win_type::event)
-      : win_event(win_event) {}
-
-  explicit win_typed_base(data_type win_time) noexcept
-    requires(WIN == win_type::time)
-      : win_time(win_time) {}
-
-  bool is_cumulative() const noexcept override {
-    if constexpr (WIN == win_type::event) {
-      return win_event == 0;
-    } else {
-      return win_time == data_type{};
-    }
-  }
-
-  win_type window_type() const noexcept override { return WIN; }
-
-  size_t window_size(event_window_tag) const noexcept override {
-    if constexpr (WIN == win_type::event) {
-      return win_event;
-    } else {
-      assert(false && "[BUG] Graph executor calls window_size(event_window_tag) on time-based window op.");
-      // std::unreachable();
-      return {};
-    }
-  }
-
-  data_type window_size(time_window_tag) const noexcept override {
-    if constexpr (WIN == win_type::time) {
-      return win_time;
-    } else {
-      assert(false && "[BUG] Graph executor calls window_size(time_window_tag) on event-based window op.");
-      // std::unreachable();
-      return {};
-    }
-  }
-
-protected:
-  union {
-    size_t win_event;
-    data_type win_time;
-  };
-};
-
-/**
- * @brief Simple windowed operator base class, erased win_type
- *
- * The default implementation:
- * - Has same behaviour as @see opflow::win_base
- * - Erases the window type so implementations can be agnostic of the window type.
- * - Constructor overload determines the window type: data_type for time-based window, size_t for event-based window.
- *
- * @tparam T data type
- * @tparam WIN window type
- */
 template <typename T>
-class win_base : public op_base<T> {
+class simple_rollop : public op_base<T> {
 public:
   using data_type = T;
   using base = op_base<T>;
 
   template <std::integral I>
-  explicit win_base(I win_event) noexcept : win_size(static_cast<size_t>(win_event)) {}
+  explicit simple_rollop(I win_event) noexcept : win_size(static_cast<size_t>(win_event)) {}
 
-  explicit win_base(data_type win_time) noexcept : win_size(win_time) {}
+  explicit simple_rollop(data_type win_time) noexcept : win_size(win_time) {}
 
   bool is_cumulative() const noexcept override {
     auto visitor =
@@ -163,8 +89,8 @@ public:
     return std::visit(visitor, win_size);
   }
 
-  win_type window_type() const noexcept override {
-    auto visitor = detail::overload{[](size_t) { return win_type::event; }, [](data_type) { return win_type::time; }};
+  win_mode window_mode() const noexcept override {
+    auto visitor = detail::overload{[](size_t) { return win_mode::event; }, [](data_type) { return win_mode::time; }};
     return std::visit(visitor, win_size);
   }
 
@@ -182,6 +108,57 @@ public:
 
 protected:
   std::variant<size_t, data_type> win_size;
+};
+
+template <typename T, win_mode MODE>
+class mode_rollop : public op_base<T> {
+public:
+  using base = op_base<T>;
+  using typename base::data_type;
+
+  explicit mode_rollop(size_t win_event) noexcept
+    requires(MODE == win_mode::event)
+      : win_event(win_event) {}
+
+  explicit mode_rollop(data_type win_time) noexcept
+    requires(MODE == win_mode::time)
+      : win_time(win_time) {}
+
+  bool is_cumulative() const noexcept override {
+    if constexpr (MODE == win_mode::event) {
+      return win_event == 0;
+    } else {
+      return win_time == data_type{};
+    }
+  }
+
+  win_mode window_mode() const noexcept override { return MODE; }
+
+  size_t window_size(event_window_tag) const noexcept override {
+    if constexpr (MODE == win_mode::event) {
+      return win_event;
+    } else {
+      assert(false && "[BUG] Graph executor calls window_size(event_window_tag) on time-based window op.");
+      // std::unreachable();
+      return {};
+    }
+  }
+
+  data_type window_size(time_window_tag) const noexcept override {
+    if constexpr (MODE == win_mode::time) {
+      return win_time;
+    } else {
+      assert(false && "[BUG] Graph executor calls window_size(time_window_tag) on event-based window op.");
+      // std::unreachable();
+      return {};
+    }
+  }
+
+protected:
+  union {
+    size_t win_event;
+    data_type win_time;
+  };
 };
 
 template <typename T>

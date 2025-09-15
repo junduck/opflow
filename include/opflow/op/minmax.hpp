@@ -5,9 +5,9 @@
 
 namespace opflow::op {
 template <typename T, typename Alloc = std::allocator<T>>
-class min : public win_base<T> {
+class min : public simple_rollop<T> {
 public:
-  using base = win_base<T>;
+  using base = simple_rollop<T>;
   using typename base::data_type;
   using typename base::win_type;
 
@@ -60,9 +60,9 @@ public:
 };
 
 template <typename T, typename Alloc = std::allocator<T>>
-class max : public win_base<T> {
+class max : public simple_rollop<T> {
 public:
-  using base = win_base<T>;
+  using base = simple_rollop<T>;
   using typename base::data_type;
   using typename base::win_type;
 

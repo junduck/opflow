@@ -94,11 +94,11 @@ public:
         // update step_count
         ++step_count[igrp][i];
         // remove expired data
-        switch (win_desc[i].type) {
-        case win_type::event:
+        switch (win_desc[i].mode) {
+        case win_mode::event:
           evict_event(timestamp, i, igrp);
           break;
-        case win_type::time:
+        case win_mode::time:
           evict_time(timestamp, i, igrp);
           break;
         }
@@ -183,12 +183,12 @@ private:
       } else {
         // windowed op
         desc.dynamic = nodes[i]->is_dynamic();
-        desc.type = nodes[i]->window_type();
-        switch (desc.type) {
-        case win_type::event:
+        desc.mode = nodes[i]->window_mode();
+        switch (desc.mode) {
+        case win_mode::event:
           desc.win_event = nodes[i]->window_size(event_window);
           break;
-        case win_type::time:
+        case win_mode::time:
           desc.win_time = nodes[i]->window_size(time_window);
           break;
         }
@@ -265,7 +265,7 @@ private:
     data_type win_time; // used if win_type::time
     bool cumulative;    // no eviction if cumulative
     bool dynamic;       // query window_size() on every step
-    win_type type;      // window type
+    win_mode mode;      // window mode
   };
   using win_desc_alloc = detail::rebind_alloc<Alloc, win_desc_type>;
 

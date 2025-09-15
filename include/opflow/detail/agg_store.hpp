@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "../common.hpp"
-#include "../window_base.hpp"
+#include "../win_base.hpp"
 
 #include "fixed_buffer_resource.hpp"
 #include "flat_multivect.hpp"
@@ -20,10 +20,10 @@ struct agg_store {
 public:
   using data_type = typename T::data_type;
   using base_type = T;
-  using window_base_type = window_base<data_type>;
+  using win_base_type = win_base<data_type>;
 
-  using window_type = std::unique_ptr<window_base_type, arena_deleter<window_base_type>>;
-  using shared_window_type = std::shared_ptr<window_base_type>;
+  using window_type = std::unique_ptr<win_base_type, arena_deleter<win_base_type>>;
+  using shared_window_type = std::shared_ptr<win_base_type>;
 
   using node_type = std::unique_ptr<base_type, arena_deleter<base_type>>;
   using shared_node_type = std::shared_ptr<base_type>;

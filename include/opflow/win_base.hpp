@@ -11,7 +11,7 @@ namespace opflow {
  * @tparam Time
  */
 template <typename Time>
-struct window_spec {
+struct win_spec {
   Time timestamp;  ///< Timestamp associated with this window
   uint32_t offset; ///< Offset of the window in the input data
   uint32_t size;   ///< Size of the window in data points
@@ -47,9 +47,9 @@ struct window_spec {
  *
  */
 template <typename Data>
-struct window_base {
+struct win_base {
   using data_type = Data;
-  using spec_type = window_spec<data_type>;
+  using spec_type = win_spec<data_type>;
 
   /**
    * @brief Process a new data point
@@ -81,11 +81,11 @@ struct window_base {
    */
   virtual spec_type emit() noexcept = 0;
 
-  virtual window_base *clone_at(void *mem) const noexcept = 0;
+  virtual win_base *clone_at(void *mem) const noexcept = 0;
   virtual size_t clone_size() const noexcept = 0;
   virtual size_t clone_align() const noexcept = 0;
 
-  virtual ~window_base() noexcept = default;
+  virtual ~win_base() noexcept = default;
 };
 
 } // namespace opflow

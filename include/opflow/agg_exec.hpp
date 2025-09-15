@@ -2,7 +2,7 @@
 
 #include "agg_base.hpp"
 #include "def.hpp"
-#include "window_base.hpp"
+#include "win_base.hpp"
 
 #include "detail/agg_store.hpp"
 #include "detail/aligned_allocator.hpp"
@@ -105,7 +105,7 @@ public:
   size_t num_groups() const noexcept { return n_grp; }
 
 private:
-  using spec_type = typename window_base<data_type>::spec_type;
+  using spec_type = typename win_base<data_type>::spec_type;
 
   void append_row(data_type const *in, size_t igrp) { dataframes[igrp].append(in); }
 

@@ -1,3 +1,4 @@
+#include "opflow/win/counter.hpp"
 #include "opflow/win/tumbling.hpp"
 #include "gtest/gtest.h"
 
@@ -6,6 +7,7 @@ using namespace opflow::win;
 
 TEST(TumblingWindow_IntTime, BasicEmissionAndAlignment) {
   tumbling<int> w(10); // window size 10
+  counter<int> c(3);   // window size 3
 
   // Initial points 1,2,3 accumulate in [0,10) no emit
   EXPECT_FALSE(w.on_data(1, nullptr));

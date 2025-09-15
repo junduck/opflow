@@ -7,9 +7,9 @@
 
 namespace opflow::op {
 template <typename T>
-struct cov : public win_base<T> {
+struct cov : public simple_rollop<T> {
 public:
-  using base = win_base<T>;
+  using base = simple_rollop<T>;
   using typename base::data_type;
 
   using base::base;
