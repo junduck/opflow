@@ -1,8 +1,8 @@
 #pragma once
 
-#include "opflow/common.hpp"
-#include "opflow/def.hpp"
-#include "opflow/window_base.hpp"
+#include "../common.hpp"
+#include "../def.hpp"
+#include "../window_base.hpp"
 
 namespace opflow::win {
 /**

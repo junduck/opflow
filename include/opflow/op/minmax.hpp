@@ -1,7 +1,7 @@
 #pragma once
 
-#include "opflow/def.hpp"
-#include "opflow/op_base.hpp"
+#include "../def.hpp"
+#include "../op_base.hpp"
 
 namespace opflow::op {
 template <typename T, typename Alloc = std::allocator<T>>

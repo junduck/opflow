@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <cmath>
 
-#include "opflow/def.hpp"
-#include "opflow/fn_base.hpp"
+#include "../def.hpp"
+#include "../fn_base.hpp"
 
 #include "functor.hpp"
 
-#include "opflow/detail/utils_math.hpp"
+#include "../detail/utils_math.hpp"
 
 #ifndef OPFLOW_FN_UNARY_FN
 #define OPFLOW_FN_UNARY_FN(name, fn)                                                                                   \

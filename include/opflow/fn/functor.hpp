@@ -2,10 +2,10 @@
 
 #include <tuple>
 
-#include "opflow/def.hpp"
-#include "opflow/fn_base.hpp"
+#include "../def.hpp"
+#include "../fn_base.hpp"
 
-#include "opflow/detail/callable_trait.hpp"
+#include "../detail/callable_trait.hpp"
 
 namespace opflow::fn {
 template <typename T, typename Fn>

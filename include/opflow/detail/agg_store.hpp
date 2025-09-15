@@ -3,8 +3,8 @@
 #include <memory>
 #include <vector>
 
-#include "opflow/common.hpp"
-#include "opflow/window_base.hpp"
+#include "../common.hpp"
+#include "../window_base.hpp"
 
 #include "fixed_buffer_resource.hpp"
 #include "flat_multivect.hpp"

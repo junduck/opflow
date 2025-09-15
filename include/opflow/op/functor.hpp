@@ -3,10 +3,10 @@
 #include <array>
 #include <tuple>
 
-#include "opflow/def.hpp"
-#include "opflow/op_base.hpp"
+#include "../def.hpp"
+#include "../op_base.hpp"
 
-#include "opflow/detail/callable_trait.hpp"
+#include "../detail/callable_trait.hpp"
 
 namespace opflow::op {
 template <typename T, typename Fn>

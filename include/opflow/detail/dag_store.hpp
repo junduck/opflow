@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "opflow/common.hpp"
+#include "../common.hpp"
 
 #include "fixed_buffer_resource.hpp"
 #include "flat_multivect.hpp"

@@ -18,6 +18,9 @@ class flat_multivect {
   using flat_container = std::vector<T, data_alloc>;
   using idx_container = std::vector<offset_type, offset_alloc>;
 
+  using difference_type =
+      std::common_type_t<typename flat_container::difference_type, typename idx_container::difference_type>;
+
   idx_container index;      ///< Offsets and lengths for each vector
   flat_container flat_data; ///< Flattened storage for all vectors
 
@@ -94,8 +97,7 @@ public:
   void pop_front() {
     assert(!index.empty() && "pop_front on empty flat_multivect");
     size_t first_len = index.front().size;
-    flat_data.erase(flat_data.begin(),
-                    flat_data.begin() + static_cast<typename flat_container::difference_type>(first_len));
+    flat_data.erase(flat_data.begin(), flat_data.begin() + static_cast<difference_type>(first_len));
     index.erase(index.begin());
     // Fix up offsets after pop
     for (size_t i = 0; i < index.size(); ++i) {
@@ -109,10 +111,10 @@ public:
     size_t off = index[idx].offset;
     size_t len = index[idx].size;
     // Remove elements from flat_data
-    flat_data.erase(flat_data.begin() + static_cast<typename flat_container::difference_type>(off),
-                    flat_data.begin() + static_cast<typename flat_container::difference_type>(off + len));
+    flat_data.erase(flat_data.begin() + static_cast<difference_type>(off),
+                    flat_data.begin() + static_cast<difference_type>(off + len));
     // Remove offset/length
-    index.erase(index.begin() + static_cast<typename idx_container::difference_type>(idx));
+    index.erase(index.begin() + static_cast<difference_type>(idx));
     // Fix up offsets after idx
     for (size_t i = idx; i < index.size(); ++i) {
       index[i].offset -= len;

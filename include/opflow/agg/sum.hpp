@@ -3,8 +3,8 @@
 #include <numeric>
 #include <span>
 
-#include "opflow/agg_base.hpp"
-#include "opflow/def.hpp"
+#include "../agg_base.hpp"
+#include "../def.hpp"
 
 namespace opflow::agg {
 template <typename Data>

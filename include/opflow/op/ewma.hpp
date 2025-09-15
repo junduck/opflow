@@ -1,9 +1,9 @@
 #pragma once
 
-#include "opflow/def.hpp"
-#include "opflow/op_base.hpp"
+#include "../def.hpp"
+#include "../op_base.hpp"
 
-#include "opflow/detail/accum.hpp"
+#include "../detail/accum.hpp"
 
 namespace opflow::op {
 template <typename T>

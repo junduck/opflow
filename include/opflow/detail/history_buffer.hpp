@@ -5,8 +5,8 @@
 #include <span>
 #include <vector>
 
+#include "../common.hpp"
 #include "iterator.hpp"
-#include "opflow/common.hpp"
 #include "utils.hpp"
 
 namespace opflow::detail {

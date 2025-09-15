@@ -11,9 +11,11 @@ class sorted_vect : public std::vector<T, Alloc> {
 
 public:
   using base::base;
+  using typename base::difference_type;
+  using typename base::size_type;
 
-  size_t rank(T const &value) const {
-    ptrdiff_t dist = static_cast<ptrdiff_t>(base::size());
+  size_type rank(T const &value) const {
+    auto dist = static_cast<difference_type>(base::size());
     if (base::size() > BIN_THRES) {
       auto it = std::lower_bound(base::begin(), base::end(), value);
       if (it != base::end() && *it == value) {
@@ -23,7 +25,7 @@ public:
       auto it = std::find(base::begin(), base::end(), value);
       dist = std::distance(base::begin(), it);
     }
-    return static_cast<size_t>(dist);
+    return static_cast<size_type>(dist);
   }
 
   void push(T const &value) {
@@ -62,7 +64,7 @@ public:
 
   void erase_rank(size_t rank) {
     if (rank < base::size()) {
-      base::erase(base::begin() + static_cast<ptrdiff_t>(rank));
+      base::erase(base::begin() + static_cast<difference_type>(rank));
     }
   }
 };
