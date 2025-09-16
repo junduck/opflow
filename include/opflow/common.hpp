@@ -72,6 +72,11 @@ constexpr inline T fmin = std::numeric_limits<T>::min(); ///< Minimum double val
 template <std::floating_point T>
 constexpr inline T fmax = std::numeric_limits<T>::max(); ///< Maximum double value
 
+template <typename T>
+constexpr bool very_small(T v) {
+  return v == T{};
+}
+
 template <std::floating_point T>
 constexpr bool very_small(T v) {
   return std::abs(v) < feps100<T>;

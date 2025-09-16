@@ -294,9 +294,8 @@ public:
     out[2] = j;
   }
 
-  bool is_cumulative() const noexcept override { return false; }
   win_mode window_mode() const noexcept override { return win_mode::event; }
-  size_t window_size(event_window_tag) const noexcept override { return period; }
+  size_t window_size(event_mode_tag) const noexcept override { return period; }
 
   OPFLOW_INOUT(3, 3)
   OPFLOW_CLONEABLE(kdj)

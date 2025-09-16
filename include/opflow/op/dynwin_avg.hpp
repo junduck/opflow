@@ -40,8 +40,6 @@ public:
 
   void value(data_type *out) const noexcept override { out[0] = mean; }
 
-  bool is_dynamic() const noexcept override { return true; }
-
   OPFLOW_INOUT(1, 1)
   OPFLOW_CLONEABLE(dynwin_avg)
 

@@ -89,19 +89,23 @@ public:
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
       nodes[i]->on_data(in_ptr(record, i, igrp));
-      // handle eviction for non-cumulative nodes
-      if (!win_desc[i].cumulative) {
-        // update step_count
+      switch (win_desc[i].mode) {
+      case win_mode::cumulative:
+        break;
+      case win_mode::dyn_event:
+        win_desc[i].win_event = nodes[i]->window_size(event_mode);
+        [[fallthrough]];
+      case win_mode::event:
         ++step_count[igrp][i];
-        // remove expired data
-        switch (win_desc[i].mode) {
-        case win_mode::event:
-          evict_event(timestamp, i, igrp);
-          break;
-        case win_mode::time:
-          evict_time(timestamp, i, igrp);
-          break;
-        }
+        evict_event(timestamp, i, igrp);
+        break;
+      case win_mode::dyn_time:
+        win_desc[i].win_time = nodes[i]->window_size(time_mode);
+        [[fallthrough]];
+      case win_mode::time:
+        ++step_count[igrp][i];
+        evict_time(timestamp, i, igrp);
+        break;
       }
       // store output data
       nodes[i]->value(out_ptr(record, i));
@@ -173,25 +177,22 @@ private:
     size_t n_cumulative = 0;
     for (size_t i = 0; i < dag.size(); ++i) {
       win_desc_type desc{};
-      if (nodes[i]->is_cumulative()) {
-        // cumulative op
-        desc.cumulative = true;
+      desc.mode = nodes[i]->window_mode();
+      switch (desc.mode) {
+      case win_mode::cumulative:
         for (size_t igrp = 0; igrp < ngrp; ++igrp) {
           step_count[igrp][i] = 1;
         }
         ++n_cumulative;
-      } else {
-        // windowed op
-        desc.dynamic = nodes[i]->is_dynamic();
-        desc.mode = nodes[i]->window_mode();
-        switch (desc.mode) {
-        case win_mode::event:
-          desc.win_event = nodes[i]->window_size(event_window);
-          break;
-        case win_mode::time:
-          desc.win_time = nodes[i]->window_size(time_window);
-          break;
-        }
+        break;
+      case win_mode::dyn_event:
+      case win_mode::event:
+        desc.win_event = nodes[i]->window_size(event_mode);
+        break;
+      case win_mode::dyn_time:
+      case win_mode::time:
+        desc.win_time = nodes[i]->window_size(time_mode);
+        break;
       }
       win_desc.push_back(desc);
     }
@@ -208,7 +209,7 @@ private:
     assert(history[igrp].size() >= step_cnt && "[BUG] History is smaller than step count for node.");
 
     auto nodes = dag[igrp];
-    auto win_size = win_desc[id].dynamic ? nodes[id]->window_size(event_window) : win_desc[id].win_event;
+    auto win_size = win_desc[id].win_event;
     if (step_cnt <= win_size)
       return; // No data to remove
 
@@ -231,7 +232,7 @@ private:
     assert(history[igrp].size() >= step_cnt && "[BUG] History is smaller than step count for node.");
 
     auto nodes = dag[igrp];
-    auto win_size = win_desc[id].dynamic ? nodes[id]->window_size(time_window) : win_desc[id].win_time;
+    auto win_size = win_desc[id].win_time;
     auto win_start = timestamp - win_size;
     auto k = history[igrp].size() - step_cnt;
 
@@ -263,8 +264,6 @@ private:
   struct win_desc_type {
     size_t win_event;   // used if win_type::event
     data_type win_time; // used if win_type::time
-    bool cumulative;    // no eviction if cumulative
-    bool dynamic;       // query window_size() on every step
     win_mode mode;      // window mode
   };
   using win_desc_alloc = detail::rebind_alloc<Alloc, win_desc_type>;
