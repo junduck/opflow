@@ -15,7 +15,6 @@ public:
   using data_type = T;
   using fn_type = fn_base<data_type>;
   using root_type = fn_root<data_type>;
-  using graph_node_type = std::shared_ptr<fn_type>;
 
   template <typename G>
   fn_exec(G const &g, size_t num_groups, Alloc const &alloc = Alloc{})
