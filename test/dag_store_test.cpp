@@ -704,7 +704,7 @@ protected:
     g.add<dummy_node>("A", ctor_args, "A", 1);
     g.add<dummy_node>("B", "A", ctor_args, "B", 2);
     g.add<dummy_node>("C", "A", ctor_args, "C", 3);
-    g.add<dummy_node>("D", std::vector<std::string>{"B", "C"}, "D", 4);
+    g.add<dummy_node>("D", std::vector<std::string>{"B", "C"}, ctor_args, "D", 4);
     g.add_output("D");
   }
 };
@@ -826,7 +826,7 @@ TEST_F(DagStoreGraphNamedTest, PortMappingGraphNamed) {
   // Test explicit port mapping with graph_named
   g.add<dummy_node>("A", ctor_args, "A", 1);
   g.add<dummy_node>("B", ctor_args, "B", 2);
-  g.add<dummy_node>("C", std::vector<std::string>{"A.0", "B.0"}, "C", 3);
+  g.add<dummy_node>("C", std::vector<std::string>{"A.0", "B.0"}, ctor_args, "C", 3);
   // g.add<dummy_node>("C", "A.0", "B.0", ctor_args, "C", 3);
   g.add_output("C");
   EXPECT_TRUE(g.validate());
@@ -913,7 +913,7 @@ TEST_F(DagStoreGraphNamedTest, GraphNamedWithEdgeTypes) {
 
   // Add edge using make_edge
   auto edge = make_edge("A", 0);
-  g.add<dummy_node>("C", std::vector<decltype(edge)>{edge, make_edge("B", 0)}, "C", 3);
+  g.add<dummy_node>("C", std::vector<decltype(edge)>{edge, make_edge("B", 0)}, ctor_args, "C", 3);
   g.add_output("C");
 
   dag_store<dummy_node> topo(g, 1);
