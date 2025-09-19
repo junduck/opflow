@@ -570,8 +570,8 @@ TEST_F(GraphNodeTest, ComplexDAG) {
   g.add(nodeE, nodeC, nodeD);
 
   // Check roots and leaves
-  auto roots = g.get_roots();
-  auto leaves = g.get_leaves();
+  auto roots = g.roots();
+  auto leaves = g.leaves();
 
   EXPECT_EQ(roots.size(), 2);
   EXPECT_TRUE(std::find(roots.begin(), roots.end(), nodeA) != roots.end());
@@ -692,7 +692,7 @@ TEST_F(GraphNodeTest, ConsistencyAfterOperations) {
   g.rm(nodeC);
 
   // Verify no dangling references
-  for (auto const &[node, preds] : g.get_pred()) {
+  for (auto const &[node, preds] : g.pred()) {
     for (auto const &pred : preds) {
       // Each predecessor should have this node in its successor list
       auto const &succs = g.succ_of(pred);
@@ -700,7 +700,7 @@ TEST_F(GraphNodeTest, ConsistencyAfterOperations) {
     }
   }
 
-  for (auto const &[node, succs] : g.get_succ()) {
+  for (auto const &[node, succs] : g.succ()) {
     for (auto const &succ : succs) {
       // Each successor should have this node in its predecessor list
       auto const &preds = g.pred_of(succ);
@@ -708,7 +708,7 @@ TEST_F(GraphNodeTest, ConsistencyAfterOperations) {
     }
   }
 
-  for (auto const &[node, args] : g.get_args()) {
+  for (auto const &[node, args] : g.args()) {
     for (auto const &arg : args) {
       // Each argument node should be in the predecessor set
       auto const &preds = g.pred_of(node);
@@ -966,8 +966,8 @@ TEST_F(GraphNodeTest, MultipleDisconnectedComponents) {
   EXPECT_EQ(g.size(), 6);
 
   // Check roots and leaves
-  auto roots = g.get_roots();
-  auto leaves = g.get_leaves();
+  auto roots = g.roots();
+  auto leaves = g.leaves();
 
   EXPECT_EQ(roots.size(), 2);
   EXPECT_TRUE(std::find(roots.begin(), roots.end(), nodeA1) != roots.end());

@@ -125,7 +125,7 @@ TEST_F(GraphNodeNamedTest, AddSingleNode) {
   EXPECT_EQ(graph.size(), 1u);
   EXPECT_TRUE(graph.contains("node1"));
 
-  auto node = graph.get_node("node1");
+  auto node = graph.node("node1");
   ASSERT_NE(node, nullptr);
   auto dummy_ptr = std::dynamic_pointer_cast<dummy_node>(node);
   ASSERT_NE(dummy_ptr, nullptr);
@@ -208,7 +208,7 @@ TEST_F(GraphNodeNamedTest, AddNodeWithCtorArgsTag) {
   graph.add<dummy_node>("input", 1, "input");
   graph.add<dummy_node2>("processor", "input", ctor_args, "test_name", 42);
 
-  auto node = graph.get_node("processor");
+  auto node = graph.node("processor");
   ASSERT_NE(node, nullptr);
   auto dummy2_ptr = std::dynamic_pointer_cast<dummy_node2>(node);
   ASSERT_NE(dummy2_ptr, nullptr);
@@ -240,7 +240,7 @@ TEST_F(GraphNodeNamedTest, AddRootNode) {
   EXPECT_TRUE(graph.contains("root"));
   EXPECT_TRUE(graph.is_root("root"));
 
-  auto node = graph.get_node("root");
+  auto node = graph.node("root");
   ASSERT_NE(node, nullptr);
   auto root_ptr = std::dynamic_pointer_cast<root_node>(node);
   ASSERT_NE(root_ptr, nullptr);
@@ -253,12 +253,12 @@ TEST_F(GraphNodeNamedTest, SetOutput) {
   graph.add<dummy_node>("node2", 2, "node2");
 
   std::vector<std::string> outputs = {"node1", "node2"};
-  graph.output(outputs);
+  graph.set_output(outputs);
 
-  auto output = graph.get_output();
+  auto output = graph.output();
   EXPECT_EQ(output.size(), 2u);
-  EXPECT_EQ(output[0], "node1");
-  EXPECT_EQ(output[1], "node2");
+  EXPECT_EQ(output[0].name, "node1");
+  EXPECT_EQ(output[1].name, "node2");
 }
 
 TEST_F(GraphNodeNamedTest, AddOutput) {
@@ -270,11 +270,11 @@ TEST_F(GraphNodeNamedTest, AddOutput) {
   std::vector<std::string> more_outputs = {"node2", "node3"};
   graph.add_output(more_outputs);
 
-  auto output = graph.get_output();
+  auto output = graph.output();
   EXPECT_EQ(output.size(), 3u);
-  EXPECT_EQ(output[0], "node1");
-  EXPECT_EQ(output[1], "node2");
-  EXPECT_EQ(output[2], "node3");
+  EXPECT_EQ(output[0].name, "node1");
+  EXPECT_EQ(output[1].name, "node2");
+  EXPECT_EQ(output[2].name, "node3");
 }
 
 // Node removal
@@ -430,7 +430,7 @@ TEST_F(GraphNodeNamedTest, ReplaceNode) {
   EXPECT_FALSE(graph.contains("old_node"));
   EXPECT_TRUE(graph.contains("new_node"));
 
-  auto node = graph.get_node("new_node");
+  auto node = graph.node("new_node");
   ASSERT_NE(node, nullptr);
   auto dummy_ptr = std::dynamic_pointer_cast<dummy_node>(node);
   ASSERT_NE(dummy_ptr, nullptr);
@@ -469,12 +469,12 @@ TEST_F(GraphNodeNamedTest, FindRootsAndLeaves) {
   graph.add<dummy_node>("leaf1", "middle", 4, "leaf1");
   graph.add<dummy_node>("leaf2", "middle", 5, "leaf2");
 
-  auto roots = graph.get_roots();
+  auto roots = graph.roots();
   EXPECT_EQ(roots.size(), 2u);
   EXPECT_TRUE(std::find(roots.begin(), roots.end(), "root1") != roots.end());
   EXPECT_TRUE(std::find(roots.begin(), roots.end(), "root2") != roots.end());
 
-  auto leaves = graph.get_leaves();
+  auto leaves = graph.leaves();
   EXPECT_EQ(leaves.size(), 2u);
   EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), "leaf1") != leaves.end());
   EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), "leaf2") != leaves.end());
@@ -499,7 +499,7 @@ TEST_F(GraphNodeNamedTest, Clear) {
 
   EXPECT_TRUE(graph.empty());
   EXPECT_EQ(graph.size(), 0u);
-  EXPECT_EQ(graph.get_output().size(), 0u);
+  EXPECT_EQ(graph.output().size(), 0u);
 }
 
 // Graph merging
@@ -544,7 +544,7 @@ TEST_F(GraphNodeNamedTest, MergeWithOverlap) {
   EXPECT_EQ(graph.size(), 3u);
 
   // Original node should be preserved
-  auto shared_node = graph.get_node("shared");
+  auto shared_node = graph.node("shared");
   ASSERT_NE(shared_node, nullptr);
   auto dummy_ptr = std::dynamic_pointer_cast<dummy_node>(shared_node);
   ASSERT_NE(dummy_ptr, nullptr);
@@ -597,7 +597,7 @@ TEST_F(GraphNodeNamedTest, TemplateNodes) {
 
   template_graph.add<template_node<int>>("int_node", 42);
 
-  auto node = template_graph.get_node("int_node");
+  auto node = template_graph.node("int_node");
   ASSERT_NE(node, nullptr);
   auto template_ptr = std::dynamic_pointer_cast<template_node<int>>(node);
   ASSERT_NE(template_ptr, nullptr);
@@ -606,7 +606,7 @@ TEST_F(GraphNodeNamedTest, TemplateNodes) {
 
 // Edge cases and error handling
 TEST_F(GraphNodeNamedTest, GetNonexistentNode) {
-  auto node = graph.get_node("nonexistent");
+  auto node = graph.node("nonexistent");
   EXPECT_EQ(node, nullptr);
 }
 
@@ -644,9 +644,9 @@ TEST_F(GraphNodeNamedTest, GenericWithPrimitiveTypes) {
   EXPECT_TRUE(pred.contains("value2"));
 
   // Check the stored values
-  auto value1_node = graph_int.get_node("value1");
-  auto value2_node = graph_int.get_node("value2");
-  auto sum_node = graph_int.get_node("sum");
+  auto value1_node = graph_int.node("value1");
+  auto value2_node = graph_int.node("value2");
+  auto sum_node = graph_int.node("sum");
 
   ASSERT_NE(value1_node, nullptr);
   ASSERT_NE(value2_node, nullptr);
@@ -657,12 +657,12 @@ TEST_F(GraphNodeNamedTest, GenericWithPrimitiveTypes) {
   EXPECT_EQ(*sum_node, 142);
 
   // Test graph operations work with primitive types
-  auto roots = graph_int.get_roots();
+  auto roots = graph_int.roots();
   EXPECT_EQ(roots.size(), 2u);
   EXPECT_TRUE(std::find(roots.begin(), roots.end(), "value1") != roots.end());
   EXPECT_TRUE(std::find(roots.begin(), roots.end(), "value2") != roots.end());
 
-  auto leaves = graph_int.get_leaves();
+  auto leaves = graph_int.leaves();
   EXPECT_EQ(leaves.size(), 1u);
   EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), "sum") != leaves.end());
 

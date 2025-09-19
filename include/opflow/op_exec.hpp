@@ -4,7 +4,7 @@
 #include "def.hpp"
 #include "op_base.hpp"
 
-#include "detail/dag_store.hpp"
+#include "detail/graph_store.hpp"
 #include "detail/history_buffer.hpp"
 #include "detail/utils.hpp"
 #include "detail/vector_store.hpp"
@@ -264,9 +264,9 @@ private:
   using hbuf_type = detail::aligned_type<detail::history_buffer<data_type, Alloc>, detail::cacheline_size>;
   using hbuf_alloc = detail::rebind_alloc<Alloc, hbuf_type>;
 
-  size_t ngrp;                                ///< Number of groups
-  detail::dag_store<op_type, Alloc> dag;      ///< DAG to execute, uses its own alloc
-  std::vector<hbuf_type, hbuf_alloc> history; ///< Memory buffer for each node
+  size_t ngrp;                                   ///< Number of groups
+  detail::graph_store<op_type, void, Alloc> dag; ///< DAG to execute, uses its own alloc
+  std::vector<hbuf_type, hbuf_alloc> history;    ///< Memory buffer for each node
 
   bool all_cumulative;                                 ///< True if all nodes are in cumulative mode, shared
   std::vector<win_desc_type, win_desc_alloc> win_desc; ///< Window descriptors for each node, shared
