@@ -60,7 +60,7 @@ struct graph_named_edge {
 
 inline auto make_edge(std::string_view name, uint32_t port = 0) { return detail::graph_named_edge(name, port); }
 
-template <typename T>
+template <typename T, typename AUX = void>
 class graph_named {
   using Equal = std::equal_to<>;
 
@@ -75,6 +75,10 @@ public:
   using NodeMap = std::unordered_map<key_type, NodeSet, key_hash, Equal>;
   using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
   using NodeStore = std::unordered_map<key_type, node_type, key_hash, Equal>;
+
+  using node_base = T;
+  using aux_base = AUX;
+  using aux_type = std::shared_ptr<AUX>;
 
   // Add
 
@@ -118,32 +122,36 @@ public:
 
   // Output
 
-  template <range_of<str_view> R>
-  graph_named &add_output(R &&outputs) {
-    for (auto const &name : outputs) {
-      out.emplace_back(name);
-    }
+  template <typename... Ts>
+  graph_named &add_output(Ts &&...outputs) {
+    add_output_impl(std::forward<Ts>(outputs)...);
     return *this;
   }
 
   template <typename... Ts>
-  graph_named &add_output(Ts &&...names) {
-    (out.emplace_back(std::forward<Ts>(names)), ...);
+  graph_named &set_output(Ts &&...outputs) {
+    out.clear();
+    add_output_impl(std::forward<Ts>(outputs)...);
     return *this;
   }
 
-  template <range_of<str_view> R>
-  graph_named &output(R &&outputs) {
-    out.clear();
-    add_output(std::forward<R>(outputs));
-    return *this;
+  // Auxiliary data
+
+  template <typename A, typename... Ts>
+  void set_aux(Ts &&...preds_and_ctor_args)
+    requires(!std::is_void_v<AUX>)
+  {
+    auxiliary_args.clear();
+    set_aux_impl<A>(std::forward<Ts>(preds_and_ctor_args)...);
   }
 
-  template <typename... Ts>
-  graph_named &output(Ts &&...names) {
-    out.clear();
-    add_output(std::forward<Ts>(names)...);
-    return *this;
+  template <template <typename> typename A, typename... Ts>
+  void set_aux(Ts &&...preds_and_ctor_args)
+    requires(!std::is_void_v<AUX> && detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using aux_t = A<typename T::data_type>;
+    auxiliary_args.clear();
+    set_aux_impl<aux_t>(std::forward<Ts>(preds_and_ctor_args)...);
   }
 
   // Removal
@@ -272,8 +280,8 @@ public:
 
     // Update output references
     for (auto &o : out) {
-      if (o == old_name) {
-        o = new_name;
+      if (o.name == old_name) {
+        o.name = new_name;
       }
     }
 
@@ -369,7 +377,7 @@ public:
     return (it != predecessor.end()) ? it->second : empty_set;
   }
 
-  NodeMap const &get_pred() const noexcept { return predecessor; }
+  NodeMap const &pred() const noexcept { return predecessor; }
 
   NodeArgsSet const &args_of(key_type const &name) const {
     static NodeArgsSet empty_set{};
@@ -377,7 +385,7 @@ public:
     return (it != argmap.end()) ? it->second : empty_set;
   }
 
-  NodeArgsMap const &get_args() const noexcept { return argmap; }
+  NodeArgsMap const &args() const noexcept { return argmap; }
 
   NodeSet const &succ_of(key_type const &name) const {
     static NodeSet empty_set{};
@@ -385,11 +393,15 @@ public:
     return (it != successor.end()) ? it->second : empty_set;
   }
 
-  NodeMap const &get_succ() const noexcept { return successor; }
+  NodeMap const &succ() const noexcept { return successor; }
 
-  auto const &get_output() const noexcept { return out; }
+  NodeArgsSet const &output() const noexcept { return out; }
 
-  node_type get_node(key_type const &name) const {
+  auto aux() const noexcept { return auxiliary; }
+
+  NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
+
+  node_type node(key_type const &name) const {
     auto it = store.find(name);
     return (it != store.end()) ? it->second : nullptr;
   }
@@ -404,7 +416,7 @@ public:
     return (it != successor.end() && it->second.empty());
   }
 
-  auto get_roots() const {
+  auto roots() const {
     std::vector<key_type> roots;
     for (auto const &[name, preds] : predecessor) {
       if (preds.empty()) {
@@ -414,7 +426,7 @@ public:
     return roots;
   }
 
-  auto get_leaves() const {
+  auto leaves() const {
     std::vector<key_type> leaves;
     for (auto const &[name, succs] : successor) {
       if (succs.empty()) {
@@ -475,8 +487,16 @@ public:
     }
 
     for (auto const &o : out) {
-      if (store.find(o) == store.end()) {
+      if (store.find(o.name) == store.end()) {
         return false; // Inconsistent: output node missing in store
+      }
+    }
+
+    if constexpr (!std::is_void_v<AUX>) {
+      for (auto const &edge : auxiliary_args) {
+        if (store.find(edge.name) == store.end()) {
+          return false; // Inconsistent: aux arg node missing in store
+        }
       }
     }
 
@@ -498,7 +518,7 @@ public:
 
     // Add all new nodes to the graph
     for (auto const &new_name : nodes_to_add) {
-      auto other_node = other.get_node(new_name);
+      auto other_node = other.node(new_name);
 
       // Add edges
       ensure_adjacency_list(new_name);
@@ -591,6 +611,82 @@ private:
     store[name] = std::make_shared<Node>(std::forward<Ts>(args)...);
   }
 
+  // output
+
+  template <detail::string_like T0, typename... Ts>
+  void add_output_impl(T0 &&edge_desc, Ts &&...args) {
+    out.emplace_back(std::forward<T0>(edge_desc));
+    add_output_impl(std::forward<Ts>(args)...);
+  }
+
+  template <typename... Ts>
+  void add_output_impl(edge_type edge, Ts &&...args) {
+    out.emplace_back(edge);
+    add_output_impl(std::forward<Ts>(args)...);
+  }
+
+  template <range_of<str_view> R, typename... Ts>
+  void add_output_impl(R &&edges, Ts &&...args) {
+    for (auto const &edge_desc : edges) {
+      out.emplace_back(edge_desc);
+    }
+    add_output_impl(std::forward<Ts>(args)...);
+  }
+
+  void add_output_impl() {} // base case
+
+  template <range_of<edge_type> R, typename... Ts>
+  void add_output_impl(R &&edges, Ts &&...args) {
+    for (auto const &edge : edges) {
+      out.emplace_back(edge);
+    }
+    add_output_impl(std::forward<Ts>(args)...);
+  }
+
+  // set_aux - edge
+
+  template <typename A, detail::string_like T0, typename... Ts>
+  void set_aux_impl(T0 &&edge_desc, Ts &&...args) {
+    auto edge = detail::graph_named_edge(std::forward<T0>(edge_desc));
+    auxiliary_args.emplace_back(edge);
+    set_aux_impl<A>(std::forward<Ts>(args)...);
+  }
+
+  template <typename A, typename... Ts>
+  void set_aux_impl(edge_type edge, Ts &&...args) {
+    auxiliary_args.emplace_back(edge);
+    set_aux_impl<A>(std::forward<Ts>(args)...);
+  }
+
+  template <typename A, range_of<edge_type> R, typename... Ts>
+  void set_aux_impl(R &&edges, Ts &&...args) {
+    for (auto const &edge : edges) {
+      auxiliary_args.emplace_back(edge);
+    }
+    set_aux_impl<A>(std::forward<Ts>(args)...);
+  }
+
+  template <typename A, range_of<str_view> R, typename... Ts>
+  void set_aux_impl(R &&edges, Ts &&...args) {
+    for (auto const &edge_desc : edges) {
+      auto edge = detail::graph_named_edge(edge_desc);
+      auxiliary_args.emplace_back(edge);
+    }
+    set_aux_impl<A>(std::forward<Ts>(args)...);
+  }
+
+  // set_aux - ctor
+
+  template <typename A, typename... Ts>
+  void set_aux_impl(Ts &&...args) {
+    auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
+  }
+
+  template <typename A, typename... Ts>
+  void set_aux_impl(ctor_args_tag, Ts &&...args) {
+    auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
+  }
+
   void add_edge_impl(key_type const &name, edge_type const &pred) {
     predecessor[name].emplace(pred.name);
     argmap[name].emplace_back(pred);
@@ -629,10 +725,12 @@ private:
   }
 
 protected:
-  NodeMap predecessor;       ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  NodeArgsMap argmap;        ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;         ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
-  std::vector<key_type> out; ///< Output nodes
-  NodeStore store;           ///< Store for actual node instances
+  NodeMap predecessor;        ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  NodeArgsMap argmap;         ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  NodeMap successor;          ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  NodeArgsSet out;            ///< Output [node:port]
+  NodeStore store;            ///< Store for actual node instances
+  aux_type auxiliary;         ///< Auxiliary data
+  NodeArgsSet auxiliary_args; ///< Auxiliary args
 };
 } // namespace opflow
