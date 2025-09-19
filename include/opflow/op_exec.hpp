@@ -70,10 +70,8 @@ public:
   void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
     auto [_, record] = history[igrp].back();
     size_t i = 0;
-    for (auto [offset, size] : dag.output_offset) {
-      for (size_t port = 0; port < size; ++port) {
-        out[i++] = record[offset + port];
-      }
+    for (auto idx : dag.output_offset) {
+      out[i++] = record[idx];
     }
   }
 
@@ -119,13 +117,7 @@ public:
     return nodes[0]->num_inputs();
   }
 
-  size_t num_outputs() const noexcept {
-    size_t total = 0;
-    for (auto [_, size] : dag.output_offset) {
-      total += size;
-    }
-    return total;
-  }
+  size_t num_outputs() const noexcept { return dag.output_offset.size(); }
 
   size_t num_groups() const noexcept { return ngrp; }
 
@@ -163,9 +155,10 @@ private:
     }
     curr_args.ensure_group_capacity(max_inputs);
 
+    u32 rec_size = u32(dag[0].back()->num_outputs()) + dag.record_offset.back();
     history.reserve(ngrp);
     for (size_t hint : history_size_hints) {
-      history.emplace_back(dag.record_size, hint, history.get_allocator());
+      history.emplace_back(rec_size, hint, history.get_allocator());
     }
   }
 
