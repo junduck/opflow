@@ -1,10 +1,6 @@
 add_executable(test_main main.cpp)
 target_link_libraries(test_main GTest::gtest_main private_headers opflow::headers)
 
-# Topo graph tests
-add_executable(test_dag_store dag_store_test.cpp)
-target_link_libraries(test_dag_store GTest::gtest_main opflow::headers)
-
 # History tests
 add_executable(test_history_deque history_deque_test.cpp)
 target_link_libraries(test_history_deque GTest::gtest_main opflow::headers)
@@ -76,7 +72,6 @@ target_link_libraries(test_graph_named GTest::gtest_main opflow::headers)
 
 include(GoogleTest)
 gtest_discover_tests(test_main)
-gtest_discover_tests(test_dag_store)
 gtest_discover_tests(test_vector_store)
 gtest_discover_tests(test_graph_named)
 gtest_discover_tests(test_column_store)

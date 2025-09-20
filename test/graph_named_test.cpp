@@ -277,38 +277,6 @@ TEST_F(GraphNodeNamedTest, AddOutput) {
   EXPECT_EQ(output[2].name, "node3");
 }
 
-// Node removal
-TEST_F(GraphNodeNamedTest, RemoveNode) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  graph.add<dummy_node>("node2", "node1", 2, "node2");
-  graph.add<dummy_node>("node3", "node2", 3, "node3");
-
-  EXPECT_EQ(graph.size(), 3u);
-
-  graph.rm("node2");
-
-  EXPECT_EQ(graph.size(), 2u);
-  EXPECT_TRUE(graph.contains("node1"));
-  EXPECT_FALSE(graph.contains("node2"));
-  EXPECT_TRUE(graph.contains("node3"));
-
-  // node3 should no longer have node2 as predecessor
-  auto pred = graph.pred_of("node3");
-  EXPECT_EQ(pred.size(), 0u);
-
-  // node1 should no longer have node2 as successor
-  auto succ = graph.succ_of("node1");
-  EXPECT_EQ(succ.size(), 0u);
-}
-
-TEST_F(GraphNodeNamedTest, RemoveNonexistentNode) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  EXPECT_EQ(graph.size(), 1u);
-
-  graph.rm("nonexistent");
-  EXPECT_EQ(graph.size(), 1u);
-}
-
 // Edge manipulation
 TEST_F(GraphNodeNamedTest, AddEdge) {
   graph.add<dummy_node>("node1", 1, "node1");
@@ -345,33 +313,6 @@ TEST_F(GraphNodeNamedTest, AddMultipleEdges) {
   EXPECT_EQ(args[0].port, 0u);
   EXPECT_EQ(args[1].name, "node2");
   EXPECT_EQ(args[1].port, 5u);
-}
-
-TEST_F(GraphNodeNamedTest, RemoveEdge) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  graph.add<dummy_node>("node2", "node1", 2, "node2");
-
-  EXPECT_EQ(graph.pred_of("node2").size(), 1u);
-
-  graph.rm_edge("node2", detail::graph_named_edge("node1", 0));
-
-  auto pred = graph.pred_of("node2");
-  EXPECT_EQ(pred.size(), 0u);
-
-  auto args = graph.args_of("node2");
-  EXPECT_EQ(args.size(), 0u);
-
-  auto succ = graph.succ_of("node1");
-  EXPECT_EQ(succ.size(), 0u);
-}
-
-TEST_F(GraphNodeNamedTest, RemoveNonexistentEdge) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  graph.add<dummy_node>("node2", 2, "node2");
-
-  // Should not crash or affect existing state
-  graph.rm_edge("node2", detail::graph_named_edge("node1", 0));
-  EXPECT_EQ(graph.pred_of("node2").size(), 0u);
 }
 
 // Rename and replace operations

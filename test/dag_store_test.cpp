@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "opflow/detail/dag_store.hpp"
-#include "opflow/graph_named.hpp"
+#include "opflow/detail/graph_store.hpp"
 #include "opflow/graph_node.hpp"
 
 #include <chrono>

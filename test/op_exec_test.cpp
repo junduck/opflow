@@ -13,7 +13,7 @@ class GraphExecFanoutTest : public ::testing::Test {
 protected:
   using exec_type = op_exec<double>;
   using op_type = typename exec_type::op_type;
-  using graph_node_type = typename exec_type::graph_node_type;
+  using graph_node_type = std::shared_ptr<op_type>;
   using sum_type = op::sum<double>;
   using add2_type = op::add2<double>;
 
