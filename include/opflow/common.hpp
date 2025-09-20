@@ -49,6 +49,21 @@ concept dag_node_base = requires(T const *t) {
 };
 
 template <typename T>
+concept win_node_base = requires(T *t) {
+  typename T::data_type;
+  typename T::spec_type;
+  {
+    t->on_data(std::declval<typename T::data_type>(), std::declval<typename T::data_type const *>())
+  } -> std::convertible_to<bool>;
+  { t->emit() } -> std::same_as<typename T::spec_type>;
+
+  // special in-place clone for arena/object pool
+  { t->clone_at(std::declval<void *>()) };
+  { t->clone_size() } -> std::convertible_to<size_t>;
+  { t->clone_align() } -> std::convertible_to<size_t>;
+};
+
+template <typename T>
 concept dag_node_ptr = (std::is_pointer_v<T> && dag_node_base<std::remove_pointer_t<T>>) ||
                        (detail::smart_ptr<T> && dag_node_base<typename std::remove_cvref_t<T>::element_type>);
 
@@ -102,4 +117,29 @@ using dag_root_type = typename dag_root<T>::type;
 
 struct ctor_args_tag {};
 constexpr inline ctor_args_tag ctor_args{};
+
+template <typename G>
+concept executable_graph = requires(G const g) {
+  typename G::key_type;
+  typename G::edge_type;   // structural binding -> [key_type, u32]
+  typename G::NodeSet;     // range of key_type
+  typename G::NodeArgsSet; // range of edge_type
+  typename G::NodeMap;     // associate container key_type -> NodeSet
+  typename G::NodeArgsMap; // associate container key_type -> NodeArgsSet
+
+  typename G::node_base;
+  typename G::aux_base;
+  typename G::node_type;
+  typename G::aux_type;
+
+  { g.node(std::declval<typename G::key_type>()) } -> dag_node_ptr;
+  { g.aux() } -> std::convertible_to<typename G::aux_type>;
+
+  { g.pred() } -> std::convertible_to<typename G::NodeMap>;
+  { g.args() } -> std::convertible_to<typename G::NodeArgsMap>;
+  { g.succ() } -> std::convertible_to<typename G::NodeMap>;
+
+  { g.aux_args() } -> std::convertible_to<typename G::NodeArgsSet>;
+  { g.output() } -> std::convertible_to<typename G::NodeArgsSet>;
+};
 } // namespace opflow
