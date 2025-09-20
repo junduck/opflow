@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <charconv>
 #include <memory>
 #include <string>
@@ -63,9 +62,9 @@ inline auto make_edge(std::string_view name, uint32_t port = 0) { return detail:
 template <typename T, typename AUX = void>
 class graph_named {
   using Equal = std::equal_to<>;
+  using str_view = std::string_view;
 
 public:
-  using str_view = std::string_view;
   using key_type = std::string;
   using key_hash = detail::str_hash;
   using node_type = std::shared_ptr<T>;
@@ -74,7 +73,6 @@ public:
   using NodeArgsSet = std::vector<edge_type>;
   using NodeMap = std::unordered_map<key_type, NodeSet, key_hash, Equal>;
   using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
-  using NodeStore = std::unordered_map<key_type, node_type, key_hash, Equal>;
 
   using node_base = T;
   using aux_base = AUX;
@@ -154,34 +152,6 @@ public:
     set_aux_impl<aux_t>(std::forward<Ts>(preds_and_ctor_args)...);
   }
 
-  // Removal
-
-  bool rm(key_type const &name) {
-    if (predecessor.find(name) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-
-    // Remove this node from pred map of all successors
-    for (auto const &succ : successor[name]) {
-      predecessor[succ].erase(name);
-      [[maybe_unused]] auto n = std::erase_if(argmap[succ], [&](auto const &edge) { return edge.name == name; });
-      assert(n && "[BUG] Inconsistent graph state.");
-    }
-
-    // Remove this node from succ map of all predecessors
-    for (auto const &pred : predecessor[name]) {
-      successor[pred].erase(name);
-    }
-
-    // Remove the node from adj maps and store
-    predecessor.erase(name);
-    argmap.erase(name);
-    successor.erase(name);
-    store.erase(name);
-
-    return true;
-  }
-
   // Edge manipulation
 
   template <range_of<edge_type> R>
@@ -201,44 +171,6 @@ public:
   void add_edge(key_type const &name, edge_type const &pred) { add_edge_impl(name, pred); }
 
   void add_edge(key_type const &name, key_type const &pred) { add_edge_impl(name, edge_type(str_view(pred))); }
-
-  template <range_of<edge_type> R>
-  bool rm_edge(key_type const &name, R &&preds) {
-    if (predecessor.find(name) == predecessor.end()) {
-      return false;
-    }
-    bool rm = false;
-    for (auto const &pred : preds) {
-      rm |= rm_edge_impl(name, pred);
-    }
-    return rm;
-  }
-
-  template <range_of<str_view> R>
-  bool rm_edge(key_type const &name, R &&preds) {
-    if (predecessor.find(name) == predecessor.end()) {
-      return false;
-    }
-    bool rm = false;
-    for (auto const &pred : preds) {
-      rm |= rm_edge_impl(name, edge_type(str_view(pred)));
-    }
-    return rm;
-  }
-
-  bool rm_edge(key_type const &name, edge_type const &pred) {
-    if (predecessor.find(name) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-    return rm_edge_impl(name, pred);
-  }
-
-  bool rm_edge(key_type const &name, key_type const &pred) {
-    if (predecessor.find(name) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-    return rm_edge_impl(name, edge_type(str_view(pred)));
-  }
 
   // Replacement
 
@@ -282,6 +214,13 @@ public:
     for (auto &o : out) {
       if (o.name == old_name) {
         o.name = new_name;
+      }
+    }
+
+    // Update auxiliary arg references
+    for (auto &edge : auxiliary_args) {
+      if (edge.name == old_name) {
+        edge.name = new_name;
       }
     }
 
@@ -372,7 +311,7 @@ public:
   bool contains(key_type const &name) const noexcept { return predecessor.find(name) != predecessor.end(); }
 
   NodeSet const &pred_of(key_type const &name) const {
-    static NodeSet empty_set{};
+    static NodeSet const empty_set{};
     auto it = predecessor.find(name);
     return (it != predecessor.end()) ? it->second : empty_set;
   }
@@ -380,7 +319,7 @@ public:
   NodeMap const &pred() const noexcept { return predecessor; }
 
   NodeArgsSet const &args_of(key_type const &name) const {
-    static NodeArgsSet empty_set{};
+    static NodeArgsSet const empty_set{};
     auto it = argmap.find(name);
     return (it != argmap.end()) ? it->second : empty_set;
   }
@@ -388,7 +327,7 @@ public:
   NodeArgsMap const &args() const noexcept { return argmap; }
 
   NodeSet const &succ_of(key_type const &name) const {
-    static NodeSet empty_set{};
+    static NodeSet const empty_set{};
     auto it = successor.find(name);
     return (it != successor.end()) ? it->second : empty_set;
   }
@@ -397,7 +336,7 @@ public:
 
   NodeArgsSet const &output() const noexcept { return out; }
 
-  auto aux() const noexcept { return auxiliary; }
+  aux_type aux() const noexcept { return auxiliary; }
 
   NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
 
@@ -437,61 +376,16 @@ public:
   }
 
   bool validate() const noexcept {
-    for (auto const &[name, preds] : predecessor) {
-      for (auto const &pred : preds) {
-        if (successor.find(pred) == successor.end() || successor.at(pred).find(name) == successor.at(pred).end()) {
-          return false; // Inconsistent: pred missing in successor map
-        }
-      }
-    }
-
-    for (auto const &[name, succs] : successor) {
-      for (auto const &succ : succs) {
-        if (predecessor.find(succ) == predecessor.end() ||
-            predecessor.at(succ).find(name) == predecessor.at(succ).end()) {
-          return false; // Inconsistent: succ missing in predecessor map
-        }
-      }
-    }
-
-    for (auto const &[name, args] : argmap) {
-      for (auto const &arg : args) {
-        if (predecessor.find(name) == predecessor.end() ||
-            predecessor.at(name).find(arg.name) == predecessor.at(name).end()) {
-          return false; // Inconsistent: arg missing in predecessor map
-        }
-        if (successor.find(arg.name) == successor.end() ||
-            successor.at(arg.name).find(name) == successor.at(arg.name).end()) {
-          return false; // Inconsistent: arg missing in successor map
-        }
-      }
-    }
-
     for (auto const &[name, _] : predecessor) {
       if (store.find(name) == store.end()) {
         return false; // Inconsistent: node missing in store
       }
     }
-    for (auto const &[name, _] : successor) {
-      if (store.find(name) == store.end()) {
-        return false; // Inconsistent: node missing in store
-      }
-    }
-    for (auto const &[name, _] : store) {
-      if (predecessor.find(name) == predecessor.end()) {
-        return false; // Inconsistent: node missing in predecessor map
-      }
-      if (successor.find(name) == successor.end()) {
-        return false; // Inconsistent: node missing in successor map
-      }
-    }
-
     for (auto const &o : out) {
       if (store.find(o.name) == store.end()) {
         return false; // Inconsistent: output node missing in store
       }
     }
-
     if constexpr (!std::is_void_v<AUX>) {
       for (auto const &edge : auxiliary_args) {
         if (store.find(edge.name) == store.end()) {
@@ -499,7 +393,6 @@ public:
         }
       }
     }
-
     return true;
   }
 
@@ -693,31 +586,10 @@ private:
     successor[pred.name].emplace(name);
   }
 
-  // remove all edges name -> [pred:port]
-  bool rm_edge_impl(key_type const &name, edge_type const &pred) {
-    auto &args = argmap[name];
-
-    if (std::find(args.begin(), args.end(), pred) == args.end()) {
-      return false; // Edge doesn't exist, nothing to remove
-    }
-
-    // Remove all edges [pred:port]
-    std::erase(args, pred);
-
-    // Cleanup adjacency maps
-    cleanup_adj(name, pred.name);
-
-    return true;
-  }
-
   void cleanup_adj(key_type const &name, key_type const &pred) {
     auto const &args = argmap[name];
     bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &arg) { return arg.name == pred; });
     if (!has_conn) {
-      assert(predecessor[name].find(pred) != predecessor[name].end() &&
-             "[BUG] Inconsistent graph state: predecessor not found in adj map.");
-      assert(successor[pred].find(name) != successor[pred].end() &&
-             "[BUG] Inconsistent graph state: successor not found in reverse_adj map.");
       // If no other connections exist, remove old predecessor from adjacency maps
       predecessor[name].erase(pred);
       successor[pred].erase(name);
@@ -725,6 +597,8 @@ private:
   }
 
 protected:
+  using NodeStore = std::unordered_map<key_type, node_type, key_hash, Equal>;
+
   NodeMap predecessor;        ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
   NodeArgsMap argmap;         ///< node -> [pred:port] i.e. args for calling this op node, order preserved
   NodeMap successor;          ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -142,33 +141,6 @@ public:
     set_aux_impl<aux_t>(std::forward<Ts>(preds_and_ctor_args)...);
   }
 
-  // Removal
-
-  bool rm(node_type const &node) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-
-    // Remove this node from pred map of all successors
-    for (auto const &succ : successor[node]) {
-      predecessor[succ].erase(node);
-      auto n = std::erase_if(argmap[succ], [&](auto const &np) { return np.node == node; });
-      assert(n && "[BUG] Inconsistent graph state.");
-    }
-
-    // Remove this node from succ map of all predecessors
-    for (auto const &pred : predecessor[node]) {
-      successor[pred].erase(node);
-    }
-
-    // Remove the node from adj maps
-    predecessor.erase(node);
-    argmap.erase(node);
-    successor.erase(node);
-
-    return true;
-  }
-
   // Edge manipulation
 
   template <range_of<node_type> R>
@@ -188,42 +160,6 @@ public:
   void add_edge(node_type const &node, node_type const &pred) { add_edge_impl(node, pred, 0); }
 
   void add_edge(node_type const &node, edge_type const &pred) { add_edge_impl(node, pred.node, pred.port); }
-
-  template <range_of<node_type> R>
-  void rm_edge(node_type const &node, R &&preds) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return; // Node doesn't exist
-    }
-    for (auto const &pred : preds) {
-      rm_edge_impl(node, pred, 0);
-    }
-  }
-
-  template <range_of<edge_type> R>
-  bool rm_edge(node_type const &node, R &&preds) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-    bool removed = false;
-    for (auto const &[pred, port] : preds) {
-      removed |= rm_edge_impl(node, pred, port);
-    }
-    return removed;
-  }
-
-  bool rm_edge(node_type const &node, node_type const &pred) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-    return rm_edge_impl(node, pred, 0);
-  }
-
-  bool rm_edge(node_type const &node, edge_type const &pred) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-    return rm_edge_impl(node, pred.node, pred.port);
-  }
 
   // Replacement
 
@@ -259,6 +195,20 @@ public:
         if (arg.node == old_node) {
           arg.node = new_node;
         }
+      }
+    }
+
+    // Update output
+    for (auto &o : out) {
+      if (o.node == old_node) {
+        o.node = new_node;
+      }
+    }
+
+    // Update auxiliary args
+    for (auto &edge : auxiliary_args) {
+      if (edge.node == old_node) {
+        edge.node = new_node;
       }
     }
 
@@ -320,7 +270,7 @@ public:
   bool contains(node_type const &node) const noexcept { return predecessor.find(node) != predecessor.end(); }
 
   NodeSet const &pred_of(node_type const &node) const {
-    static NodeSet empty_set{};
+    static NodeSet const empty_set{};
     auto it = predecessor.find(node);
     return (it != predecessor.end()) ? it->second : empty_set;
   }
@@ -328,7 +278,7 @@ public:
   NodeMap const &pred() const noexcept { return predecessor; }
 
   NodeArgsSet const &args_of(node_type const &node) const {
-    static NodeArgsSet empty_set{};
+    static NodeArgsSet const empty_set{};
     auto it = argmap.find(node);
     return (it != argmap.end()) ? it->second : empty_set;
   }
@@ -336,7 +286,7 @@ public:
   NodeArgsMap const &args() const noexcept { return argmap; }
 
   NodeSet const &succ_of(node_type const &node) const {
-    static NodeSet empty_set{};
+    static NodeSet const empty_set{};
     auto it = successor.find(node);
     return (it != successor.end()) ? it->second : empty_set;
   }
@@ -387,14 +337,11 @@ public:
   }
 
   bool validate() const noexcept {
-    // We do not need to validate pred/succ/argmap since they are ensured by ensure_node()
-
     for (auto const &o : out) {
       if (predecessor.find(o.node) == predecessor.end()) {
         return false; // Inconsistent: output node missing in predecessor map
       }
     }
-
     if constexpr (!std::is_void_v<AUX>) {
       for (auto const &edge : auxiliary_args) {
         if (predecessor.find(edge.node) == predecessor.end()) {
@@ -402,7 +349,6 @@ public:
         }
       }
     }
-
     return true;
   }
 
@@ -506,14 +452,14 @@ private:
   template <typename U, typename... Ts>
   node_type add_inplace_impl(std::vector<edge_type> &preds_list, Ts &&...args) {
     auto node = std::make_shared<U>(std::forward<Ts>(args)...);
-    add(node, preds_list);
+    add_impl(preds_list, node);
     return node;
   }
 
   template <typename U, typename... Ts>
   node_type add_inplace_impl(std::vector<edge_type> &preds_list, ctor_args_tag, Ts &&...args) {
     auto node = std::make_shared<U>(std::forward<Ts>(args)...);
-    add(node, preds_list);
+    add_impl(preds_list, node);
     return node;
   }
 
@@ -601,32 +547,10 @@ private:
     successor[pred.node].emplace(node);
   }
 
-  // remove all edges node -> [pred:port]
-  bool rm_edge_impl(node_type const &node, node_type const &pred, uint32_t port) {
-    auto &args = argmap[node];
-    auto rm = make_edge(pred, port);
-
-    if (std::find(args.begin(), args.end(), rm) == args.end()) {
-      return false; // Edge doesn't exist, nothing to remove
-    }
-
-    // Remove all edges [pred:port]
-    std::erase(args, rm);
-
-    // Cleanup adjacency maps
-    cleanup_adj(node, pred);
-
-    return true;
-  }
-
   void cleanup_adj(node_type const &node, node_type const &pred) {
     auto const &args = argmap[node];
     bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &arg) { return arg.node == pred; });
     if (!has_conn) {
-      assert(predecessor[node].find(pred) != predecessor[node].end() &&
-             "[BUG] Inconsistent graph state: predecessor not found in adj map.");
-      assert(successor[pred].find(node) != successor[pred].end() &&
-             "[BUG] Inconsistent graph state: successor not found in reverse_adj map.");
       // If no other connections exist, remove old predecessor from adjacency maps
       predecessor[node].erase(pred);
       successor[pred].erase(node);
