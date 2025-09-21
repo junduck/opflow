@@ -38,31 +38,31 @@ public:
                    std::same_as<typename G::node_type, shared_node_type> &&
                    std::same_as<typename G::aux_type, shared_aux_type>),
                   "Graph node and aux types must match graph_store node and aux types.");
-
-    if (!g.validate()) {
-      throw std::invalid_argument("Graph validation failed.");
-    }
-
     if (n_grp == 0) {
       throw std::invalid_argument("Number of groups must be greater than 0.");
     }
 
+    // Validate topology
+    if (!g.validate()) {
+      throw std::invalid_argument("Graph validation failed.");
+    }
+
+    // Validate node connections
+    validate(g);
+
     shared_aux_type aux{};
     if constexpr (!std::same_as<aux_base, void>) {
       aux = g.aux();
-      if (!aux) {
-        throw std::invalid_argument("Graph auxiliary data is null.");
-      }
     }
 
     using key_type = typename G::key_type;
     using hash_type = typename G::key_hash;
     using lookup_type = std::unordered_map<key_type, u32, hash_type, std::equal_to<>>;
-    std::vector<key_type> keys;          // sorted node keys
-    std::vector<shared_node_type> nodes; // sorted node instances
-    lookup_type idx;                     // node key -> sorted index
+    std::vector<key_type> keys{};          // sorted node keys
+    std::vector<shared_node_type> nodes{}; // sorted node instances
+    lookup_type idx{};                     // node key -> sorted index
 
-    lookup_type in_degree;
+    lookup_type in_degree{};
     std::queue<key_type> ready{};
 
     keys.reserve(n_nodes);
@@ -85,7 +85,6 @@ public:
 
       // update successors
       auto succ_it = g.succ().find(current);
-      assert(succ_it != g.succ().end() && "[BUG] Node not found in successors map.");
       for (auto const &succ : succ_it->second) {
         if (--in_degree[succ] == 0) {
           ready.push(succ);
@@ -110,7 +109,8 @@ public:
     }
 
     u32 num_edges = aux ? static_cast<u32>(g.aux_args().size()) : 0;
-    for (auto const &[_, args] : g.args()) {
+    auto const &g_args = g.args();
+    for (auto const &[_, args] : g_args) {
       num_edges += args.size();
     }
     input_offset.reserve(n_nodes, num_edges);
@@ -118,9 +118,6 @@ public:
     std::vector<u32> arg_offset{};
     if (aux) {
       for (auto const &[key, port] : g.aux_args()) {
-        if (port >= nodes[0]->num_outputs()) {
-          throw std::runtime_error("Incompatible auxiliary node connections in graph.");
-        }
         arg_offset.push_back(port); // aux is always node 0
       }
       input_offset.push_back(arg_offset);
@@ -128,10 +125,7 @@ public:
 
     for (size_t i = 0; i < n_nodes; ++i) {
       arg_offset.clear();
-      for (auto const &[key, port] : g.args_of(keys[i])) {
-        if (port >= g.node(key)->num_outputs()) {
-          throw std::runtime_error("Incompatible node connections in graph.");
-        }
+      for (auto const &[key, port] : g_args.at(keys[i])) {
         arg_offset.push_back(record_offset[idx[key]] + port);
       }
       input_offset.push_back(arg_offset);
@@ -160,6 +154,60 @@ public:
   size_t num_groups() const noexcept { return n_grp; }
 
 private:
+  template <typename G>
+  void validate(G const &g) {
+    auto const &g_preds = g.pred();
+    auto const &g_args = g.args();
+    auto const &g_out = g.output();
+
+    bool root_found = false;
+    for (auto const &[key, preds] : g_preds) {
+      if (preds.empty()) {
+        if (root_found) {
+          throw std::invalid_argument("Multiple root nodes detected in graph.");
+        } else if constexpr (!std::is_void_v<typename G::aux_base>) {
+          auto aux = g.aux();
+          if (!aux) {
+            throw std::invalid_argument("Graph auxiliary data is null.");
+          }
+
+          auto root = g.node(key);
+          if (typeid(*root) != typeid(dag_root_type<typename G::node_base>)) {
+            throw std::invalid_argument("Root node must be of type dag_root<T>.");
+          }
+
+          auto root_size = root->num_outputs();
+          for (auto const &[arg_key, arg_port] : g.aux_args()) {
+            if (g.node(arg_key) != root) {
+              throw std::invalid_argument("Auxiliary node can only connect to root node.");
+            }
+            if (arg_port >= root_size) {
+              throw std::invalid_argument("Incompatible auxiliary node connections in graph.");
+            }
+          }
+        }
+        root_found = true;
+      }
+    }
+
+    for (auto const &[key, _] : g_preds) {
+      for (auto const &[arg_key, arg_port] : g_args.at(key)) {
+        if (arg_port >= g.node(arg_key)->num_outputs()) {
+          throw std::invalid_argument("Incompatible node connections in graph.");
+        }
+      }
+    }
+
+    for (auto const &[key, port] : g_out) {
+      if (g.node(key) == nullptr) {
+        throw std::invalid_argument("Output node is null.");
+      }
+      if (port >= g.node(key)->num_outputs()) {
+        throw std::invalid_argument("Incompatible output node connections in graph.");
+      }
+    }
+  }
+
   void init_arena(std::vector<shared_node_type> const &nodes, shared_aux_type const &win) {
     // Memory layout:
     // | [win_ptrs] | node_ptrs | PADDING | node grp | PADDING | ... | node grp | PADDING |
