@@ -67,16 +67,18 @@ class graph_named {
 public:
   using key_type = std::string;
   using key_hash = detail::str_hash;
-  using node_type = std::shared_ptr<T>;
+
+  using node_type = T;
+  using shared_node_ptr = std::shared_ptr<T>;
+
+  using aux_type = AUX;
+  using shared_aux_ptr = std::shared_ptr<aux_type>;
+
   using edge_type = detail::graph_named_edge;
   using NodeSet = std::unordered_set<key_type, key_hash, Equal>;
   using NodeArgsSet = std::vector<edge_type>;
   using NodeMap = std::unordered_map<key_type, NodeSet, key_hash, Equal>;
   using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
-
-  using node_base = T;
-  using aux_base = AUX;
-  using aux_type = std::shared_ptr<AUX>;
 
   // Add
 
@@ -336,11 +338,11 @@ public:
 
   NodeArgsSet const &output() const noexcept { return out; }
 
-  aux_type aux() const noexcept { return auxiliary; }
+  shared_aux_ptr aux() const noexcept { return auxiliary; }
 
   NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
 
-  node_type node(key_type const &name) const {
+  shared_node_ptr node(key_type const &name) const {
     auto it = store.find(name);
     return (it != store.end()) ? it->second : nullptr;
   }
@@ -597,14 +599,14 @@ private:
   }
 
 protected:
-  using NodeStore = std::unordered_map<key_type, node_type, key_hash, Equal>;
+  using NodeStore = std::unordered_map<key_type, shared_node_ptr, key_hash, Equal>;
 
   NodeMap predecessor;        ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
   NodeArgsMap argmap;         ///< node -> [pred:port] i.e. args for calling this op node, order preserved
   NodeMap successor;          ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
   NodeArgsSet out;            ///< Output [node:port]
   NodeStore store;            ///< Store for actual node instances
-  aux_type auxiliary;         ///< Auxiliary data
+  shared_aux_ptr auxiliary;   ///< Auxiliary data
   NodeArgsSet auxiliary_args; ///< Auxiliary args
 };
 } // namespace opflow

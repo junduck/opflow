@@ -127,13 +127,13 @@ concept executable_graph = requires(G const g) {
   typename G::NodeMap;     // associate container key_type -> NodeSet
   typename G::NodeArgsMap; // associate container key_type -> NodeArgsSet
 
-  typename G::node_base;
-  typename G::aux_base;
   typename G::node_type;
   typename G::aux_type;
+  typename G::shared_node_ptr;
+  typename G::shared_aux_ptr;
 
   { g.node(std::declval<typename G::key_type>()) } -> dag_node_ptr;
-  { g.aux() } -> std::convertible_to<typename G::aux_type>;
+  { g.aux() } -> std::convertible_to<typename G::shared_aux_ptr>;
 
   { g.pred() } -> std::convertible_to<typename G::NodeMap>;
   { g.args() } -> std::convertible_to<typename G::NodeArgsMap>;

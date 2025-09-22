@@ -17,14 +17,14 @@ class graph_store {
 public:
   using data_type = typename T::data_type;
 
-  using node_base = T;
-  using aux_base = U;
+  using node_type = T;
+  using aux_type = U;
 
-  using node_type = std::unique_ptr<node_base, arena_deleter<node_base>>;
-  using shared_node_type = std::shared_ptr<node_base>;
+  using unique_node_ptr = std::unique_ptr<node_type, arena_deleter<node_type>>;
+  using shared_node_ptr = std::shared_ptr<node_type>;
 
-  using aux_type = std::unique_ptr<aux_base, arena_deleter<aux_base>>;
-  using shared_aux_type = std::shared_ptr<aux_base>;
+  using unique_aux_ptr = std::unique_ptr<aux_type, arena_deleter<aux_type>>;
+  using shared_aux_ptr = std::shared_ptr<aux_type>;
 
   template <typename G>
   graph_store(G const &g, size_t n_group, Alloc alloc)
@@ -33,10 +33,11 @@ public:
         // data
         n_grp(n_group), n_nodes(g.size()), win_ptrs(), node_ptrs(),
         // topo
-        record_offset(alloc), input_offset(alloc), output_offset(alloc) {
-    static_assert((std::same_as<typename G::node_base, node_base> && std::same_as<typename G::aux_base, aux_base> &&
-                   std::same_as<typename G::node_type, shared_node_type> &&
-                   std::same_as<typename G::aux_type, shared_aux_type>),
+        record_size(), record_offset(alloc), input_offset(alloc), output_offset(alloc) {
+    static_assert((std::same_as<typename G::node_type, node_type> && //
+                   std::same_as<typename G::aux_type, aux_type> &&
+                   std::same_as<typename G::shared_node_ptr, shared_node_ptr> &&
+                   std::same_as<typename G::shared_aux_ptr, shared_aux_ptr>),
                   "Graph node and aux types must match graph_store node and aux types.");
     if (n_grp == 0) {
       throw std::invalid_argument("Number of groups must be greater than 0.");
@@ -50,17 +51,17 @@ public:
     // Validate node connections
     validate(g);
 
-    shared_aux_type aux{};
-    if constexpr (!std::same_as<aux_base, void>) {
+    shared_aux_ptr aux{};
+    if constexpr (!std::is_void_v<typename G::aux_type>) {
       aux = g.aux();
     }
 
     using key_type = typename G::key_type;
     using hash_type = typename G::key_hash;
     using lookup_type = std::unordered_map<key_type, u32, hash_type, std::equal_to<>>;
-    std::vector<key_type> keys{};          // sorted node keys
-    std::vector<shared_node_type> nodes{}; // sorted node instances
-    lookup_type idx{};                     // node key -> sorted index
+    std::vector<key_type> keys{};         // sorted node keys
+    std::vector<shared_node_ptr> nodes{}; // sorted node instances
+    lookup_type idx{};                    // node key -> sorted index
 
     lookup_type in_degree{};
     std::queue<key_type> ready{};
@@ -101,7 +102,6 @@ public:
       nodes.push_back(g.node(keys[i]));
     }
 
-    u32 record_size = 0;
     record_offset.reserve(n_nodes);
     for (size_t i = 0; i < n_nodes; ++i) {
       record_offset.emplace_back(record_size);
@@ -141,13 +141,13 @@ public:
     copy_data(nodes, aux);
   }
 
-  std::span<node_type const> operator[](size_t igrp) const noexcept {
+  std::span<unique_node_ptr const> operator[](size_t igrp) const noexcept {
     return {node_ptrs.data() + igrp * n_nodes, n_nodes};
   }
 
   bool has_window() const noexcept { return !win_ptrs.empty(); }
 
-  aux_type const &window(size_t igrp) const noexcept { return win_ptrs[igrp]; }
+  unique_aux_ptr const &window(size_t igrp) const noexcept { return win_ptrs[igrp]; }
 
   size_t size() const noexcept { return n_nodes; }
   size_t num_nodes() const noexcept { return n_nodes; }
@@ -165,14 +165,14 @@ private:
       if (preds.empty()) {
         if (root_found) {
           throw std::invalid_argument("Multiple root nodes detected in graph.");
-        } else if constexpr (!std::is_void_v<typename G::aux_base>) {
+        } else if constexpr (!std::is_void_v<typename G::aux_type>) {
           auto aux = g.aux();
           if (!aux) {
             throw std::invalid_argument("Graph auxiliary data is null.");
           }
 
           auto root = g.node(key);
-          if (typeid(*root) != typeid(dag_root_type<typename G::node_base>)) {
+          if (typeid(*root) != typeid(dag_root_type<typename G::node_type>)) {
             throw std::invalid_argument("Root node must be of type dag_root<T>.");
           }
 
@@ -208,7 +208,7 @@ private:
     }
   }
 
-  void init_arena(std::vector<shared_node_type> const &nodes, shared_aux_type const &win) {
+  void init_arena(std::vector<shared_node_ptr> const &nodes, shared_aux_ptr const &win) {
     // Memory layout:
     // | [win_ptrs] | node_ptrs | PADDING | node grp | PADDING | ... | node grp | PADDING |
     //
@@ -224,7 +224,7 @@ private:
     size_t max_align = cacheline_size;
 
     size_t win_size = 0;
-    if constexpr (!std::is_void_v<aux_base>) {
+    if constexpr (!std::is_void_v<aux_type>) {
       align = win->clone_align();
       max_align = std::max(max_align, align);
       win_size = aligned_size(win->clone_size(), align);
@@ -246,17 +246,17 @@ private:
     arena = fixed_buffer_resource{arena_storage.data(), arena_storage.size()};
 
     // consolidate memory layout
-    if constexpr (!std::is_void_v<aux_base>) {
-      win_ptrs = std::pmr::vector<aux_type>(&arena);
+    if constexpr (!std::is_void_v<aux_type>) {
+      win_ptrs = std::pmr::vector<unique_aux_ptr>(&arena);
       win_ptrs.reserve(n_grp);
     }
-    node_ptrs = std::pmr::vector<node_type>(&arena);
+    node_ptrs = std::pmr::vector<unique_node_ptr>(&arena);
     node_ptrs.reserve(n_grp * n_nodes);
   }
 
-  void copy_data(std::vector<shared_node_type> const &nodes, shared_aux_type const &win) {
+  void copy_data(std::vector<shared_node_ptr> const &nodes, shared_aux_ptr const &win) {
     void *mem;
-    if constexpr (!std::is_void_v<aux_base>) {
+    if constexpr (!std::is_void_v<aux_type>) {
       auto win_size = win->clone_size();
       auto win_align = std::max(cacheline_size, win->clone_align());
       for (size_t i = 0; i < n_grp; ++i) {
@@ -283,25 +283,26 @@ private:
 
   size_t const n_grp;
   size_t const n_nodes;
-  std::pmr::vector<aux_type> win_ptrs;
-  std::pmr::vector<node_type> node_ptrs;
+  std::pmr::vector<unique_aux_ptr> win_ptrs;
+  std::pmr::vector<unique_node_ptr> node_ptrs;
 
   using u32_alloc = rebind_alloc<Alloc, u32>;
 
 public:
+  u32 record_size;                                  // total size of record
   std::vector<u32, u32_alloc> record_offset;        // i-th node -> offset in record
   flat_multivect<u32, u32, u32_alloc> input_offset; // i-th node -> [offset in rec]
   std::vector<u32, u32_alloc> output_offset;        // i-th out -> <offset in rec, node->num_outputs()>
 };
 
-// deduction guide: G::node_base -> T, G::aux_base -> U
+// deduction guide: G::node_type -> T, G::aux_type -> U
 
 template <typename G>
-graph_store(G const &) -> graph_store<typename G::node_base, typename G::aux_base, std::allocator<void>>;
+graph_store(G const &) -> graph_store<typename G::node_type, typename G::aux_type, std::allocator<void>>;
 
 template <typename G>
-graph_store(G const &, size_t) -> graph_store<typename G::node_base, typename G::aux_base, std::allocator<void>>;
+graph_store(G const &, size_t) -> graph_store<typename G::node_type, typename G::aux_type, std::allocator<void>>;
 
 template <typename G, typename Alloc>
-graph_store(G const &, size_t, Alloc) -> graph_store<typename G::node_base, typename G::aux_base, Alloc>;
+graph_store(G const &, size_t, Alloc) -> graph_store<typename G::node_type, typename G::aux_type, Alloc>;
 } // namespace opflow::detail
