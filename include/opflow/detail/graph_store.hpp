@@ -108,7 +108,7 @@ public:
       record_size += nodes[i]->num_outputs();
     }
 
-    u32 num_edges = aux ? static_cast<u32>(g.aux_args().size()) : 0;
+    auto num_edges = aux ? g.aux_args().size() : 0;
     auto const &g_args = g.args();
     for (auto const &[_, args] : g_args) {
       num_edges += args.size();

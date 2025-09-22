@@ -145,27 +145,6 @@ TEST_F(GraphExecFanoutTest, IndependentSlidingWindows) {
   EXPECT_DOUBLE_EQ(output[2], 5.0); // add2
 }
 
-TEST_F(GraphExecFanoutTest, InputBufferAPI) {
-  // Test the input_buffer / commit_input_buffer API
-  std::vector<double> output(3);
-
-  // Get input buffer for group 0
-  double *buffer = exec->input_buffer(1.0, 0);
-  ASSERT_NE(buffer, nullptr);
-
-  // Fill buffer
-  buffer[0] = 42.0;
-
-  // Commit the buffer
-  exec->commit_input_buffer(0);
-
-  // Check results
-  exec->value(output.data(), 0);
-  EXPECT_DOUBLE_EQ(output[0], 42.0); // sum_left
-  EXPECT_DOUBLE_EQ(output[1], 42.0); // sum_right
-  EXPECT_DOUBLE_EQ(output[2], 84.0); // add2
-}
-
 TEST_F(GraphExecFanoutTest, TimeBasedWindowing) {
   // Create executor with time-based windows
   auto time_sum = g.add<op::sum<double>>(root | 0, 5.0); // 5-second time window

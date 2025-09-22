@@ -20,7 +20,6 @@ public:
   using data_type = T;
   using op_type = op_base<data_type>;
   using root_type = op_root<data_type>;
-  using graph_node_type = std::shared_ptr<op_type>;
 
   template <typename G>
   op_exec(G const &g, size_t num_groups, size_t history_size_hint = 256, Alloc const &alloc = Alloc{})
@@ -32,7 +31,6 @@ public:
         all_cumulative(), win_desc(alloc), step_count(dag.size(), ngrp, alloc),
         // tmp
         curr_args(0, ngrp, alloc) {
-    validate();
     std::vector<size_t> size_hints(ngrp, history_size_hint);
     init_data(size_hints);
     init_window();
@@ -51,7 +49,6 @@ public:
     if (std::ranges::size(hints_by_grp) != ngrp) {
       throw std::runtime_error("History size hints must match number of groups.");
     }
-    validate();
     init_data(std::forward<S>(hints_by_grp));
     init_window();
   }
@@ -64,26 +61,6 @@ public:
     root->on_data(in);
     root->value(out_ptr(record, 0));
 
-    commit_input_buffer(igrp);
-  }
-
-  void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
-    auto [_, record] = history[igrp].back();
-    size_t i = 0;
-    for (auto idx : dag.output_offset) {
-      out[i++] = record[idx];
-    }
-  }
-
-  data_type *input_buffer(data_type timestamp, size_t igrp) {
-    auto [_, record] = history[igrp].push(timestamp);
-    return record.data();
-  }
-
-  void commit_input_buffer(size_t igrp) noexcept {
-    auto [timestamp, record] = history[igrp].back();
-
-    auto nodes = dag[igrp];
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
       nodes[i]->on_data(in_ptr(record, i, igrp));
@@ -112,9 +89,18 @@ public:
     cleanup_history(igrp);
   }
 
+  void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
+    auto [_, record] = history[igrp].back();
+    size_t i = 0;
+    for (auto idx : dag.output_offset) {
+      out[i++] = record[idx];
+    }
+  }
+
   size_t num_inputs() const noexcept {
     auto nodes = dag[0];
-    return nodes[0]->num_inputs();
+    root_type *root = static_cast<root_type *>(nodes[0].get());
+    return root->input_size;
   }
 
   size_t num_outputs() const noexcept { return dag.output_offset.size(); }
@@ -127,38 +113,23 @@ private:
   data_type const *in_ptr(auto record, size_t node_id, size_t grp_id) noexcept {
     auto args = curr_args[grp_id];
     auto offsets = dag.input_offset[node_id];
-    assert(args.size() >= offsets.size() && "[BUG] Argument size mismatch");
     for (size_t i = 0; i < offsets.size(); ++i) {
       args[i] = record[offsets[i]];
     }
     return args.data();
   }
 
-  void validate() {
-    auto nodes = dag[0];
-    // validate root
-    if (typeid(*nodes[0]) != typeid(root_type)) {
-      throw std::runtime_error("Wrong root node type in graph.");
-    }
-    for (size_t i = 1; i < dag.size(); ++i) {
-      if (dag.input_offset[i].empty()) {
-        throw std::runtime_error("Multiple root nodes detected in graph.");
-      }
-    }
-  }
-
   template <sized_range_of<size_t> R>
   void init_data(R &&history_size_hints) {
     size_t max_inputs = 0;
     for (size_t i = 0; i < dag.size(); ++i) {
-      max_inputs = std::max(max_inputs, dag.input_offset[i].size());
+      max_inputs = std::max(max_inputs, dag.input_offset.size(i));
     }
     curr_args.ensure_group_capacity(max_inputs);
 
-    u32 rec_size = u32(dag[0].back()->num_outputs()) + dag.record_offset.back();
     history.reserve(ngrp);
     for (size_t hint : history_size_hints) {
-      history.emplace_back(rec_size, hint, history.get_allocator());
+      history.emplace_back(dag.record_size, hint, history.get_allocator());
     }
   }
 
@@ -264,9 +235,9 @@ private:
   using hbuf_type = detail::aligned_type<detail::history_buffer<data_type, Alloc>, detail::cacheline_size>;
   using hbuf_alloc = detail::rebind_alloc<Alloc, hbuf_type>;
 
-  size_t ngrp;                                   ///< Number of groups
-  detail::graph_store<op_type, void, Alloc> dag; ///< DAG to execute, uses its own alloc
-  std::vector<hbuf_type, hbuf_alloc> history;    ///< Memory buffer for each node
+  size_t const ngrp;                                   ///< Number of groups
+  detail::graph_store<op_type, void, Alloc> const dag; ///< DAG to execute, uses its own alloc
+  std::vector<hbuf_type, hbuf_alloc> history;          ///< Memory buffer for each node
 
   bool all_cumulative;                                 ///< True if all nodes are in cumulative mode, shared
   std::vector<win_desc_type, win_desc_alloc> win_desc; ///< Window descriptors for each node, shared

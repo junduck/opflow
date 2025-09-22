@@ -5,7 +5,7 @@
 #include "def.hpp"
 #include "fn_base.hpp"
 
-#include "detail/dag_store.hpp"
+#include "detail/graph_store.hpp"
 #include "detail/vector_store.hpp"
 
 namespace opflow {
@@ -21,60 +21,43 @@ public:
       : // DAG
         ngrp(num_groups), dag(g, ngrp, alloc),
         // data
-        history(0, ngrp, alloc),
+        history(dag.record_size, ngrp, alloc),
         // tmp
         curr_args(0, ngrp, alloc) {
-    validate();
-    init_data();
+    size_t max_inputs = 0;
+    for (size_t i = 0; i < dag.size(); ++i) {
+      max_inputs = std::max(max_inputs, dag.input_offset.size(i));
+    }
+    curr_args.ensure_group_capacity(max_inputs);
   }
 
-  void on_data(data_type const *in, size_t igrp) noexcept {
+  void on_data(data_type const *in,            //
+               data_type *OPFLOW_RESTRICT out, //
+               size_t igrp) noexcept {
     auto record = history[igrp];
-
     auto nodes = dag[igrp];
+
     root_type *root = static_cast<root_type *>(nodes[0].get());
     root->on_data(in, out_ptr(record, 0));
 
-    commit_input_buffer(igrp);
-  }
-
-  void value(data_type *OPFLOW_RESTRICT out, size_t igrp) const noexcept {
-    auto record = history[igrp];
-    size_t i = 0;
-    for (auto [offset, size] : dag.output_offset) {
-      for (size_t port = 0; port < size; ++port) {
-        out[i++] = record[offset + port];
-      }
-    }
-  }
-
-  data_type *input_buffer(size_t igrp) noexcept {
-    auto record = history[igrp];
-    return record.data();
-  }
-
-  void commit_input_buffer(size_t igrp) noexcept {
-    auto record = history[igrp];
-
-    auto nodes = dag[igrp];
     for (size_t i = 1; i < nodes.size(); ++i) {
       // call node
       nodes[i]->on_data(in_ptr(record, i, igrp), out_ptr(record, i));
+    }
+
+    size_t i = 0;
+    for (auto idx : dag.output_offset) {
+      out[i++] = record[idx];
     }
   }
 
   size_t num_inputs() const noexcept {
     auto nodes = dag[0];
-    return nodes[0]->num_inputs();
+    root_type *root = static_cast<root_type *>(nodes[0].get());
+    return root->input_size;
   }
 
-  size_t num_outputs() const noexcept {
-    size_t total = 0;
-    for (auto [_, size] : dag.output_offset) {
-      total += size;
-    }
-    return total;
-  }
+  size_t num_outputs() const noexcept { return dag.output_offset.size(); }
 
   size_t num_groups() const noexcept { return ngrp; }
 
@@ -91,33 +74,8 @@ private:
     return args.data();
   }
 
-  void validate() const {
-    auto nodes = dag[0];
-    // validate root
-    if (typeid(*nodes[0]) != typeid(root_type)) {
-      throw std::runtime_error("Wrong root node type in graph.");
-    }
-    for (size_t i = 1; i < dag.size(); ++i) {
-      if (dag.input_offset[i].empty()) {
-        throw std::runtime_error("Multiple root nodes detected in graph.");
-      }
-    }
-  }
-
-  void init_data() {
-    auto nodes = dag[0];
-
-    size_t max_inputs = 0;
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      max_inputs = std::max(max_inputs, nodes[i]->num_inputs());
-    }
-    curr_args.ensure_group_capacity(max_inputs);
-
-    history.ensure_group_capacity(dag.record_size);
-  }
-
-  size_t ngrp;                                    ///< Number of groups
-  detail::dag_store<fn_type, Alloc> dag;          ///< DAG to execute
+  size_t const ngrp;                              ///< Number of groups
+  detail::graph_store<fn_type, Alloc> const dag;  ///< DAG to execute
   detail::vector_store<data_type, Alloc> history; ///< Memory buffer for each node
 
   detail::vector_store<data_type, Alloc> curr_args; ///< Reused for current node arguments
