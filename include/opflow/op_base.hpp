@@ -83,8 +83,8 @@ public:
 
   win_mode window_mode() const noexcept override {
     auto visitor =
-        detail::overload{[](size_t size) { return very_small(size) ? win_mode::cumulative : win_mode::event; },
-                         [](data_type size) { return very_small(size) ? win_mode::cumulative : win_mode::time; }};
+        detail::overload{[](size_t size) { return size == 0 ? win_mode::cumulative : win_mode::event; },
+                         [](data_type size) { return size == data_type{} ? win_mode::cumulative : win_mode::time; }};
     return std::visit(visitor, win_size);
   }
 

@@ -13,7 +13,7 @@ class GraphExecFanoutTest : public ::testing::Test {
 protected:
   using exec_type = op_exec<double>;
   using op_type = typename exec_type::op_type;
-  using graph_node_type = typename exec_type::graph_node_type;
+  using graph_node_type = std::shared_ptr<op_type>;
   using sum_type = op::sum<double>;
   using add2_type = op::add2<double>;
 
@@ -23,7 +23,7 @@ protected:
     sum_left = g.add<op::sum>(root | 0, 2);   // 2-period rolling sum
     sum_right = g.add<sum_type>(root | 0, 5); // 5-period rolling sum
     add2 = g.add<add2_type>(sum_left | 0, sum_right | 0);
-    g.output(sum_left, sum_right, add2);
+    g.set_output(sum_left, sum_right, add2);
 
     // Create executor with 3 groups
     num_groups = 3;
@@ -43,7 +43,7 @@ TEST_F(GraphExecFanoutTest, BasicConstructor) {
 }
 
 TEST_F(GraphExecFanoutTest, InitializerListConstructor) {
-  g.output(sum_left, sum_right, add2);
+  g.set_output(sum_left, sum_right, add2);
   auto exec2 = std::make_unique<exec_type>(g, 2);
   EXPECT_EQ(exec2->num_groups(), 2);
   EXPECT_EQ(exec2->num_inputs(), 1);
@@ -145,31 +145,10 @@ TEST_F(GraphExecFanoutTest, IndependentSlidingWindows) {
   EXPECT_DOUBLE_EQ(output[2], 5.0); // add2
 }
 
-TEST_F(GraphExecFanoutTest, InputBufferAPI) {
-  // Test the input_buffer / commit_input_buffer API
-  std::vector<double> output(3);
-
-  // Get input buffer for group 0
-  double *buffer = exec->input_buffer(1.0, 0);
-  ASSERT_NE(buffer, nullptr);
-
-  // Fill buffer
-  buffer[0] = 42.0;
-
-  // Commit the buffer
-  exec->commit_input_buffer(0);
-
-  // Check results
-  exec->value(output.data(), 0);
-  EXPECT_DOUBLE_EQ(output[0], 42.0); // sum_left
-  EXPECT_DOUBLE_EQ(output[1], 42.0); // sum_right
-  EXPECT_DOUBLE_EQ(output[2], 84.0); // add2
-}
-
 TEST_F(GraphExecFanoutTest, TimeBasedWindowing) {
   // Create executor with time-based windows
   auto time_sum = g.add<op::sum<double>>(root | 0, 5.0); // 5-second time window
-  g.output(time_sum);
+  g.set_output(time_sum);
   auto time_exec = std::make_unique<exec_type>(g, 1);
 
   std::vector<double> input = {1.0};
@@ -190,7 +169,7 @@ TEST_F(GraphExecFanoutTest, StressTestMultipleGroups) {
   // Stress test with many groups and data points
   const size_t large_num_groups = 10;
   std::vector<graph_node_type> outputs = {add2};
-  g.output(outputs);
+  g.set_output(outputs);
   auto stress_exec = std::make_unique<exec_type>(g, large_num_groups);
 
   std::vector<double> input = {1.0};

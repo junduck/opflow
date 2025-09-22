@@ -36,7 +36,8 @@ template <typename T>
 struct arena_deleter {
   void operator()(T *ptr) const noexcept {
     // memory is reclaimed when arena is destroyed, no dealloc needed
-    ptr->~T();
+    if constexpr (!std::is_void_v<T>)
+      ptr->~T();
   }
 };
 } // namespace opflow::detail

@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "opflow/detail/dag_store.hpp"
-#include "opflow/graph_named.hpp"
+#include "opflow/detail/graph_store.hpp"
 #include "opflow/graph_node.hpp"
 
 #include <chrono>
@@ -88,7 +87,7 @@ protected:
     g.add(nodeC, nodeB);
 
     out_nodes = {nodeC};
-    g.output(out_nodes);
+    g.set_output(out_nodes);
   }
 
   // Helper to create diamond graph: A -> B, A -> C, B -> D, C -> D
@@ -104,7 +103,7 @@ protected:
     g.add(nodeD, nodeB, nodeC);
 
     out_nodes = {nodeD};
-    g.output(out_nodes);
+    g.set_output(out_nodes);
   }
 
   // Helper to create complex graph with multiple outputs
@@ -124,7 +123,7 @@ protected:
     g.add(nodeF, nodeC, nodeE);
 
     out_nodes = {nodeD, nodeF};
-    g.output(out_nodes);
+    g.set_output(out_nodes);
   }
 
   std::shared_ptr<dummy_node> nodeA, nodeB, nodeC, nodeD;
@@ -149,7 +148,7 @@ TEST_F(GraphTopoFanoutTest, SingleNodeGraph) {
 
   // Verify output mapping
   EXPECT_EQ(topo.output_offset.size(), 1);
-  EXPECT_EQ(topo.output_offset[0].size, 1);
+  EXPECT_EQ(topo.output_offset[0], 0);
 }
 
 TEST_F(GraphTopoFanoutTest, LinearGraphTopologicalOrder) {
@@ -567,7 +566,7 @@ TEST_F(GraphTopoFanoutTest, LargeGraphPerformance) {
   for (size_t i = first_leaf; i < nodes.size(); ++i) {
     out_nodes.push_back(nodes[i]);
   }
-  g.output(out_nodes);
+  g.set_output(out_nodes);
 
   // Measure construction time (basic performance check)
   auto start = std::chrono::high_resolution_clock::now();
@@ -643,7 +642,7 @@ TEST_F(GraphTopoFanoutTest, EmptyOutputNodesList) {
   create_linear_graph();
 
   std::vector<std::shared_ptr<dummy_node>> empty_out_nodes;
-  g.output(empty_out_nodes);
+  g.set_output(empty_out_nodes);
 
   dag_store<dummy_node> topo(g, 1);
 
@@ -655,7 +654,7 @@ TEST_F(GraphTopoFanoutTest, MultipleCopiesOfSameOutputNode) {
 
   // Add the same output node multiple times
   std::vector<std::shared_ptr<dummy_node>> duplicate_out_nodes = {nodeC, nodeC, nodeB, nodeC};
-  g.output(duplicate_out_nodes);
+  g.set_output(duplicate_out_nodes);
 
   dag_store<dummy_node> topo(g, 1);
 
@@ -726,7 +725,7 @@ TEST_F(DagStoreGraphNamedTest, SingleNodeGraphNamed) {
 
   // Verify output mapping
   EXPECT_EQ(topo.output_offset.size(), 1);
-  EXPECT_EQ(topo.output_offset[0].size, 1);
+  EXPECT_EQ(topo.output_offset[0], 0);
 }
 
 TEST_F(DagStoreGraphNamedTest, LinearGraphNamedTopologicalOrder) {
@@ -872,7 +871,7 @@ TEST_F(DagStoreGraphNamedTest, MultipleOutputsGraphNamed) {
 
   // Set multiple outputs
   std::vector<std::string> outputs = {"D", "E"};
-  g.output(outputs);
+  g.set_output(outputs);
 
   dag_store<dummy_node> topo(g, 1);
 
