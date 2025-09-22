@@ -53,7 +53,7 @@ public:
 
   size_t num_inputs() const noexcept {
     auto nodes = dag[0];
-    root_type *root = static_cast<root_type *>(nodes[0].get());
+    root_type const *root = static_cast<root_type const *>(nodes[0].get());
     return root->input_size;
   }
 
