@@ -53,22 +53,16 @@ public:
 
     auto spec = win->emit();
     if (spec.include) {
+      // update -> flush -> reset
       for (size_t i = 1; i < nodes.size(); ++i) {
-        // call node
         nodes[i]->on_data(in_ptr(record, i, igrp), out_ptr(record, i));
         nodes[i]->reset();
       }
-      // copy to result
-      for (size_t i = 0; i < dag.output_offset.size(); ++i) {
-        out[i] = record[dag.output_offset[i]];
-      }
+      flush(out, igrp);
     } else {
-      // copy to result
-      for (size_t i = 0; i < dag.output_offset.size(); ++i) {
-        out[i] = record[dag.output_offset[i]];
-      }
+      // flush -> reset -> update
+      flush(out, igrp);
       for (size_t i = 1; i < nodes.size(); ++i) {
-        // call node
         nodes[i]->reset();
         nodes[i]->on_data(in_ptr(record, i, igrp), out_ptr(record, i));
       }
@@ -77,9 +71,16 @@ public:
     return spec.timestamp;
   }
 
+  void flush(data_type *OPFLOW_RESTRICT out, size_t igrp) noexcept {
+    auto record = history[igrp];
+    for (size_t i = 0; i < dag.size(); ++i) {
+      out[i] = record[dag.output_offset[i]];
+    }
+  }
+
   size_t num_inputs() const noexcept {
     auto nodes = dag[0];
-    root_type *root = static_cast<root_type *>(nodes[0].get());
+    root_type const *root = static_cast<root_type const *>(nodes[0].get());
     return root->input_size;
   }
 
