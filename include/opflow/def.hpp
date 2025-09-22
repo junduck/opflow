@@ -1,5 +1,7 @@
 #pragma once
 
+#include <new> // IWYU pragma: keep
+
 #ifndef OPFLOW_RESTRICT
 #if defined(_MSC_VER)
 #define OPFLOW_RESTRICT __restrict
