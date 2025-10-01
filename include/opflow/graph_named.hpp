@@ -111,58 +111,246 @@ public:
   using NodeMap = std::unordered_map<key_type, NodeSet, key_hash, Equal>;
   using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
 
+  using PortSet = std::vector<u32>;
+  using SuppLinksMap = std::unordered_map<key_type, PortSet, key_hash, Equal>;
+
+  class add_delegate {
+    friend class graph_named;
+
+    graph_named &self;
+    key_type node_name;
+    shared_node_ptr node;
+    std::vector<edge_type> pred_list;
+
+    add_delegate(graph_named &self, key_type name, shared_node_ptr node)
+        : self(self), node_name(std::move(name)), node(std::move(node)), pred_list() {}
+
+    template <detail::string_like T0, typename... Ts>
+    void add_preds(T0 &&edge, Ts &&...args) {
+      pred_list.emplace_back(self.parse_edge(std::forward<T0>(edge)));
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    template <range_of<str_view> R, typename... Ts>
+    void add_preds(R &&edges, Ts &&...args) {
+      for (auto const &edge_desc : edges) {
+        pred_list.emplace_back(self.parse_edge(edge_desc));
+      }
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    template <typename... Ts>
+    void add_preds(edge_type edge, Ts &&...args) {
+      pred_list.emplace_back(edge);
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    template <range_of<edge_type> R, typename... Ts>
+    void add_preds(R &&edges, Ts &&...args) {
+      for (auto const &edge : edges) {
+        pred_list.emplace_back(edge);
+      }
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    void add_preds() {}
+
+  public:
+    template <typename... Ts>
+    graph_named &depends(Ts &&...pred) && {
+      add_preds(std::forward<Ts>(pred)...);
+
+      self.ensure_adjacency_list(node_name);
+      for (auto const &edge : pred_list) {
+        self.ensure_adjacency_list(edge.name);
+        self.add_edge_impl(node_name, edge);
+      }
+      self.store.emplace(node_name, std::move(node));
+
+      return self;
+    }
+  };
+
+  template <bool SUPP>
+  class root_delegate {
+    friend class graph_named;
+
+    graph_named &self;
+    key_type node_name;
+    shared_node_ptr node;
+    std::vector<key_type> port_list;
+
+    root_delegate(graph_named &self, key_type name, shared_node_ptr node)
+        : self(self), node_name(std::move(name)), node(std::move(node)), port_list() {}
+
+    template <detail::string_like T0, typename... Ts>
+    void add_ports(T0 &&port, Ts &&...args) {
+      port_list.emplace_back(std::forward<T0>(port));
+      add_ports(std::forward<Ts>(args)...);
+    }
+
+    template <range_of<str_view> R, typename... Ts>
+    void add_ports(R &&port_names, Ts &&...args) {
+      for (auto const &port_name : port_names) {
+        port_list.emplace_back(port_name);
+      }
+      add_ports(std::forward<Ts>(args)...);
+    }
+
+    void add_ports() {}
+
+  public:
+    template <typename... Ts>
+    graph_named &ports(Ts &&...port_names) && {
+      add_ports(std::forward<Ts>(port_names)...);
+
+      self.store.emplace(node_name, std::move(node));
+
+      // Populate port map and adjacency list
+      if constexpr (SUPP) {
+        self.pmap_supp.clear();
+        for (u32 port = 0; port < port_list.size(); ++port) {
+          self.pmap_supp.emplace(port_list[port], port);
+        }
+        self.supp_name = node_name;
+      } else {
+        self.ensure_adjacency_list(node_name);
+        self.pmap_root.clear();
+        for (u32 port = 0; port < port_list.size(); ++port) {
+          self.pmap_root.emplace(port_list[port], port);
+        }
+        self.root_name = node_name;
+      }
+
+      return self;
+    }
+  };
+
+  class aux_delegate {
+    friend class graph_named;
+
+    graph_named &self;
+    shared_aux_ptr aux;
+    std::vector<edge_type> pred_list;
+
+    aux_delegate(graph_named &self, shared_aux_ptr aux) : self(self), aux(std::move(aux)), pred_list() {}
+
+    template <detail::string_like T0, typename... Ts>
+    void add_preds(T0 &&edge, Ts &&...args) {
+      pred_list.emplace_back(self.parse_edge(std::forward<T0>(edge)));
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    template <range_of<str_view> R, typename... Ts>
+    void add_preds(R &&edges, Ts &&...args) {
+      for (auto const &edge_desc : edges) {
+        pred_list.emplace_back(self.parse_edge(edge_desc));
+      }
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    template <typename... Ts>
+    void add_preds(edge_type edge, Ts &&...args) {
+      pred_list.emplace_back(edge);
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    template <range_of<edge_type> R, typename... Ts>
+    void add_preds(R &&edges, Ts &&...args) {
+      for (auto const &edge : edges) {
+        pred_list.emplace_back(edge);
+      }
+      add_preds(std::forward<Ts>(args)...);
+    }
+
+    void add_preds() {}
+
+  public:
+    template <typename... Ts>
+    graph_named &depends(Ts &&...pred) && {
+      add_preds(std::forward<Ts>(pred)...);
+      self.auxiliary = std::move(aux);
+      for (auto const &edge : pred_list) {
+        self.ensure_adjacency_list(edge.name);
+        self.auxiliary_args.emplace_back(edge);
+      }
+      return self;
+    }
+  };
+
   // Add
 
   template <typename Node, typename... Ts>
-  graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args) {
-    ensure_adjacency_list(name);
-    std::vector<edge_type> preds{};
-    add_checked_impl<Node>(preds, name, std::forward<Ts>(preds_and_ctor_args)...);
-    return *this;
+  auto add(key_type const &name, Ts &&...args) {
+    return add_delegate(*this, name, std::make_shared<Node>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Node, typename... Ts>
-  graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args)
+  auto add(key_type const &name, Ts &&...args)
     requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    return add<Node<typename T::data_type>>(name, std::forward<Ts>(preds_and_ctor_args)...);
+    return add<Node<typename T::data_type>>(name, std::forward<Ts>(args)...);
   }
 
-  // Root
-
   template <typename Root, typename... Ts>
-  graph_named &root(key_type const &name, Ts &&...port_names_and_ctor_args) {
-    std::vector<key_type> ports{};
-    root_impl<Root>(ports, name, std::forward<Ts>(port_names_and_ctor_args)...);
-    return *this;
+  auto root(key_type const &name, Ts &&...args) {
+    return root_delegate<false>(*this, name, std::make_shared<Root>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Root, typename... Ts>
-  graph_named &root(key_type const &name, Ts &&...port_names_and_ctor_args)
+  auto root(key_type const &name, Ts &&...args)
     requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    return root<Root<typename T::data_type>>(name, std::forward<Ts>(port_names_and_ctor_args)...);
+    return root<typename T::data_type>(name, std::forward<Ts>(args)...);
   }
 
   shared_node_ptr root() const { return store.contains(root_name) ? store.at(root_name) : nullptr; }
 
-  // Supplementary root
-
   template <typename Supp, typename... Ts>
-  graph_named &supp_root(key_type const &name, Ts &&...port_names_and_ctor_args) {
-    std::vector<key_type> ports{};
-    supp_root_impl<Supp>(ports, name, std::forward<Ts>(port_names_and_ctor_args)...);
-    return *this;
+  auto supp_root(key_type const &name, Ts &&...args) {
+    return root_delegate<true>(*this, name, std::make_shared<Supp>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Supp, typename... Ts>
-  graph_named &supp_root(key_type const &name, Ts &&...port_names_and_ctor_args)
+  auto supp_root(key_type const &name, Ts &&...args)
     requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    return supp_root<Supp<typename T::data_type>>(name, std::forward<Ts>(port_names_and_ctor_args)...);
+    return supp_root<Supp<typename T::data_type>>(name, std::forward<Ts>(args)...);
   }
 
   shared_node_ptr supp_root() const { return store.contains(supp_name) ? store.at(supp_name) : nullptr; }
+
+  template <typename Aux, typename... Ts>
+  auto aux(Ts &&...args)
+    requires(!std::is_void_v<AUX>)
+  {
+    return aux_delegate(*this, std::make_shared<Aux>(std::forward<Ts>(args)...));
+  }
+
+  template <template <typename> typename Aux, typename... Ts>
+  auto aux(Ts &&...args)
+    requires(!std::is_void_v<AUX> && detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    return aux<Aux<typename T::data_type>>(std::forward<Ts>(args)...);
+  }
+
+  shared_aux_ptr aux() const noexcept { return auxiliary; }
+
+  NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
+
+  template <typename... Ts>
+  graph_named &supp_link(key_type const &node, Ts &&...preds) {
+    std::vector<u32> ports{};
+    supp_link_impl(ports, node, std::forward<Ts>(preds)...);
+    return *this;
+  }
+
+  SuppLinksMap const &supp_link() const noexcept { return supp_links; }
+
+  PortSet const &supp_link_of(key_type const &node) const noexcept {
+    static PortSet const empty_set{};
+    return supp_links.contains(node) ? supp_links.at(node) : empty_set;
+  }
 
   // Output
 
@@ -177,25 +365,6 @@ public:
     out.clear();
     add_output_impl(std::forward<Ts>(outputs)...);
     return *this;
-  }
-
-  // Auxiliary data
-
-  template <typename A, typename... Ts>
-  void set_aux(Ts &&...preds_and_ctor_args)
-    requires(!std::is_void_v<AUX>)
-  {
-    auxiliary_args.clear();
-    set_aux_impl<A>(std::forward<Ts>(preds_and_ctor_args)...);
-  }
-
-  template <template <typename> typename A, typename... Ts>
-  void set_aux(Ts &&...preds_and_ctor_args)
-    requires(!std::is_void_v<AUX> && detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    using aux_t = A<typename T::data_type>;
-    auxiliary_args.clear();
-    set_aux_impl<aux_t>(std::forward<Ts>(preds_and_ctor_args)...);
   }
 
   // Edge manipulation
@@ -270,6 +439,14 @@ public:
       }
     }
 
+    // Update root_name and supp_name if needed
+    if (root_name == old_name) {
+      root_name = new_name;
+    }
+    if (supp_name == old_name) {
+      supp_name = new_name;
+    }
+
     // Remove old_name from all maps
     predecessor.erase(old_name);
     argmap.erase(old_name);
@@ -342,6 +519,8 @@ public:
 
   // Utilities
 
+  // this does not include aux and supp
+
   size_t size() const noexcept { return predecessor.size(); }
 
   bool empty() const noexcept { return predecessor.empty(); }
@@ -354,7 +533,9 @@ public:
     store.clear();
   }
 
-  bool contains(key_type const &name) const noexcept { return predecessor.find(name) != predecessor.end(); }
+  // this does not check aux and supp
+
+  bool contains(key_type const &name) const noexcept { return predecessor.contains(name); }
 
   NodeSet const &pred_of(key_type const &name) const {
     static NodeSet const empty_set{};
@@ -381,10 +562,6 @@ public:
   NodeMap const &succ() const noexcept { return successor; }
 
   NodeArgsSet const &output() const noexcept { return out; }
-
-  shared_aux_ptr aux() const noexcept { return auxiliary; }
-
-  NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
 
   shared_node_ptr node(key_type const &name) const {
     auto it = store.find(name);
@@ -495,7 +672,7 @@ private:
   }
 
   template <detail::string_like T0>
-  edge_type parse_edge(T0 &&desc) {
+  edge_type parse_edge(T0 &&desc) const {
     auto s = key_type(std::forward<T0>(desc));
     // check if is a named root port
     if (pmap_root.contains(s)) {
@@ -506,118 +683,48 @@ private:
     }
   }
 
-  // add
-
-  template <typename Node, detail::string_like T0, typename... Ts>
-  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, T0 &&edge, Ts &&...args) {
-    preds.emplace_back(parse_edge(std::forward<T0>(edge)));
-    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Node, range_of<str_view> R, typename... Ts>
-  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, R &&edges, Ts &&...args) {
-    for (auto const &edge_desc : edges) {
-      preds.emplace_back(parse_edge(edge_desc));
+  template <detail::string_like T0>
+  u32 parse_supp(T0 &&desc) const {
+    auto s = key_type(std::forward<T0>(desc));
+    if (pmap_supp.contains(s)) {
+      return pmap_supp.at(s);
+    } else {
+      auto e = edge_type(s);
+      return e.port;
     }
-    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
   }
 
-  template <typename Node, typename... Ts>
-  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, edge_type edge, Ts &&...args) {
-    preds.emplace_back(edge);
-    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
+  // supp link
+
+  template <detail::string_like T0, typename... Ts>
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node, T0 &&port_name, Ts &&...args) {
+    ports.emplace_back(parse_supp(std::forward<T0>(port_name)));
+    supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
 
-  template <typename Node, range_of<edge_type> R, typename... Ts>
-  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, R &&edges, Ts &&...args) {
+  template <range_of<str_view> R, typename... Ts>
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node, R &&port_names_range, Ts &&...args) {
+    for (auto const &port_name : port_names_range) {
+      ports.emplace_back(parse_supp(port_name));
+    }
+    supp_link_impl(ports, node, std::forward<Ts>(args)...);
+  }
+
+  template <typename... Ts>
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node, edge_type edge, Ts &&...args) {
+    ports.emplace_back(edge.port);
+    supp_link_impl(ports, node, std::forward<Ts>(args)...);
+  }
+
+  template <range_of<edge_type> R, typename... Ts>
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node, R &&edges, Ts &&...args) {
     for (auto const &edge : edges) {
-      preds.emplace_back(edge);
+      ports.emplace_back(edge.port);
     }
-    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
+    supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
 
-  template <typename Node, typename... Ts>
-  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, Ts &&...args) {
-    // Base case
-    add_checked_impl<Node>(preds, name, ctor_args, std::forward<Ts>(args)...);
-  }
-
-  template <typename Node, typename... Ts>
-  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, ctor_args_tag, Ts &&...args) {
-    // Base case
-    for (auto const &edge : preds) {
-      ensure_adjacency_list(edge.name);
-      add_edge_impl(name, edge);
-    }
-    store.emplace(name, std::make_shared<Node>(std::forward<Ts>(args)...));
-  }
-
-  // root
-
-  template <typename Root, detail::string_like T0, typename... Ts>
-  void root_impl(std::vector<key_type> &port_names, key_type const &name, T0 &&port_name, Ts &&...args) {
-    port_names.emplace_back(std::forward<T0>(port_name));
-    root_impl<Root>(port_names, name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Root, range_of<str_view> R, typename... Ts>
-  void root_impl(std::vector<key_type> &port_names, key_type const &name, R &&port_names_range, Ts &&...args) {
-    for (auto const &port_name : port_names_range) {
-      port_names.emplace_back(port_name);
-    }
-    root_impl<Root>(port_names, name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Root, typename... Ts>
-  void root_impl(std::vector<key_type> &port_names, key_type const &name, Ts &&...args) {
-    // Base case
-    root_impl<Root>(port_names, name, ctor_args, std::forward<Ts>(args)...);
-  }
-
-  template <typename Root, typename... Ts>
-  void root_impl(std::vector<key_type> &port_names, key_type const &name, ctor_args_tag, Ts &&...args) {
-    add<Root>(name, ctor_args, std::forward<Ts>(args)...);
-    // Populate port map for root
-    pmap_root.clear();
-    for (u32 port = 0; port < port_names.size(); ++port) {
-      pmap_root.emplace(port_names[port], port);
-    }
-    root_name = name;
-  }
-
-  // supplementary root
-
-  template <typename Supp, detail::string_like T0, typename... Ts>
-  void supp_impl(std::vector<key_type> &port_names, key_type const &name, T0 &&port_name, Ts &&...args) {
-    port_names.emplace_back(std::forward<T0>(port_name));
-    supp_impl<Supp>(port_names, name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Supp, range_of<str_view> R, typename... Ts>
-  void supp_impl(std::vector<key_type> &port_names, key_type const &name, R &&port_names_range, Ts &&...args) {
-    for (auto const &port_name : port_names_range) {
-      port_names.emplace_back(port_name);
-    }
-    supp_impl<Supp>(port_names, name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Supp, typename... Ts>
-  void supp_impl(std::vector<key_type> &port_names, key_type const &name, Ts &&...args) {
-    // Base case
-    supp_impl<Supp>(port_names, name, ctor_args, std::forward<Ts>(args)...);
-  }
-
-  template <typename Supp, typename... Ts>
-  void supp_impl(std::vector<key_type> &port_names, key_type const &name, ctor_args_tag, Ts &&...args) {
-    // Directly emplace supp root in store without adding to adjacency lists
-    store.emplace(name, std::make_shared<Supp>(std::forward<Ts>(args)...));
-    // Populate port map for supplementary root
-    pmap_supp.clear();
-    for (u32 port = 0; port < port_names.size(); ++port) {
-      pmap_supp.emplace(port_names[port], port);
-    }
-    supp_name = name;
-  }
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node) { supp_links.emplace(node, std::move(ports)); }
 
   // output
 
@@ -733,5 +840,7 @@ protected:
   using PortMap = std::unordered_map<key_type, u32, key_hash, Equal>;
   PortMap pmap_root; ///< name -> port mapping
   PortMap pmap_supp; ///< name -> port mapping
+
+  SuppLinksMap supp_links; ///< node -> [supp_port] essentially successor list for supp root
 };
 } // namespace opflow

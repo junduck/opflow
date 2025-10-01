@@ -15,8 +15,6 @@ class graph_store {
   fixed_buffer_resource arena;
 
 public:
-  using data_type = typename T::data_type;
-
   using node_type = T;
   using aux_type = U;
 
@@ -292,7 +290,7 @@ public:
   u32 record_size;                                  // total size of record
   std::vector<u32, u32_alloc> record_offset;        // i-th node -> offset in record
   flat_multivect<u32, u32, u32_alloc> input_offset; // i-th node -> [offset in rec]
-  std::vector<u32, u32_alloc> output_offset;        // i-th out -> <offset in rec, node->num_outputs()>
+  std::vector<u32, u32_alloc> output_offset;        // i-th out -> offset in record
 };
 
 // deduction guide: G::node_type -> T, G::aux_type -> U
