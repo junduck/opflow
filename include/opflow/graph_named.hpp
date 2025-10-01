@@ -59,6 +59,37 @@ struct graph_named_edge {
 
 inline auto make_edge(std::string_view name, uint32_t port = 0) { return detail::graph_named_edge(name, port); }
 
+/*
+Example of a graph:
+
+graph TD
+    Root --> A[Node A]
+    Root --> B[Node B]
+    Root --> C[Node C]
+
+    A --> D[Node D]
+    A --> E[Node E]
+    B --> F[Node F]
+    C --> G[Node G]
+    D --> H[Node H]
+
+    %% Multiple nodes connecting to output
+    E --> Output[Output]
+    F --> Output
+    G --> Output
+    H --> Output
+
+    %% Auxiliary node directly connected to Root
+    Root --> Aux[Aux Node]
+    Aux --> AuxOutput[Aux Output<br/>Clock/Logger/etc]
+
+    %% Supplementary root forming star pattern
+    SuppRoot[Supp Root<br/>Params/Signals/etc] --> A
+    SuppRoot --> D
+    SuppRoot --> F
+    SuppRoot --> G
+*/
+
 template <typename T, typename AUX = void>
 class graph_named {
   using Equal = std::equal_to<>;
@@ -85,7 +116,8 @@ public:
   template <typename Node, typename... Ts>
   graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args) {
     ensure_adjacency_list(name);
-    add_impl<Node>(name, std::forward<Ts>(preds_and_ctor_args)...);
+    std::vector<edge_type> preds{};
+    add_checked_impl<Node>(preds, name, std::forward<Ts>(preds_and_ctor_args)...);
     return *this;
   }
 
@@ -98,25 +130,40 @@ public:
     return *this;
   }
 
-  graph_named &root(key_type const &name, size_t root_input_size)
-    requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    add<dag_root_type<T>>(name, root_input_size);
-    return *this;
-  }
+  // Root
 
   template <typename Root, typename... Ts>
-  graph_named &root(key_type const &name, Ts &&...args) {
-    add<Root>(name, ctor_args, std::forward<Ts>(args)...);
+  graph_named &root(key_type const &name, Ts &&...port_names_and_ctor_args) {
+    std::vector<key_type> ports{};
+    root_impl<Root>(ports, name, std::forward<Ts>(port_names_and_ctor_args)...);
     return *this;
   }
 
   template <template <typename> typename Root, typename... Ts>
-  graph_named &root(key_type const &name, Ts &&...args)
+  graph_named &root(key_type const &name, Ts &&...port_names_and_ctor_args)
     requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
     using RootT = Root<typename T::data_type>;
-    add<RootT>(name, ctor_args, std::forward<Ts>(args)...);
+    root<RootT>(name, std::forward<Ts>(port_names_and_ctor_args)...);
+    return *this;
+  }
+
+  template <typename... Ts>
+  graph_named &root(key_type const &name, Ts &&...port_names)
+    requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using root_t = dag_root_type<T>;
+    std::vector<key_type> ports{};
+    root_impl<root_t>(ports, name, std::forward<Ts>(port_names)..., ctor_args, sizeof...(port_names));
+    return *this;
+  }
+
+  graph_named &root(key_type const &name, size_t root_input_size)
+    requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  {
+    using root_t = dag_root_type<T>;
+    std::vector<key_type> ports{};
+    root_impl<root_t>(ports, name, ctor_args, root_input_size);
     return *this;
   }
 
@@ -177,10 +224,10 @@ public:
   // Replacement
 
   bool rename(key_type const &old_name, key_type const &new_name) {
-    if (predecessor.find(old_name) == predecessor.end()) {
+    if (!predecessor.contains(old_name)) {
       return false; // Old node doesn't exist
     }
-    if (predecessor.find(new_name) != predecessor.end()) {
+    if (predecessor.contains(new_name)) {
       return false; // Can't replace with an existing node
     }
     if (old_name == new_name) {
@@ -237,10 +284,10 @@ public:
 
   template <typename Node, typename... Ts>
   bool replace(key_type const &old_node, key_type const &new_node, Ts &&...args) {
-    if (predecessor.find(old_node) == predecessor.end()) {
+    if (!predecessor.contains(old_node)) {
       return false; // Old node doesn't exist
     }
-    if (predecessor.find(new_node) != predecessor.end()) {
+    if (predecessor.contains(new_node)) {
       return false; // Can't replace with an existing node
     }
     // Rename, so adjacency lists point to new_node
@@ -260,10 +307,10 @@ public:
   }
 
   bool replace(key_type const &node, edge_type const &old_pred, edge_type const &new_pred) {
-    if (predecessor.find(node) == predecessor.end()) {
+    if (!predecessor.contains(node)) {
       return false; // Node doesn't exist
     }
-    if (predecessor.find(new_pred.name) == predecessor.end()) {
+    if (!predecessor.contains(new_pred.name)) {
       return false; // Node doesn't exist
     }
     if (old_pred == new_pred) {
@@ -379,18 +426,18 @@ public:
 
   bool validate() const noexcept {
     for (auto const &[name, _] : predecessor) {
-      if (store.find(name) == store.end()) {
+      if (!store.contains(name)) {
         return false; // Inconsistent: node missing in store
       }
     }
     for (auto const &o : out) {
-      if (store.find(o.name) == store.end()) {
+      if (!store.contains(o.name)) {
         return false; // Inconsistent: output node missing in store
       }
     }
     if constexpr (!std::is_void_v<AUX>) {
       for (auto const &edge : auxiliary_args) {
-        if (store.find(edge.name) == store.end()) {
+        if (!store.contains(edge.name)) {
           return false; // Inconsistent: aux arg node missing in store
         }
       }
@@ -439,71 +486,106 @@ public:
 
 private:
   void ensure_adjacency_list(key_type const &name) {
-    if (predecessor.find(name) == predecessor.end()) {
+    if (!predecessor.contains(name)) {
       predecessor.emplace(name, NodeSet{});
     }
-    if (argmap.find(name) == argmap.end()) {
+    if (!argmap.contains(name)) {
       argmap.emplace(name, NodeArgsSet{});
     }
-    if (successor.find(name) == successor.end()) {
+    if (!successor.contains(name)) {
       successor.emplace(name, NodeSet{});
     }
   }
 
-  // add - edge
+  template <detail::string_like T0>
+  edge_type parse_edge(T0 &&desc) {
+    auto s = key_type(std::forward<T0>(desc));
+    // check if is a named root port
+    if (pmap_root.contains(s)) {
+      auto port = pmap_root.at(s);
+      return edge_type(root_name, port);
+    } else {
+      return edge_type(s);
+    }
+  }
+
+  // add
 
   template <typename Node, detail::string_like T0, typename... Ts>
-  void add_impl(key_type const &name, T0 &&edge_desc, Ts &&...args) {
-    auto edge = detail::graph_named_edge(std::forward<T0>(edge_desc));
-    ensure_adjacency_list(edge.name);
-    add_edge_impl(name, edge);
-
-    add_impl<Node>(name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Node, typename... Ts>
-  void add_impl(key_type const &name, edge_type edge, Ts &&...args) {
-    ensure_adjacency_list(edge.name);
-    add_edge_impl(name, edge);
-
-    add_impl<Node>(name, std::forward<Ts>(args)...);
-  }
-
-  template <typename Node, range_of<edge_type> R, typename... Ts>
-  void add_impl(key_type const &name, R &&edges, Ts &&...args) {
-    ensure_adjacency_list(name);
-    for (auto const &edge : edges) {
-      ensure_adjacency_list(edge.name);
-      add_edge_impl(name, edge);
-    }
-    add_impl<Node>(name, std::forward<Ts>(args)...);
+  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, T0 &&edge, Ts &&...args) {
+    preds.emplace_back(parse_edge(std::forward<T0>(edge)));
+    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
   }
 
   template <typename Node, range_of<str_view> R, typename... Ts>
-  void add_impl(key_type const &name, R &&edges, Ts &&...args) {
-    ensure_adjacency_list(name);
+  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, R &&edges, Ts &&...args) {
     for (auto const &edge_desc : edges) {
-      auto edge = detail::graph_named_edge(edge_desc);
+      preds.emplace_back(parse_edge(edge_desc));
+    }
+    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, typename... Ts>
+  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, edge_type edge, Ts &&...args) {
+    preds.emplace_back(edge);
+    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, range_of<edge_type> R, typename... Ts>
+  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, R &&edges, Ts &&...args) {
+    for (auto const &edge : edges) {
+      preds.emplace_back(edge);
+    }
+    add_checked_impl<Node>(preds, name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, typename... Ts>
+  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, Ts &&...args) {
+    // Base case
+    add_checked_impl<Node>(preds, name, ctor_args, std::forward<Ts>(args)...);
+  }
+
+  template <typename Node, typename... Ts>
+  void add_checked_impl(std::vector<edge_type> &preds, key_type const &name, ctor_args_tag, Ts &&...args) {
+    // Base case
+    for (auto const &edge : preds) {
       ensure_adjacency_list(edge.name);
       add_edge_impl(name, edge);
     }
-    add_impl<Node>(name, std::forward<Ts>(args)...);
+    store.emplace(name, std::make_shared<Node>(std::forward<Ts>(args)...));
   }
 
-  // add - ctor
+  // root
 
-  template <typename Node, typename... Ts>
-  void add_impl(key_type const &name, Ts &&...args) {
-    store[name] = std::make_shared<Node>(std::forward<Ts>(args)...);
+  template <typename Root, detail::string_like T0, typename... Ts>
+  void root_impl(std::vector<key_type> &port_names, key_type const &name, T0 &&port_name, Ts &&...args) {
+    port_names.emplace_back(std::forward<T0>(port_name));
+    root_impl<Root>(port_names, name, std::forward<Ts>(args)...);
   }
 
-  /*
-  g.add<my_node>("node1", "input.0", "input.3", 2.3, v); // OK, no ambiguity since first arg to ctor is not string like
-  g.add<my_node2>("node2", "input.1", ctor_args, "first_ctor_arg", 2.3, v); // Need explicit splitter for pack
-  */
-  template <typename Node, typename... Ts>
-  void add_impl(key_type const &name, ctor_args_tag, Ts &&...args) {
-    store[name] = std::make_shared<Node>(std::forward<Ts>(args)...);
+  template <typename Root, range_of<str_view> R, typename... Ts>
+  void root_impl(std::vector<key_type> &port_names, key_type const &name, R &&port_names_range, Ts &&...args) {
+    for (auto const &port_name : port_names_range) {
+      port_names.emplace_back(port_name);
+    }
+    root_impl<Root>(port_names, name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Root, typename... Ts>
+  void root_impl(std::vector<key_type> &port_names, key_type const &name, Ts &&...args) {
+    // Base case
+    root_impl<Root>(port_names, name, ctor_args, std::forward<Ts>(args)...);
+  }
+
+  template <typename Root, typename... Ts>
+  void root_impl(std::vector<key_type> &port_names, key_type const &name, ctor_args_tag, Ts &&...args) {
+    add<Root>(name, ctor_args, std::forward<Ts>(args)...);
+    // Populate port map for root
+    pmap_root.clear();
+    for (u32 port = 0; port < port_names.size(); ++port) {
+      pmap_root.emplace(port_names[port], port);
+    }
+    root_name = name;
   }
 
   // output
@@ -542,7 +624,7 @@ private:
 
   template <typename A, detail::string_like T0, typename... Ts>
   void set_aux_impl(T0 &&edge_desc, Ts &&...args) {
-    auto edge = detail::graph_named_edge(std::forward<T0>(edge_desc));
+    auto edge = edge_type(std::forward<T0>(edge_desc));
     auxiliary_args.emplace_back(edge);
     set_aux_impl<A>(std::forward<Ts>(args)...);
   }
@@ -564,7 +646,7 @@ private:
   template <typename A, range_of<str_view> R, typename... Ts>
   void set_aux_impl(R &&edges, Ts &&...args) {
     for (auto const &edge_desc : edges) {
-      auto edge = detail::graph_named_edge(edge_desc);
+      auto edge = edge_type(edge_desc);
       auxiliary_args.emplace_back(edge);
     }
     set_aux_impl<A>(std::forward<Ts>(args)...);
@@ -580,6 +662,11 @@ private:
   template <typename A, typename... Ts>
   void set_aux_impl(ctor_args_tag, Ts &&...args) {
     auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
+  }
+
+  void add_edge_root(key_type const &name, key_type const &pred) {
+    auto port = pmap_root.at(pred);
+    add_edge_impl(name, edge_type(root_name, port));
   }
 
   void add_edge_impl(key_type const &name, edge_type const &pred) {
@@ -608,5 +695,12 @@ protected:
   NodeStore store;            ///< Store for actual node instances
   shared_aux_ptr auxiliary;   ///< Auxiliary data
   NodeArgsSet auxiliary_args; ///< Auxiliary args
+
+  key_type root_name; ///< Name of the root node
+  key_type supp_name; ///< Name of the support node
+
+  using PortMap = std::unordered_map<key_type, u32, key_hash, Equal>;
+  PortMap pmap_root; ///< name -> port mapping
+  PortMap pmap_supp; ///< name -> port mapping
 };
 } // namespace opflow
