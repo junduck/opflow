@@ -125,9 +125,7 @@ public:
   graph_named &add(key_type const &name, Ts &&...preds_and_ctor_args)
     requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    using NodeT = Node<typename T::data_type>;
-    add<NodeT>(name, std::forward<Ts>(preds_and_ctor_args)...);
-    return *this;
+    return add<Node<typename T::data_type>>(name, std::forward<Ts>(preds_and_ctor_args)...);
   }
 
   // Root
@@ -143,29 +141,28 @@ public:
   graph_named &root(key_type const &name, Ts &&...port_names_and_ctor_args)
     requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    using RootT = Root<typename T::data_type>;
-    root<RootT>(name, std::forward<Ts>(port_names_and_ctor_args)...);
+    return root<Root<typename T::data_type>>(name, std::forward<Ts>(port_names_and_ctor_args)...);
+  }
+
+  shared_node_ptr root() const { return store.contains(root_name) ? store.at(root_name) : nullptr; }
+
+  // Supplementary root
+
+  template <typename Supp, typename... Ts>
+  graph_named &supp_root(key_type const &name, Ts &&...port_names_and_ctor_args) {
+    std::vector<key_type> ports{};
+    supp_root_impl<Supp>(ports, name, std::forward<Ts>(port_names_and_ctor_args)...);
     return *this;
   }
 
-  template <typename... Ts>
-  graph_named &root(key_type const &name, Ts &&...port_names)
-    requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
+  template <template <typename> typename Supp, typename... Ts>
+  graph_named &supp_root(key_type const &name, Ts &&...port_names_and_ctor_args)
+    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    using root_t = dag_root_type<T>;
-    std::vector<key_type> ports{};
-    root_impl<root_t>(ports, name, std::forward<Ts>(port_names)..., ctor_args, sizeof...(port_names));
-    return *this;
+    return supp_root<Supp<typename T::data_type>>(name, std::forward<Ts>(port_names_and_ctor_args)...);
   }
 
-  graph_named &root(key_type const &name, size_t root_input_size)
-    requires(dag_node_base<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    using root_t = dag_root_type<T>;
-    std::vector<key_type> ports{};
-    root_impl<root_t>(ports, name, ctor_args, root_input_size);
-    return *this;
-  }
+  shared_node_ptr supp_root() const { return store.contains(supp_name) ? store.at(supp_name) : nullptr; }
 
   // Output
 
@@ -586,6 +583,40 @@ private:
       pmap_root.emplace(port_names[port], port);
     }
     root_name = name;
+  }
+
+  // supplementary root
+
+  template <typename Supp, detail::string_like T0, typename... Ts>
+  void supp_impl(std::vector<key_type> &port_names, key_type const &name, T0 &&port_name, Ts &&...args) {
+    port_names.emplace_back(std::forward<T0>(port_name));
+    supp_impl<Supp>(port_names, name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Supp, range_of<str_view> R, typename... Ts>
+  void supp_impl(std::vector<key_type> &port_names, key_type const &name, R &&port_names_range, Ts &&...args) {
+    for (auto const &port_name : port_names_range) {
+      port_names.emplace_back(port_name);
+    }
+    supp_impl<Supp>(port_names, name, std::forward<Ts>(args)...);
+  }
+
+  template <typename Supp, typename... Ts>
+  void supp_impl(std::vector<key_type> &port_names, key_type const &name, Ts &&...args) {
+    // Base case
+    supp_impl<Supp>(port_names, name, ctor_args, std::forward<Ts>(args)...);
+  }
+
+  template <typename Supp, typename... Ts>
+  void supp_impl(std::vector<key_type> &port_names, key_type const &name, ctor_args_tag, Ts &&...args) {
+    // Directly emplace supp root in store without adding to adjacency lists
+    store.emplace(name, std::make_shared<Supp>(std::forward<Ts>(args)...));
+    // Populate port map for supplementary root
+    pmap_supp.clear();
+    for (u32 port = 0; port < port_names.size(); ++port) {
+      pmap_supp.emplace(port_names[port], port);
+    }
+    supp_name = name;
   }
 
   // output
