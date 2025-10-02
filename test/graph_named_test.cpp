@@ -771,7 +771,7 @@ TEST_F(GraphNodeNamedTest, AuxiliaryNode) {
   graph_with_aux.add<dummy_node>("B", 2, "B").depends("input1");
 
   // Add auxiliary that depends on Root
-  graph_with_aux.aux<aux_node>("clock_config").depends("Root");
+  graph_with_aux.aux<aux_node>("clock_config", "clock_config").depends("Root");
 
   // Verify auxiliary exists
   auto aux = graph_with_aux.aux();
@@ -792,7 +792,7 @@ TEST_F(GraphNodeNamedTest, AuxiliaryWithMultipleDeps) {
   graph_with_aux.add<dummy_node>("NodeC", 3, "NodeC").depends("NodeA");
 
   // Add auxiliary that depends on multiple nodes
-  graph_with_aux.aux<aux_node>("logger").depends("NodeA", "NodeB.2", "NodeC.1");
+  graph_with_aux.aux<aux_node>("logger", "logger").depends("NodeA", "NodeB.2", "NodeC.1");
 
   // Verify auxiliary args
   auto aux_args = graph_with_aux.aux_args();
