@@ -106,10 +106,10 @@ public:
   using shared_aux_ptr = std::shared_ptr<aux_type>;
 
   using edge_type = detail::graph_named_edge;
-  using NodeSet = std::unordered_set<key_type, key_hash, Equal>;
-  using NodeArgsSet = std::vector<edge_type>;
-  using NodeMap = std::unordered_map<key_type, NodeSet, key_hash, Equal>;
-  using NodeArgsMap = std::unordered_map<key_type, NodeArgsSet, key_hash, Equal>;
+  using KeySet = std::unordered_set<key_type, key_hash, Equal>;
+  using ArgsSet = std::vector<edge_type>;
+  using NodeMap = std::unordered_map<key_type, KeySet, key_hash, Equal>;
+  using ArgsMap = std::unordered_map<key_type, ArgsSet, key_hash, Equal>;
 
   using PortSet = std::vector<u32>;
   using SuppLinksMap = std::unordered_map<key_type, PortSet, key_hash, Equal>;
@@ -120,7 +120,7 @@ public:
     graph_named &self;
     key_type node_name;
     shared_node_ptr node;
-    std::vector<edge_type> pred_list;
+    ArgsSet pred_list;
 
     add_delegate(graph_named &self, key_type name, shared_node_ptr node)
         : self(self), node_name(std::move(name)), node(std::move(node)), pred_list() {}
@@ -161,11 +161,8 @@ public:
       add_preds(std::forward<Ts>(pred)...);
 
       self.ensure_adjacency_list(node_name);
-      for (auto const &edge : pred_list) {
-        self.ensure_adjacency_list(edge.name);
-        self.add_edge_impl(node_name, edge);
-      }
-      self.store.emplace(node_name, std::move(node));
+      self.add_edge(node_name, pred_list);
+      self.store.insert_or_assign(node_name, std::move(node));
 
       return self;
     }
@@ -204,20 +201,20 @@ public:
     graph_named &ports(Ts &&...port_names) && {
       add_ports(std::forward<Ts>(port_names)...);
 
-      self.store.emplace(node_name, std::move(node));
+      self.store.insert_or_assign(node_name, std::move(node));
 
       // Populate port map and adjacency list
       if constexpr (SUPP) {
-        self.pmap_supp.clear();
+        self.supp_pmap.clear();
         for (u32 port = 0; port < port_list.size(); ++port) {
-          self.pmap_supp.emplace(port_list[port], port);
+          self.supp_pmap.emplace(port_list[port], port);
         }
         self.supp_name = node_name;
       } else {
         self.ensure_adjacency_list(node_name);
-        self.pmap_root.clear();
+        self.root_pmap.clear();
         for (u32 port = 0; port < port_list.size(); ++port) {
-          self.pmap_root.emplace(port_list[port], port);
+          self.root_pmap.emplace(port_list[port], port);
         }
         self.root_name = node_name;
       }
@@ -230,10 +227,12 @@ public:
     friend class graph_named;
 
     graph_named &self;
+    key_type node_name;
     shared_aux_ptr aux;
-    std::vector<edge_type> pred_list;
+    ArgsSet pred_list;
 
-    aux_delegate(graph_named &self, shared_aux_ptr aux) : self(self), aux(std::move(aux)), pred_list() {}
+    aux_delegate(graph_named &self, key_type name, shared_aux_ptr aux)
+        : self(self), node_name(std::move(name)), aux(std::move(aux)), pred_list() {}
 
     template <detail::string_like T0, typename... Ts>
     void add_preds(T0 &&edge, Ts &&...args) {
@@ -269,11 +268,14 @@ public:
     template <typename... Ts>
     graph_named &depends(Ts &&...pred) && {
       add_preds(std::forward<Ts>(pred)...);
-      self.auxiliary = std::move(aux);
+
+      self.aux_node = std::move(aux);
+      self.aux_name = node_name;
       for (auto const &edge : pred_list) {
         self.ensure_adjacency_list(edge.name);
-        self.auxiliary_args.emplace_back(edge);
+        self.aux_args_.emplace_back(edge);
       }
+
       return self;
     }
   };
@@ -321,22 +323,22 @@ public:
   shared_node_ptr supp_root() const { return store.contains(supp_name) ? store.at(supp_name) : nullptr; }
 
   template <typename Aux, typename... Ts>
-  auto aux(Ts &&...args)
+  auto aux(key_type const &name, Ts &&...args)
     requires(!std::is_void_v<AUX>)
   {
-    return aux_delegate(*this, std::make_shared<Aux>(std::forward<Ts>(args)...));
+    return aux_delegate(*this, name, std::make_shared<Aux>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Aux, typename... Ts>
-  auto aux(Ts &&...args)
+  auto aux(key_type const &name, Ts &&...args)
     requires(!std::is_void_v<AUX> && detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
   {
-    return aux<Aux<typename T::data_type>>(std::forward<Ts>(args)...);
+    return aux<Aux<typename T::data_type>>(name, std::forward<Ts>(args)...);
   }
 
-  shared_aux_ptr aux() const noexcept { return auxiliary; }
+  shared_aux_ptr aux() const noexcept { return aux_node; }
 
-  NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
+  ArgsSet const &aux_args() const noexcept { return aux_args_; }
 
   template <typename... Ts>
   graph_named &supp_link(key_type const &node, Ts &&...preds) {
@@ -367,25 +369,16 @@ public:
     return *this;
   }
 
+  ArgsSet const &output() const noexcept { return out; }
+
   // Edge manipulation
 
-  template <range_of<edge_type> R>
-  void add_edge(key_type const &name, R &&preds) {
-    for (auto const &pred : preds) {
-      add_edge_impl(name, pred);
-    }
+  template <typename... Ts>
+  graph_named &add_edge(key_type const &name, Ts &&...preds) {
+    ArgsSet edge_list{};
+    add_edge_impl(name, edge_list, std::forward<Ts>(preds)...);
+    return *this;
   }
-
-  template <range_of<str_view> R>
-  void add_edge(key_type const &name, R &&preds) {
-    for (auto const &pred : preds) {
-      add_edge_impl(name, edge_type(str_view(pred)));
-    }
-  }
-
-  void add_edge(key_type const &name, edge_type const &pred) { add_edge_impl(name, pred); }
-
-  void add_edge(key_type const &name, key_type const &pred) { add_edge_impl(name, edge_type(str_view(pred))); }
 
   // Replacement
 
@@ -398,6 +391,9 @@ public:
     }
     if (old_name == new_name) {
       return true; // No change needed
+    }
+    if (old_name == root_name || old_name == supp_name || old_name == aux_name) {
+      return false; // Do not rename special nodes use the dedicated methods
     }
 
     // Copy all adjacency information from old_name to new_name
@@ -433,18 +429,16 @@ public:
     }
 
     // Update auxiliary arg references
-    for (auto &edge : auxiliary_args) {
+    for (auto &edge : aux_args_) {
       if (edge.name == old_name) {
         edge.name = new_name;
       }
     }
 
-    // Update root_name and supp_name if needed
-    if (root_name == old_name) {
-      root_name = new_name;
-    }
-    if (supp_name == old_name) {
-      supp_name = new_name;
+    // Update supp_links references
+    if (supp_links.contains(old_name)) {
+      supp_links.emplace(new_name, std::move(supp_links[old_name]));
+      supp_links.erase(old_name);
     }
 
     // Remove old_name from all maps
@@ -519,8 +513,6 @@ public:
 
   // Utilities
 
-  // this does not include aux and supp
-
   size_t size() const noexcept { return predecessor.size(); }
 
   bool empty() const noexcept { return predecessor.empty(); }
@@ -531,37 +523,46 @@ public:
     successor.clear();
     out.clear();
     store.clear();
+
+    aux_name.clear();
+    aux_node.reset();
+    aux_args_.clear();
+
+    root_name.clear();
+    root_pmap.clear();
+
+    supp_name.clear();
+    supp_pmap.clear();
+    supp_links.clear();
   }
 
   // this does not check aux and supp
 
   bool contains(key_type const &name) const noexcept { return predecessor.contains(name); }
 
-  NodeSet const &pred_of(key_type const &name) const {
-    static NodeSet const empty_set{};
+  KeySet const &pred_of(key_type const &name) const {
+    static KeySet const empty_set{};
     auto it = predecessor.find(name);
     return (it != predecessor.end()) ? it->second : empty_set;
   }
 
   NodeMap const &pred() const noexcept { return predecessor; }
 
-  NodeArgsSet const &args_of(key_type const &name) const {
-    static NodeArgsSet const empty_set{};
+  ArgsSet const &args_of(key_type const &name) const {
+    static ArgsSet const empty_set{};
     auto it = argmap.find(name);
     return (it != argmap.end()) ? it->second : empty_set;
   }
 
-  NodeArgsMap const &args() const noexcept { return argmap; }
+  ArgsMap const &args() const noexcept { return argmap; }
 
-  NodeSet const &succ_of(key_type const &name) const {
-    static NodeSet const empty_set{};
+  KeySet const &succ_of(key_type const &name) const {
+    static KeySet const empty_set{};
     auto it = successor.find(name);
     return (it != successor.end()) ? it->second : empty_set;
   }
 
   NodeMap const &succ() const noexcept { return successor; }
-
-  NodeArgsSet const &output() const noexcept { return out; }
 
   shared_node_ptr node(key_type const &name) const {
     auto it = store.find(name);
@@ -610,7 +611,7 @@ public:
       }
     }
     if constexpr (!std::is_void_v<AUX>) {
-      for (auto const &edge : auxiliary_args) {
+      for (auto const &edge : aux_args_) {
         if (!store.contains(edge.name)) {
           return false; // Inconsistent: aux arg node missing in store
         }
@@ -625,7 +626,7 @@ public:
     }
 
     // Collect new nodes to add
-    NodeSet nodes_to_add{};
+    KeySet nodes_to_add{};
     for (auto const &[other_name, _] : other.predecessor) {
       if (!contains(other_name)) {
         nodes_to_add.emplace(other_name);
@@ -639,7 +640,7 @@ public:
       // Add edges
       ensure_adjacency_list(new_name);
       for (auto const &edge : other.args_of(new_name)) {
-        add_edge_impl(new_name, edge);
+        add_edge(new_name, edge);
       }
 
       // Copy the node from other's store
@@ -661,13 +662,13 @@ public:
 private:
   void ensure_adjacency_list(key_type const &name) {
     if (!predecessor.contains(name)) {
-      predecessor.emplace(name, NodeSet{});
+      predecessor.emplace(name, KeySet{});
     }
     if (!argmap.contains(name)) {
-      argmap.emplace(name, NodeArgsSet{});
+      argmap.emplace(name, ArgsSet{});
     }
     if (!successor.contains(name)) {
-      successor.emplace(name, NodeSet{});
+      successor.emplace(name, KeySet{});
     }
   }
 
@@ -675,8 +676,8 @@ private:
   edge_type parse_edge(T0 &&desc) const {
     auto s = key_type(std::forward<T0>(desc));
     // check if is a named root port
-    if (pmap_root.contains(s)) {
-      auto port = pmap_root.at(s);
+    if (root_pmap.contains(s)) {
+      auto port = root_pmap.at(s);
       return edge_type(root_name, port);
     } else {
       return edge_type(s);
@@ -686,8 +687,8 @@ private:
   template <detail::string_like T0>
   u32 parse_supp(T0 &&desc) const {
     auto s = key_type(std::forward<T0>(desc));
-    if (pmap_supp.contains(s)) {
-      return pmap_supp.at(s);
+    if (supp_pmap.contains(s)) {
+      return supp_pmap.at(s);
     } else {
       auto e = edge_type(s);
       return e.port;
@@ -724,7 +725,9 @@ private:
     supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
 
-  void supp_link_impl(std::vector<u32> &ports, key_type const &node) { supp_links.emplace(node, std::move(ports)); }
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node) {
+    supp_links.insert_or_assign(node, std::move(ports));
+  }
 
   // output
 
@@ -758,59 +761,44 @@ private:
     add_output_impl(std::forward<Ts>(args)...);
   }
 
-  // set_aux - edge
+  // edge
 
-  template <typename A, detail::string_like T0, typename... Ts>
-  void set_aux_impl(T0 &&edge_desc, Ts &&...args) {
-    auto edge = edge_type(std::forward<T0>(edge_desc));
-    auxiliary_args.emplace_back(edge);
-    set_aux_impl<A>(std::forward<Ts>(args)...);
+  template <detail::string_like T0, typename... Ts>
+  void add_edge_impl(key_type const &name, ArgsSet &edge_list, T0 &&edge, Ts &&...args) {
+    edge_list.emplace_back(parse_edge(std::forward<T0>(edge)));
+    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
   }
 
-  template <typename A, typename... Ts>
-  void set_aux_impl(edge_type edge, Ts &&...args) {
-    auxiliary_args.emplace_back(edge);
-    set_aux_impl<A>(std::forward<Ts>(args)...);
-  }
-
-  template <typename A, range_of<edge_type> R, typename... Ts>
-  void set_aux_impl(R &&edges, Ts &&...args) {
-    for (auto const &edge : edges) {
-      auxiliary_args.emplace_back(edge);
-    }
-    set_aux_impl<A>(std::forward<Ts>(args)...);
-  }
-
-  template <typename A, range_of<str_view> R, typename... Ts>
-  void set_aux_impl(R &&edges, Ts &&...args) {
+  template <range_of<str_view> R, typename... Ts>
+  void add_edge_impl(key_type const &name, ArgsSet &edge_list, R &&edges, Ts &&...args) {
     for (auto const &edge_desc : edges) {
-      auto edge = edge_type(edge_desc);
-      auxiliary_args.emplace_back(edge);
+      edge_list.emplace_back(parse_edge(edge_desc));
     }
-    set_aux_impl<A>(std::forward<Ts>(args)...);
+    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
   }
 
-  // set_aux - ctor
-
-  template <typename A, typename... Ts>
-  void set_aux_impl(Ts &&...args) {
-    auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
+  template <typename... Ts>
+  void add_edge_impl(key_type const &name, ArgsSet &edge_list, edge_type edge, Ts &&...args) {
+    edge_list.emplace_back(edge);
+    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
   }
 
-  template <typename A, typename... Ts>
-  void set_aux_impl(ctor_args_tag, Ts &&...args) {
-    auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
+  template <range_of<edge_type> R, typename... Ts>
+  void add_edge_impl(key_type const &name, ArgsSet &edge_list, R &&edges, Ts &&...args) {
+    for (auto const &edge : edges) {
+      edge_list.emplace_back(edge);
+    }
+    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
   }
 
-  void add_edge_root(key_type const &name, key_type const &pred) {
-    auto port = pmap_root.at(pred);
-    add_edge_impl(name, edge_type(root_name, port));
-  }
-
-  void add_edge_impl(key_type const &name, edge_type const &pred) {
-    predecessor[name].emplace(pred.name);
-    argmap[name].emplace_back(pred);
-    successor[pred.name].emplace(name);
+  void add_edge_impl(key_type const &name, ArgsSet &edge_list) {
+    ensure_adjacency_list(name);
+    for (auto const &edge : edge_list) {
+      ensure_adjacency_list(edge.name);
+      predecessor[name].emplace(edge.name);
+      argmap[name].emplace_back(edge);
+      successor[edge.name].emplace(name);
+    }
   }
 
   void cleanup_adj(key_type const &name, key_type const &pred) {
@@ -826,20 +814,22 @@ private:
 protected:
   using NodeStore = std::unordered_map<key_type, shared_node_ptr, key_hash, Equal>;
 
-  NodeMap predecessor;        ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  NodeArgsMap argmap;         ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;          ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
-  NodeArgsSet out;            ///< Output [node:port]
-  NodeStore store;            ///< Store for actual node instances
-  shared_aux_ptr auxiliary;   ///< Auxiliary data
-  NodeArgsSet auxiliary_args; ///< Auxiliary args
+  NodeMap predecessor; ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  ArgsMap argmap;      ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  NodeMap successor;   ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  ArgsSet out;         ///< Output [node:port]
+  NodeStore store;     ///< Store for actual node instances
+
+  key_type aux_name;       ///< Name of the auxiliary node
+  shared_aux_ptr aux_node; ///< Auxiliary data
+  ArgsSet aux_args_;       ///< Auxiliary args
 
   key_type root_name; ///< Name of the root node
   key_type supp_name; ///< Name of the support node
 
   using PortMap = std::unordered_map<key_type, u32, key_hash, Equal>;
-  PortMap pmap_root; ///< name -> port mapping
-  PortMap pmap_supp; ///< name -> port mapping
+  PortMap root_pmap; ///< name -> port mapping
+  PortMap supp_pmap; ///< name -> port mapping
 
   SuppLinksMap supp_links; ///< node -> [supp_port] essentially successor list for supp root
 };
