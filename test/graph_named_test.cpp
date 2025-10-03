@@ -72,7 +72,7 @@ protected:
 
   graph_named<base_node> graph;
   graph_named<int> graph_int;
-  graph_named<base_node, aux_node> graph_with_aux;
+  graph_named<base_node> graph_with_aux;
 };
 
 // Test graph_named_edge parsing
@@ -319,7 +319,7 @@ TEST_F(GraphNodeNamedTest, SetOutput) {
   graph.add<dummy_node>("node2", 2, "node2");
 
   std::vector<std::string> outputs = {"node1", "node2"};
-  graph.set_output(outputs);
+  graph.add_output(outputs);
 
   auto output = graph.output();
   EXPECT_EQ(output.size(), 2u);
@@ -341,131 +341,6 @@ TEST_F(GraphNodeNamedTest, AddOutput) {
   EXPECT_EQ(output[0].name, "node1");
   EXPECT_EQ(output[1].name, "node2");
   EXPECT_EQ(output[2].name, "node3");
-}
-
-// Edge manipulation
-TEST_F(GraphNodeNamedTest, AddEdge) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  graph.add<dummy_node>("node2", 2, "node2");
-
-  graph.add_edge("node2", "node1");
-
-  auto pred = graph.pred_of("node2");
-  EXPECT_EQ(pred.size(), 1u);
-  EXPECT_TRUE(pred.contains("node1"));
-
-  auto args = graph.args_of("node2");
-  EXPECT_EQ(args.size(), 1u);
-  EXPECT_EQ(args[0].name, "node1");
-  EXPECT_EQ(args[0].port, 0u);
-}
-
-TEST_F(GraphNodeNamedTest, AddMultipleEdges) {
-  graph.add<dummy_node>("node1", 1, "node1");
-  graph.add<dummy_node>("node2", 2, "node2");
-  graph.add<dummy_node>("node3", 3, "node3");
-
-  std::vector<detail::graph_named_edge> edges = {{"node1", 0}, {"node2", 5}};
-  graph.add_edge("node3", edges);
-
-  auto pred = graph.pred_of("node3");
-  EXPECT_EQ(pred.size(), 2u);
-  EXPECT_TRUE(pred.contains("node1"));
-  EXPECT_TRUE(pred.contains("node2"));
-
-  auto args = graph.args_of("node3");
-  EXPECT_EQ(args.size(), 2u);
-  EXPECT_EQ(args[0].name, "node1");
-  EXPECT_EQ(args[0].port, 0u);
-  EXPECT_EQ(args[1].name, "node2");
-  EXPECT_EQ(args[1].port, 5u);
-}
-
-// Rename and replace operations
-TEST_F(GraphNodeNamedTest, RenameNode) {
-  graph.add<dummy_node>("node1", 1, "node1").depends();
-  graph.add<dummy_node>("node2", 2, "node2").depends("node1");
-  graph.add_output("node2");
-
-  graph.rename("node1", "renamed_node");
-
-  EXPECT_FALSE(graph.contains("node1"));
-  EXPECT_TRUE(graph.contains("renamed_node"));
-  EXPECT_TRUE(graph.contains("node2"));
-
-  // Check that adjacency is preserved
-  auto pred = graph.pred_of("node2");
-  EXPECT_EQ(pred.size(), 1u);
-  EXPECT_TRUE(pred.contains("renamed_node"));
-
-  auto succ = graph.succ_of("renamed_node");
-  EXPECT_EQ(succ.size(), 1u);
-  EXPECT_TRUE(succ.contains("node2"));
-
-  // Check that args are updated
-  auto args = graph.args_of("node2");
-  EXPECT_EQ(args.size(), 1u);
-  EXPECT_EQ(args[0].name, "renamed_node");
-}
-
-TEST_F(GraphNodeNamedTest, RenameNonexistentNode) {
-  graph.add<dummy_node>("node1", 1, "node1").depends();
-
-  graph.rename("nonexistent", "new_name");
-
-  EXPECT_TRUE(graph.contains("node1"));
-  EXPECT_FALSE(graph.contains("new_name"));
-}
-
-TEST_F(GraphNodeNamedTest, RenameToExistingNode) {
-  graph.add<dummy_node>("node1", 1, "node1").depends();
-  graph.add<dummy_node>("node2", 2, "node2").depends();
-
-  graph.rename("node1", "node2");
-
-  // Should not perform rename
-  EXPECT_TRUE(graph.contains("node1"));
-  EXPECT_TRUE(graph.contains("node2"));
-}
-
-TEST_F(GraphNodeNamedTest, ReplaceNode) {
-  graph.add<dummy_node>("old_node", 1, "old").depends();
-  graph.add<dummy_node>("dependent", 2, "dependent").depends("old_node");
-
-  graph.replace<dummy_node>("old_node", "new_node", 99, "new");
-
-  EXPECT_FALSE(graph.contains("old_node"));
-  EXPECT_TRUE(graph.contains("new_node"));
-
-  auto node = graph.node("new_node");
-  ASSERT_NE(node, nullptr);
-  auto dummy_ptr = std::dynamic_pointer_cast<dummy_node>(node);
-  ASSERT_NE(dummy_ptr, nullptr);
-  EXPECT_EQ(dummy_ptr->id, 99);
-  EXPECT_EQ(dummy_ptr->name, "new");
-
-  // Check adjacency is preserved
-  auto pred = graph.pred_of("dependent");
-  EXPECT_EQ(pred.size(), 1u);
-  EXPECT_TRUE(pred.contains("new_node"));
-}
-
-TEST_F(GraphNodeNamedTest, ReplaceEdge) {
-  graph.add<dummy_node>("old_pred", 1, "old_pred").depends();
-  graph.add<dummy_node>("new_pred", 2, "new_pred").depends();
-  graph.add<dummy_node>("node", 3, "node").depends("old_pred.5");
-
-  graph.replace("node", detail::graph_named_edge("old_pred", 5), detail::graph_named_edge("new_pred", 7));
-
-  auto pred = graph.pred_of("node");
-  EXPECT_EQ(pred.size(), 1u);
-  EXPECT_TRUE(pred.contains("new_pred"));
-  EXPECT_FALSE(pred.contains("old_pred"));
-
-  auto args = graph.args_of("node");
-  EXPECT_EQ(args.size(), 1u);
-  EXPECT_EQ(args[0].name, "new_pred");
-  EXPECT_EQ(args[0].port, 7u);
 }
 
 // Graph utilities
@@ -509,100 +384,11 @@ TEST_F(GraphNodeNamedTest, Clear) {
   EXPECT_EQ(graph.output().size(), 0u);
 }
 
-// Graph merging
-TEST_F(GraphNodeNamedTest, MergeGraphs) {
-  // Setup first graph
-  graph.add<dummy_node>("node1", 1, "node1").depends();
-  graph.add<dummy_node>("node2", 2, "node2").depends("node1");
-
-  // Setup second graph
-  graph_named<base_node> other_graph;
-  other_graph.add<dummy_node>("node3", 3, "node3").depends();
-  other_graph.add<dummy_node>("node4", 4, "node4").depends("node3");
-
-  graph.merge(other_graph);
-
-  EXPECT_EQ(graph.size(), 4u);
-  EXPECT_TRUE(graph.contains("node1"));
-  EXPECT_TRUE(graph.contains("node2"));
-  EXPECT_TRUE(graph.contains("node3"));
-  EXPECT_TRUE(graph.contains("node4"));
-
-  // Check that dependencies are preserved
-  auto pred2 = graph.pred_of("node2");
-  EXPECT_TRUE(pred2.contains("node1"));
-
-  auto pred4 = graph.pred_of("node4");
-  EXPECT_TRUE(pred4.contains("node3"));
-}
-
-TEST_F(GraphNodeNamedTest, MergeWithOverlap) {
-  // Setup first graph
-  graph.add<dummy_node>("shared", 1, "original").depends();
-  graph.add<dummy_node>("node1", 2, "node1").depends("shared");
-
-  // Setup second graph with same node name
-  graph_named<base_node> other_graph;
-  other_graph.add<dummy_node>("shared", 99, "different").depends();
-  other_graph.add<dummy_node>("node2", 3, "node2").depends("shared");
-
-  graph.merge(other_graph);
-
-  EXPECT_EQ(graph.size(), 3u);
-
-  // Original node should be preserved
-  auto shared_node = graph.node("shared");
-  ASSERT_NE(shared_node, nullptr);
-  auto dummy_ptr = std::dynamic_pointer_cast<dummy_node>(shared_node);
-  ASSERT_NE(dummy_ptr, nullptr);
-  EXPECT_EQ(dummy_ptr->name, "original");
-  EXPECT_EQ(dummy_ptr->id, 1);
-
-  // But new dependencies should be added
-  EXPECT_TRUE(graph.contains("node2"));
-  auto pred2 = graph.pred_of("node2");
-  EXPECT_TRUE(pred2.contains("shared"));
-}
-
-TEST_F(GraphNodeNamedTest, GraphAdditionOperator) {
-  // Setup first graph
-  graph.add<dummy_node>("node1", 1, "node1").depends();
-
-  // Setup second graph
-  graph_named<base_node> other_graph;
-  other_graph.add<dummy_node>("node2", 2, "node2").depends();
-
-  auto combined = graph + other_graph;
-
-  EXPECT_EQ(combined.size(), 2u);
-  EXPECT_TRUE(combined.contains("node1"));
-  EXPECT_TRUE(combined.contains("node2"));
-
-  // Original graphs should be unchanged
-  EXPECT_EQ(graph.size(), 1u);
-  EXPECT_EQ(other_graph.size(), 1u);
-}
-
-TEST_F(GraphNodeNamedTest, GraphCompoundAssignment) {
-  // Setup first graph
-  graph.add<dummy_node>("node1", 1, "node1").depends();
-
-  // Setup second graph
-  graph_named<base_node> other_graph;
-  other_graph.add<dummy_node>("node2", 2, "node2").depends();
-
-  graph += other_graph;
-
-  EXPECT_EQ(graph.size(), 2u);
-  EXPECT_TRUE(graph.contains("node1"));
-  EXPECT_TRUE(graph.contains("node2"));
-}
-
 // Template node testing
 TEST_F(GraphNodeNamedTest, TemplateNodes) {
-  graph_named<base_node> template_graph;
+  graph_named<base_node, int> template_graph;
 
-  template_graph.add<template_node<int>>("int_node", 42).depends();
+  template_graph.add<template_node>("int_node", 42).depends();
 
   auto node = template_graph.node("int_node");
   ASSERT_NE(node, nullptr);
@@ -664,7 +450,7 @@ TEST_F(GraphNodeNamedTest, ComplexGraphStructure) {
       .add<dummy_node>("H", 8, "H")
       .depends("D")
 
-      .set_output("E", "F", "G", "H");
+      .add_output("E", "F", "G", "H");
 
   // Verify the structure
   EXPECT_EQ(graph.size(), 9u); // Root + A, B, C, D, E, F, G, H
@@ -728,11 +514,11 @@ TEST_F(GraphNodeNamedTest, ComplexGraphStructure) {
 // Test supp_root functionality
 TEST_F(GraphNodeNamedTest, SuppRootStructure) {
   // Build a simple graph with supplementary root
-  graph.root<root_node>("Root", 2).ports("input0", "input1");
+  graph.root<root_node>("Root", 2).ports();
   graph.supp_root<root_node>("SuppRoot", 4).ports("param0", "param1", "param2", "param3");
 
-  graph.add<dummy_node>("A", 1, "A").depends("input0");
-  graph.add<dummy_node>("B", 2, "B").depends("input1");
+  graph.add<dummy_node>("A", 1, "A").depends("Root.0");
+  graph.add<dummy_node>("B", 2, "B").depends("Root.1");
   graph.add<dummy_node>("C", 3, "C").depends("A");
 
   // Link nodes to supplementary root ports
@@ -774,35 +560,14 @@ TEST_F(GraphNodeNamedTest, AuxiliaryNode) {
   graph_with_aux.aux<aux_node>("clock_config", "clock_config").depends("Root");
 
   // Verify auxiliary exists
-  auto aux = graph_with_aux.aux();
+  auto aux = std::dynamic_pointer_cast<aux_node>(graph_with_aux.aux());
   ASSERT_NE(aux, nullptr);
   EXPECT_EQ(aux->config, "clock_config");
 
   // Verify auxiliary args
   auto aux_args = graph_with_aux.aux_args();
   EXPECT_EQ(aux_args.size(), 1u);
-  EXPECT_EQ(aux_args[0].name, "Root");
-  EXPECT_EQ(aux_args[0].port, 0u);
-}
-
-TEST_F(GraphNodeNamedTest, AuxiliaryWithMultipleDeps) {
-  // Build a graph with auxiliary depending on multiple nodes
-  graph_with_aux.add<dummy_node>("NodeA", 1, "NodeA").depends();
-  graph_with_aux.add<dummy_node>("NodeB", 2, "NodeB").depends();
-  graph_with_aux.add<dummy_node>("NodeC", 3, "NodeC").depends("NodeA");
-
-  // Add auxiliary that depends on multiple nodes
-  graph_with_aux.aux<aux_node>("logger", "logger").depends("NodeA", "NodeB.2", "NodeC.1");
-
-  // Verify auxiliary args
-  auto aux_args = graph_with_aux.aux_args();
-  EXPECT_EQ(aux_args.size(), 3u);
-  EXPECT_EQ(aux_args[0].name, "NodeA");
-  EXPECT_EQ(aux_args[0].port, 0u);
-  EXPECT_EQ(aux_args[1].name, "NodeB");
-  EXPECT_EQ(aux_args[1].port, 2u);
-  EXPECT_EQ(aux_args[2].name, "NodeC");
-  EXPECT_EQ(aux_args[2].port, 1u);
+  EXPECT_EQ(aux_args[0], 0u);
 }
 
 // Edge cases and error handling

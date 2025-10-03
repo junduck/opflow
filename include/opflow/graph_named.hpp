@@ -28,7 +28,7 @@ struct graph_named_edge {
     } else {
       name = desc.substr(0, dot_pos);
       auto port_str = desc.substr(dot_pos + 1);
-      auto [_, ec] = std::from_chars(port_str.data(), port_str.data() + port_str.size(), port);
+      auto [_, ec] = std::from_chars(port_str.data(), port_str.end(), port);
       if (ec != std::errc{}) {
         switch (ec) {
         case std::errc::invalid_argument:
@@ -90,7 +90,7 @@ graph TD
     SuppRoot --> G
 */
 
-template <typename T, typename AUX = void>
+template <typename T, typename DefaultDT = void>
 class graph_named {
   using Equal = std::equal_to<>;
   using str_view = std::string_view;
@@ -98,29 +98,28 @@ class graph_named {
 public:
   using key_type = std::string;
   using key_hash = detail::str_hash;
+  using edge_type = detail::graph_named_edge;
 
   using node_type = T;
   using shared_node_ptr = std::shared_ptr<T>;
 
-  using aux_type = AUX;
-  using shared_aux_ptr = std::shared_ptr<aux_type>;
+  using key_set = std::unordered_set<key_type, key_hash, Equal>;
+  using args_set = std::vector<edge_type>;
+  using port_set = std::vector<u32>;
 
-  using edge_type = detail::graph_named_edge;
-  using KeySet = std::unordered_set<key_type, key_hash, Equal>;
-  using ArgsSet = std::vector<edge_type>;
-  using NodeMap = std::unordered_map<key_type, KeySet, key_hash, Equal>;
-  using ArgsMap = std::unordered_map<key_type, ArgsSet, key_hash, Equal>;
+  using node_map = std::unordered_map<key_type, key_set, key_hash, Equal>;  ///< node -> preds/succs
+  using args_map = std::unordered_map<key_type, args_set, key_hash, Equal>; ///< node -> args
+  using supp_map = std::unordered_map<key_type, port_set, key_hash, Equal>; ///< node -> supp ports
 
-  using PortSet = std::vector<u32>;
-  using SuppLinksMap = std::unordered_map<key_type, PortSet, key_hash, Equal>;
-
+  template <bool AUX>
   class add_delegate {
     friend class graph_named;
 
     graph_named &self;
+
     key_type node_name;
     shared_node_ptr node;
-    ArgsSet pred_list;
+    args_set pred_list;
 
     add_delegate(graph_named &self, key_type name, shared_node_ptr node)
         : self(self), node_name(std::move(name)), node(std::move(node)), pred_list() {}
@@ -155,14 +154,39 @@ public:
 
     void add_preds() {}
 
+    void check_aux_deps() {
+      for (auto const &edge : pred_list) {
+        if (edge.name != self.root_name) {
+          throw std::invalid_argument("Auxiliary node can only depend on root node.");
+        }
+      }
+    }
+
+    void check_node_deps() {
+      for (auto const &edge : pred_list) {
+        if (edge.name == self.aux_name) {
+          throw std::invalid_argument("Cannot depend on auxiliary node.");
+        }
+        if (edge.name == self.supp_name) {
+          throw std::invalid_argument("Cannot depend on supplementary root node.");
+        }
+      }
+    }
+
   public:
     template <typename... Ts>
     graph_named &depends(Ts &&...pred) && {
       add_preds(std::forward<Ts>(pred)...);
 
-      self.ensure_adjacency_list(node_name);
-      self.add_edge(node_name, pred_list);
-      self.store.insert_or_assign(node_name, std::move(node));
+      if constexpr (AUX) {
+        check_aux_deps();
+        self.add_aux_impl(node_name, pred_list);
+      } else {
+        check_node_deps();
+        self.add_edge_impl(node_name, pred_list);
+      }
+
+      self.store.emplace(node_name, std::move(node));
 
       return self;
     }
@@ -173,108 +197,54 @@ public:
     friend class graph_named;
 
     graph_named &self;
+
     key_type node_name;
     shared_node_ptr node;
-    std::vector<key_type> port_list;
+    std::vector<key_type> port_name_list;
 
     root_delegate(graph_named &self, key_type name, shared_node_ptr node)
-        : self(self), node_name(std::move(name)), node(std::move(node)), port_list() {}
+        : self(self), node_name(std::move(name)), node(std::move(node)), port_name_list() {}
 
     template <detail::string_like T0, typename... Ts>
-    void add_ports(T0 &&port, Ts &&...args) {
-      port_list.emplace_back(std::forward<T0>(port));
-      add_ports(std::forward<Ts>(args)...);
+    void add_names(T0 &&port, Ts &&...args) {
+      port_name_list.emplace_back(std::forward<T0>(port));
+      add_names(std::forward<Ts>(args)...);
     }
 
     template <range_of<str_view> R, typename... Ts>
-    void add_ports(R &&port_names, Ts &&...args) {
+    void add_names(R &&port_names, Ts &&...args) {
       for (auto const &port_name : port_names) {
-        port_list.emplace_back(port_name);
+        port_name_list.emplace_back(port_name);
       }
-      add_ports(std::forward<Ts>(args)...);
+      add_names(std::forward<Ts>(args)...);
     }
 
-    void add_ports() {}
+    void add_names() {}
+
+    void check_port_names() {
+      for (auto const &port_name : port_name_list) {
+        if (port_name.empty()) {
+          throw std::invalid_argument("Empty port name.");
+        }
+        if (self.store.contains(port_name)) {
+          throw std::invalid_argument("Port name conflicts with existing node name.");
+        }
+      }
+    }
 
   public:
     template <typename... Ts>
     graph_named &ports(Ts &&...port_names) && {
-      add_ports(std::forward<Ts>(port_names)...);
+      add_names(std::forward<Ts>(port_names)...);
 
-      self.store.insert_or_assign(node_name, std::move(node));
-
-      // Populate port map and adjacency list
+      check_port_names();
       if constexpr (SUPP) {
-        self.supp_pmap.clear();
-        for (u32 port = 0; port < port_list.size(); ++port) {
-          self.supp_pmap.emplace(port_list[port], port);
-        }
-        self.supp_name = node_name;
+        self.add_supp_impl(node_name, port_name_list);
       } else {
-        self.ensure_adjacency_list(node_name);
-        self.root_pmap.clear();
-        for (u32 port = 0; port < port_list.size(); ++port) {
-          self.root_pmap.emplace(port_list[port], port);
-        }
-        self.root_name = node_name;
+        self.add_root_impl(node_name, port_name_list);
       }
 
-      return self;
-    }
-  };
-
-  class aux_delegate {
-    friend class graph_named;
-
-    graph_named &self;
-    key_type node_name;
-    shared_aux_ptr aux;
-    ArgsSet pred_list;
-
-    aux_delegate(graph_named &self, key_type name, shared_aux_ptr aux)
-        : self(self), node_name(std::move(name)), aux(std::move(aux)), pred_list() {}
-
-    template <detail::string_like T0, typename... Ts>
-    void add_preds(T0 &&edge, Ts &&...args) {
-      pred_list.emplace_back(self.parse_edge(std::forward<T0>(edge)));
-      add_preds(std::forward<Ts>(args)...);
-    }
-
-    template <range_of<str_view> R, typename... Ts>
-    void add_preds(R &&edges, Ts &&...args) {
-      for (auto const &edge_desc : edges) {
-        pred_list.emplace_back(self.parse_edge(edge_desc));
-      }
-      add_preds(std::forward<Ts>(args)...);
-    }
-
-    template <typename... Ts>
-    void add_preds(edge_type edge, Ts &&...args) {
-      pred_list.emplace_back(edge);
-      add_preds(std::forward<Ts>(args)...);
-    }
-
-    template <range_of<edge_type> R, typename... Ts>
-    void add_preds(R &&edges, Ts &&...args) {
-      for (auto const &edge : edges) {
-        pred_list.emplace_back(edge);
-      }
-      add_preds(std::forward<Ts>(args)...);
-    }
-
-    void add_preds() {}
-
-  public:
-    template <typename... Ts>
-    graph_named &depends(Ts &&...pred) && {
-      add_preds(std::forward<Ts>(pred)...);
-
-      self.aux_node = std::move(aux);
-      self.aux_name = node_name;
-      for (auto const &edge : pred_list) {
-        self.ensure_adjacency_list(edge.name);
-        self.aux_args_.emplace_back(edge);
-      }
+      self.store.emplace(node_name, std::move(node));
 
       return self;
     }
@@ -284,61 +254,63 @@ public:
 
   template <typename Node, typename... Ts>
   auto add(key_type const &name, Ts &&...args) {
-    return add_delegate(*this, name, std::make_shared<Node>(std::forward<Ts>(args)...));
+    check_name(name);
+    return add_delegate<false>(*this, name, std::make_shared<Node>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Node, typename... Ts>
   auto add(key_type const &name, Ts &&...args)
-    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
   {
-    return add<Node<typename T::data_type>>(name, std::forward<Ts>(args)...);
+    return add<Node<DefaultDT>>(name, std::forward<Ts>(args)...);
   }
+
+  template <typename Aux, typename... Ts>
+  auto aux(key_type const &name, Ts &&...args) {
+    check_name(name);
+    return add_delegate<true>(*this, name, std::make_shared<Aux>(std::forward<Ts>(args)...));
+  }
+
+  template <template <typename> typename Aux, typename... Ts>
+  auto aux(key_type const &name, Ts &&...args)
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
+  {
+    return aux<Aux<DefaultDT>>(name, std::forward<Ts>(args)...);
+  }
+
+  shared_node_ptr aux() const noexcept { return store.contains(aux_name) ? store.at(aux_name) : nullptr; }
+
+  port_set const &aux_args() const noexcept { return aux_argmap; }
 
   template <typename Root, typename... Ts>
   auto root(key_type const &name, Ts &&...args) {
+    check_name(name);
     return root_delegate<false>(*this, name, std::make_shared<Root>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Root, typename... Ts>
   auto root(key_type const &name, Ts &&...args)
-    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
   {
-    return root<typename T::data_type>(name, std::forward<Ts>(args)...);
+    return root<Root<DefaultDT>>(name, std::forward<Ts>(args)...);
   }
 
   shared_node_ptr root() const { return store.contains(root_name) ? store.at(root_name) : nullptr; }
 
   template <typename Supp, typename... Ts>
   auto supp_root(key_type const &name, Ts &&...args) {
+    check_name(name);
     return root_delegate<true>(*this, name, std::make_shared<Supp>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Supp, typename... Ts>
   auto supp_root(key_type const &name, Ts &&...args)
-    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
   {
-    return supp_root<Supp<typename T::data_type>>(name, std::forward<Ts>(args)...);
+    return supp_root<Supp<DefaultDT>>(name, std::forward<Ts>(args)...);
   }
 
   shared_node_ptr supp_root() const { return store.contains(supp_name) ? store.at(supp_name) : nullptr; }
-
-  template <typename Aux, typename... Ts>
-  auto aux(key_type const &name, Ts &&...args)
-    requires(!std::is_void_v<AUX>)
-  {
-    return aux_delegate(*this, name, std::make_shared<Aux>(std::forward<Ts>(args)...));
-  }
-
-  template <template <typename> typename Aux, typename... Ts>
-  auto aux(key_type const &name, Ts &&...args)
-    requires(!std::is_void_v<AUX> && detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    return aux<Aux<typename T::data_type>>(name, std::forward<Ts>(args)...);
-  }
-
-  shared_aux_ptr aux() const noexcept { return aux_node; }
-
-  ArgsSet const &aux_args() const noexcept { return aux_args_; }
 
   template <typename... Ts>
   graph_named &supp_link(key_type const &node, Ts &&...preds) {
@@ -347,10 +319,10 @@ public:
     return *this;
   }
 
-  SuppLinksMap const &supp_link() const noexcept { return supp_links; }
+  supp_map const &supp_link() const noexcept { return supp_links; }
 
-  PortSet const &supp_link_of(key_type const &node) const noexcept {
-    static PortSet const empty_set{};
+  port_set const &supp_link_of(key_type const &node) const noexcept {
+    static port_set const empty_set{};
     return supp_links.contains(node) ? supp_links.at(node) : empty_set;
   }
 
@@ -362,154 +334,7 @@ public:
     return *this;
   }
 
-  template <typename... Ts>
-  graph_named &set_output(Ts &&...outputs) {
-    out.clear();
-    add_output_impl(std::forward<Ts>(outputs)...);
-    return *this;
-  }
-
-  ArgsSet const &output() const noexcept { return out; }
-
-  // Edge manipulation
-
-  template <typename... Ts>
-  graph_named &add_edge(key_type const &name, Ts &&...preds) {
-    ArgsSet edge_list{};
-    add_edge_impl(name, edge_list, std::forward<Ts>(preds)...);
-    return *this;
-  }
-
-  // Replacement
-
-  bool rename(key_type const &old_name, key_type const &new_name) {
-    if (!predecessor.contains(old_name)) {
-      return false; // Old node doesn't exist
-    }
-    if (predecessor.contains(new_name)) {
-      return false; // Can't replace with an existing node
-    }
-    if (old_name == new_name) {
-      return true; // No change needed
-    }
-    if (old_name == root_name || old_name == supp_name || old_name == aux_name) {
-      return false; // Do not rename special nodes use the dedicated methods
-    }
-
-    // Copy all adjacency information from old_name to new_name
-    predecessor.emplace(new_name, std::move(predecessor[old_name]));
-    argmap.emplace(new_name, std::move(argmap[old_name]));
-    successor.emplace(new_name, std::move(successor[old_name]));
-    store.emplace(new_name, std::move(store[old_name]));
-
-    // Update all predecessors to point to new_name instead of old_name
-    for (auto const &pred : predecessor[new_name]) {
-      successor[pred].erase(old_name);
-      successor[pred].insert(new_name);
-    }
-
-    // Update all successors to depend on new_name instead of old_name
-    for (auto const &succ : successor[new_name]) {
-      predecessor[succ].erase(old_name);
-      predecessor[succ].insert(new_name);
-
-      // Update args to replace old_name with new_name
-      for (auto &arg : argmap[succ]) {
-        if (arg.name == old_name) {
-          arg.name = new_name;
-        }
-      }
-    }
-
-    // Update output references
-    for (auto &o : out) {
-      if (o.name == old_name) {
-        o.name = new_name;
-      }
-    }
-
-    // Update auxiliary arg references
-    for (auto &edge : aux_args_) {
-      if (edge.name == old_name) {
-        edge.name = new_name;
-      }
-    }
-
-    // Update supp_links references
-    if (supp_links.contains(old_name)) {
-      supp_links.emplace(new_name, std::move(supp_links[old_name]));
-      supp_links.erase(old_name);
-    }
-
-    // Remove old_name from all maps
-    predecessor.erase(old_name);
-    argmap.erase(old_name);
-    successor.erase(old_name);
-    store.erase(old_name);
-
-    return true;
-  }
-
-  template <typename Node, typename... Ts>
-  bool replace(key_type const &old_node, key_type const &new_node, Ts &&...args) {
-    if (!predecessor.contains(old_node)) {
-      return false; // Old node doesn't exist
-    }
-    if (predecessor.contains(new_node)) {
-      return false; // Can't replace with an existing node
-    }
-    // Rename, so adjacency lists point to new_node
-    rename(old_node, new_node);
-    // Replace the stored node
-    store[new_node] = std::make_shared<Node>(std::forward<Ts>(args)...);
-
-    return true;
-  }
-
-  template <template <typename> typename Node, typename... Ts>
-  bool replace(key_type const &old_node, key_type const &new_node, Ts &&...args)
-    requires(detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    using NodeT = Node<typename T::data_type>;
-    return replace<NodeT>(old_node, new_node, std::forward<Ts>(args)...);
-  }
-
-  bool replace(key_type const &node, edge_type const &old_pred, edge_type const &new_pred) {
-    if (!predecessor.contains(node)) {
-      return false; // Node doesn't exist
-    }
-    if (!predecessor.contains(new_pred.name)) {
-      return false; // Node doesn't exist
-    }
-    if (old_pred == new_pred) {
-      return true; // No change needed
-    }
-
-    auto &args = argmap[node];
-
-    if (std::find(args.begin(), args.end(), old_pred) == args.end()) {
-      return false; // Old edge doesn't exist, nothing to replace
-    }
-
-    // Ensure new predecessor node exists in adjacency lists
-    ensure_adjacency_list(new_pred.name);
-
-    // Update adjacency maps
-    predecessor[node].emplace(new_pred.name);
-    successor[new_pred.name].emplace(node);
-
-    // Replace old_pred with new_pred in argmap
-    for (auto &arg : args) {
-      if (arg == old_pred) {
-        arg = new_pred;
-      }
-    }
-
-    // Check if old_pred is still needed
-    cleanup_adj(node, old_pred.name);
-
-    return true;
-  }
+  args_set const &output() const noexcept { return out; }
 
   // Utilities
 
@@ -525,8 +350,7 @@ public:
     store.clear();
 
     aux_name.clear();
-    aux_node.reset();
-    aux_args_.clear();
+    aux_argmap.clear();
 
     root_name.clear();
     root_pmap.clear();
@@ -540,29 +364,29 @@ public:
 
   bool contains(key_type const &name) const noexcept { return predecessor.contains(name); }
 
-  KeySet const &pred_of(key_type const &name) const {
-    static KeySet const empty_set{};
+  key_set const &pred_of(key_type const &name) const {
+    static key_set const empty_set{};
     auto it = predecessor.find(name);
     return (it != predecessor.end()) ? it->second : empty_set;
   }
 
-  NodeMap const &pred() const noexcept { return predecessor; }
+  node_map const &pred() const noexcept { return predecessor; }
 
-  ArgsSet const &args_of(key_type const &name) const {
-    static ArgsSet const empty_set{};
+  args_set const &args_of(key_type const &name) const {
+    static args_set const empty_set{};
     auto it = argmap.find(name);
     return (it != argmap.end()) ? it->second : empty_set;
   }
 
-  ArgsMap const &args() const noexcept { return argmap; }
+  args_map const &args() const noexcept { return argmap; }
 
-  KeySet const &succ_of(key_type const &name) const {
-    static KeySet const empty_set{};
+  key_set const &succ_of(key_type const &name) const {
+    static key_set const empty_set{};
     auto it = successor.find(name);
     return (it != successor.end()) ? it->second : empty_set;
   }
 
-  NodeMap const &succ() const noexcept { return successor; }
+  node_map const &succ() const noexcept { return successor; }
 
   shared_node_ptr node(key_type const &name) const {
     auto it = store.find(name);
@@ -610,65 +434,34 @@ public:
         return false; // Inconsistent: output node missing in store
       }
     }
-    if constexpr (!std::is_void_v<AUX>) {
-      for (auto const &edge : aux_args_) {
-        if (!store.contains(edge.name)) {
-          return false; // Inconsistent: aux arg node missing in store
-        }
-      }
-    }
     return true;
-  }
-
-  void merge(graph_named const &other) {
-    if (!other.validate()) {
-      throw std::invalid_argument("Cannot merge: other graph is invalid.");
-    }
-
-    // Collect new nodes to add
-    KeySet nodes_to_add{};
-    for (auto const &[other_name, _] : other.predecessor) {
-      if (!contains(other_name)) {
-        nodes_to_add.emplace(other_name);
-      }
-    }
-
-    // Add all new nodes to the graph
-    for (auto const &new_name : nodes_to_add) {
-      auto other_node = other.node(new_name);
-
-      // Add edges
-      ensure_adjacency_list(new_name);
-      for (auto const &edge : other.args_of(new_name)) {
-        add_edge(new_name, edge);
-      }
-
-      // Copy the node from other's store
-      store.emplace(new_name, other_node);
-    }
-  }
-
-  graph_named &operator+=(graph_named const &rhs) {
-    merge(rhs);
-    return *this;
-  }
-
-  friend graph_named operator+(graph_named const &lhs, graph_named const &rhs) {
-    graph_named result(lhs);
-    result.merge(rhs);
-    return result;
   }
 
 private:
   void ensure_adjacency_list(key_type const &name) {
     if (!predecessor.contains(name)) {
-      predecessor.emplace(name, KeySet{});
+      predecessor.emplace(name, key_set{});
     }
     if (!argmap.contains(name)) {
-      argmap.emplace(name, ArgsSet{});
+      argmap.emplace(name, args_set{});
     }
     if (!successor.contains(name)) {
-      successor.emplace(name, KeySet{});
+      successor.emplace(name, key_set{});
+    }
+  }
+
+  void check_name(key_type const &name) {
+    if (name.empty()) {
+      throw std::invalid_argument("Empty node name.");
+    }
+    if (store.contains(name)) {
+      throw std::invalid_argument("Node already exists.");
+    }
+    if (root_pmap.contains(name)) {
+      throw std::invalid_argument("Node name conflicts with existing root port name.");
+    }
+    if (supp_pmap.contains(name)) {
+      throw std::invalid_argument("Node name conflicts with existing supp port name.");
     }
   }
 
@@ -737,12 +530,6 @@ private:
     add_output_impl(std::forward<Ts>(args)...);
   }
 
-  template <typename... Ts>
-  void add_output_impl(edge_type edge, Ts &&...args) {
-    out.emplace_back(edge);
-    add_output_impl(std::forward<Ts>(args)...);
-  }
-
   template <range_of<str_view> R, typename... Ts>
   void add_output_impl(R &&edges, Ts &&...args) {
     for (auto const &edge_desc : edges) {
@@ -751,7 +538,11 @@ private:
     add_output_impl(std::forward<Ts>(args)...);
   }
 
-  void add_output_impl() {} // base case
+  template <typename... Ts>
+  void add_output_impl(edge_type edge, Ts &&...args) {
+    out.emplace_back(edge);
+    add_output_impl(std::forward<Ts>(args)...);
+  }
 
   template <range_of<edge_type> R, typename... Ts>
   void add_output_impl(R &&edges, Ts &&...args) {
@@ -761,37 +552,11 @@ private:
     add_output_impl(std::forward<Ts>(args)...);
   }
 
+  void add_output_impl() {} // base case
+
   // edge
 
-  template <detail::string_like T0, typename... Ts>
-  void add_edge_impl(key_type const &name, ArgsSet &edge_list, T0 &&edge, Ts &&...args) {
-    edge_list.emplace_back(parse_edge(std::forward<T0>(edge)));
-    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
-  }
-
-  template <range_of<str_view> R, typename... Ts>
-  void add_edge_impl(key_type const &name, ArgsSet &edge_list, R &&edges, Ts &&...args) {
-    for (auto const &edge_desc : edges) {
-      edge_list.emplace_back(parse_edge(edge_desc));
-    }
-    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
-  }
-
-  template <typename... Ts>
-  void add_edge_impl(key_type const &name, ArgsSet &edge_list, edge_type edge, Ts &&...args) {
-    edge_list.emplace_back(edge);
-    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
-  }
-
-  template <range_of<edge_type> R, typename... Ts>
-  void add_edge_impl(key_type const &name, ArgsSet &edge_list, R &&edges, Ts &&...args) {
-    for (auto const &edge : edges) {
-      edge_list.emplace_back(edge);
-    }
-    add_edge_impl(name, edge_list, std::forward<Ts>(args)...);
-  }
-
-  void add_edge_impl(key_type const &name, ArgsSet &edge_list) {
+  void add_edge_impl(key_type const &name, args_set const &edge_list) {
     ensure_adjacency_list(name);
     for (auto const &edge : edge_list) {
       ensure_adjacency_list(edge.name);
@@ -799,6 +564,28 @@ private:
       argmap[name].emplace_back(edge);
       successor[edge.name].emplace(name);
     }
+  }
+
+  void add_aux_impl(key_type const &name, args_set const &edge_list) {
+    aux_name = name;
+    for (auto const &edge : edge_list) {
+      aux_argmap.emplace_back(edge.port);
+    }
+  }
+
+  void add_root_impl(key_type const &name, std::vector<key_type> const &port_names) {
+    ensure_adjacency_list(name);
+    root_name = name;
+    root_pmap.clear();
+    for (u32 port = 0; port < port_names.size(); ++port)
+      root_pmap.emplace(port_names[port], port);
+  }
+
+  void add_supp_impl(key_type const &name, std::vector<key_type> const &port_names) {
+    supp_name = name;
+    supp_pmap.clear();
+    for (u32 port = 0; port < port_names.size(); ++port)
+      supp_pmap.emplace(port_names[port], port);
   }
 
   void cleanup_adj(key_type const &name, key_type const &pred) {
@@ -814,15 +601,14 @@ private:
 protected:
   using NodeStore = std::unordered_map<key_type, shared_node_ptr, key_hash, Equal>;
 
-  NodeMap predecessor; ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  ArgsMap argmap;      ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;   ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
-  ArgsSet out;         ///< Output [node:port]
-  NodeStore store;     ///< Store for actual node instances
+  node_map predecessor; ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  args_map argmap;      ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  node_map successor;   ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  args_set out;         ///< Output [node:port]
+  NodeStore store;      ///< Store for actual node instances
 
-  key_type aux_name;       ///< Name of the auxiliary node
-  shared_aux_ptr aux_node; ///< Auxiliary data
-  ArgsSet aux_args_;       ///< Auxiliary args
+  key_type aux_name;   ///< Name of the auxiliary node
+  port_set aux_argmap; ///< Auxiliary args
 
   key_type root_name; ///< Name of the root node
   key_type supp_name; ///< Name of the support node
@@ -831,6 +617,6 @@ protected:
   PortMap root_pmap; ///< name -> port mapping
   PortMap supp_pmap; ///< name -> port mapping
 
-  SuppLinksMap supp_links; ///< node -> [supp_port] essentially successor list for supp root
+  supp_map supp_links; ///< node -> [supp_port] essentially successor list for supp root
 };
 } // namespace opflow
