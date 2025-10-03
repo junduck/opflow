@@ -26,13 +26,13 @@ struct graph_node_edge {
 } // namespace detail
 
 template <typename T>
-auto operator|(std::shared_ptr<T> const &node, u32 pos) {
-  return detail::graph_node_edge<std::shared_ptr<T>>{node, pos};
+auto operator|(std::shared_ptr<T> const &node, u32 port) {
+  return detail::graph_node_edge<std::shared_ptr<T>>{node, port};
 }
 
 template <typename T>
-auto make_edge(std::shared_ptr<T> const &node, u32 pos = 0) {
-  return detail::graph_node_edge<std::shared_ptr<T>>{node, pos};
+auto make_edge(T const &node, u32 port = 0) {
+  return detail::graph_node_edge<T>{node, port};
 }
 
 template <typename T, typename DefaultDT = void>
@@ -47,11 +47,11 @@ public:
   using key_hash = detail::ptr_hash<T>;                       ///< transparent hashing for pointer to T
   using edge_type = detail::graph_node_edge<shared_node_ptr>; ///< edge type, represents an arg passed to node
 
-  using node_set = std::unordered_set<shared_node_ptr, key_hash, Equal>; ///< set of nodes
-  using args_set = std::vector<edge_type>;                               ///< set of node arguments
+  using key_set = std::unordered_set<shared_node_ptr, key_hash, Equal>; ///< set of nodes
+  using args_set = std::vector<edge_type>;                              ///< set of node arguments
   using port_set = std::vector<u32>;
 
-  using node_map = std::unordered_map<key_type, node_set, key_hash, Equal>; ///< node -> adjacent nodes
+  using node_map = std::unordered_map<key_type, key_set, key_hash, Equal>;  ///< node -> adjacent nodes
   using args_map = std::unordered_map<key_type, args_set, key_hash, Equal>; ///< node -> call arguments
   using supp_map = std::unordered_map<key_type, port_set, key_hash, Equal>; ///< node -> supp ports
 
@@ -285,12 +285,20 @@ public:
     argmap.clear();
     successor.clear();
     out.clear();
+
+    root_node.reset();
+
+    aux_node.reset();
+    aux_argmap.clear();
+
+    supp_node.reset();
+    supp_links.clear();
   }
 
   bool contains(shared_node_ptr const &node) const noexcept { return predecessor.find(node) != predecessor.end(); }
 
-  node_set const &pred_of(shared_node_ptr const &node) const {
-    static node_set const empty_set{};
+  key_set const &pred_of(shared_node_ptr const &node) const {
+    static key_set const empty_set{};
     auto it = predecessor.find(node);
     return (it != predecessor.end()) ? it->second : empty_set;
   }
@@ -305,8 +313,8 @@ public:
 
   args_map const &args() const noexcept { return argmap; }
 
-  node_set const &succ_of(shared_node_ptr const &node) const {
-    static node_set const empty_set{};
+  key_set const &succ_of(shared_node_ptr const &node) const {
+    static key_set const empty_set{};
     auto it = successor.find(node);
     return (it != successor.end()) ? it->second : empty_set;
   }
@@ -363,13 +371,13 @@ private:
   // add slot for node
   void ensure_node(key_type const &node) {
     if (!predecessor.contains(node)) {
-      predecessor.emplace(node, node_set{});
+      predecessor.emplace(node, key_set{});
     }
     if (!argmap.contains(node)) {
       argmap.emplace(node, args_set{});
     }
     if (!successor.contains(node)) {
-      successor.emplace(node, node_set{});
+      successor.emplace(node, key_set{});
     }
   }
 
@@ -485,6 +493,6 @@ protected:
   port_set aux_argmap;      ///< Auxiliary args
 
   shared_node_ptr supp_node; ///< Supplementary root node
-  supp_map supp_links;       ///< Supplementary links (node -> set of ports
+  supp_map supp_links;       ///< Supplementary succ (node <- set of depending ports)
 };
 } // namespace opflow

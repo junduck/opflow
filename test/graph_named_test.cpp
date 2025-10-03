@@ -96,7 +96,7 @@ TEST(GraphEdgeTest, ExplicitPort) {
 }
 
 TEST(GraphEdgeTest, PortOutOfRange) {
-  EXPECT_THROW(detail::graph_named_edge("node.999999999999999999999"), std::out_of_range);
+  EXPECT_THROW(detail::graph_named_edge("node.999999999999999999999"), std::system_error);
 }
 
 TEST(GraphEdgeTest, ConstructorWithNameAndPort) {
@@ -557,7 +557,7 @@ TEST_F(GraphNodeNamedTest, AuxiliaryNode) {
   graph_with_aux.add<dummy_node>("B", 2, "B").depends("input1");
 
   // Add auxiliary that depends on Root
-  graph_with_aux.aux<aux_node>("clock_config", "clock_config").depends("Root");
+  graph_with_aux.aux<aux_node>("clock_config", "clock_config").depends("input0");
 
   // Verify auxiliary exists
   auto aux = std::dynamic_pointer_cast<aux_node>(graph_with_aux.aux());

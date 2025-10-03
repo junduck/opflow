@@ -20,39 +20,32 @@ struct graph_named_edge {
   graph_named_edge(std::string_view name, uint32_t port) : name(name), port(port) {}
 
   graph_named_edge(std::string_view desc) {
-    // find last dot
-    auto dot_pos = desc.find_last_of('.');
+
+    auto const dot_pos = desc.find_last_of('.');
     if (dot_pos == std::string_view::npos) {
       name = desc;
       port = 0;
-    } else {
-      name = desc.substr(0, dot_pos);
-      auto port_str = desc.substr(dot_pos + 1);
-      auto [_, ec] = std::from_chars(port_str.data(), port_str.end(), port);
-      if (ec != std::errc{}) {
-        switch (ec) {
-        case std::errc::invalid_argument:
-          // A.B
-          name = desc;
-          port = 0;
-          break;
-        case std::errc::result_out_of_range:
-          throw std::out_of_range("Port number out of range in edge description: " + std::string(desc));
-        default:
-          throw std::runtime_error("Unknown error parsing port number in edge description: " + std::string(desc));
-        }
-      }
+      return;
     }
+
+    name = desc.substr(0, dot_pos);
+    auto const port_str = desc.substr(dot_pos + 1);
+
+    auto [_, ec] = std::from_chars(port_str.data(), port_str.end(), port);
+    if (ec == std::errc{})
+      return;
+
+    if (ec == std::errc::invalid_argument) {
+      // Not a number after dot, treat as name only
+      name = desc;
+      port = 0;
+      return;
+    }
+
+    throw std::system_error(std::make_error_code(ec));
   }
 
-  operator std::string() const {
-    if (port == 0) {
-      return name;
-    } else {
-      return name + "." + std::to_string(port);
-    }
-  }
-
+  operator std::string() const { return port == 0 ? name : name + "." + std::to_string(port); }
   bool operator==(graph_named_edge const &) const noexcept = default;
 };
 } // namespace detail
@@ -111,7 +104,6 @@ public:
   using args_map = std::unordered_map<key_type, args_set, key_hash, Equal>; ///< node -> args
   using supp_map = std::unordered_map<key_type, port_set, key_hash, Equal>; ///< node -> supp ports
 
-  template <bool AUX>
   class add_delegate {
     friend class graph_named;
 
@@ -154,14 +146,6 @@ public:
 
     void add_preds() {}
 
-    void check_aux_deps() {
-      for (auto const &edge : pred_list) {
-        if (edge.name != self.root_name) {
-          throw std::invalid_argument("Auxiliary node can only depend on root node.");
-        }
-      }
-    }
-
     void check_node_deps() {
       for (auto const &edge : pred_list) {
         if (edge.name == self.aux_name) {
@@ -178,14 +162,70 @@ public:
     graph_named &depends(Ts &&...pred) && {
       add_preds(std::forward<Ts>(pred)...);
 
-      if constexpr (AUX) {
-        check_aux_deps();
-        self.add_aux_impl(node_name, pred_list);
-      } else {
-        check_node_deps();
-        self.add_edge_impl(node_name, pred_list);
-      }
+      check_node_deps();
+      self.add_edge_impl(node_name, pred_list);
+      self.store.emplace(node_name, std::move(node));
 
+      return self;
+    }
+  };
+
+  class aux_delegate {
+    friend class graph_named;
+
+    graph_named &self;
+
+    key_type node_name;
+    shared_node_ptr node;
+    port_set port_list;
+
+    aux_delegate(graph_named &self, key_type name, shared_node_ptr node)
+        : self(self), node_name(std::move(name)), node(std::move(node)), port_list() {}
+
+    template <detail::string_like T0, typename... Ts>
+    void add_ports(T0 &&port_name, Ts &&...args) {
+      if (auto it = self.root_pmap.find(port_name); it != self.root_pmap.end()) {
+        port_list.emplace_back(it->second);
+      } else {
+        throw std::invalid_argument("Invalid root port alias.");
+      }
+      add_ports(std::forward<Ts>(args)...);
+    }
+
+    template <range_of<str_view> R, typename... Ts>
+    void add_ports(R &&port_names, Ts &&...args) {
+      for (auto const &port_name : port_names) {
+        if (auto it = self.root_pmap.find(port_name); it != self.root_pmap.end()) {
+          port_list.emplace_back(it->second);
+        } else {
+          throw std::invalid_argument("Invalid root port alias.");
+        }
+      }
+      add_ports(std::forward<Ts>(args)...);
+    }
+
+    template <std::integral T0, typename... Ts>
+    void add_ports(T0 &&port, Ts &&...args) {
+      port_list.emplace_back(port);
+      add_ports(std::forward<Ts>(args)...);
+    }
+
+    template <range_idx R, typename... Ts>
+    void add_ports(R &&ports, Ts &&...args) {
+      for (auto const &port : ports) {
+        port_list.emplace_back(port);
+      }
+      add_ports(std::forward<Ts>(args)...);
+    }
+
+    void add_ports() {} // base case
+
+  public:
+    template <typename... Ts>
+    graph_named &depends(Ts &&...port_or_alias) && {
+      add_ports(std::forward<Ts>(port_or_alias)...);
+
+      self.add_aux_impl(node_name, port_list);
       self.store.emplace(node_name, std::move(node));
 
       return self;
@@ -221,29 +261,24 @@ public:
 
     void add_names() {}
 
-    void check_port_names() {
-      for (auto const &port_name : port_name_list) {
-        if (port_name.empty()) {
-          throw std::invalid_argument("Empty port name.");
-        }
-        if (self.store.contains(port_name)) {
-          throw std::invalid_argument("Port name conflicts with existing node name.");
-        }
-      }
-    }
-
   public:
     template <typename... Ts>
-    graph_named &ports(Ts &&...port_names) && {
-      add_names(std::forward<Ts>(port_names)...);
+    graph_named &ports(Ts &&...port_aliases) && {
+      add_names(std::forward<Ts>(port_aliases)...);
 
-      check_port_names();
+      key_set name_test{};
+      for (auto const &name : port_name_list) {
+        self.check_name(name);
+        name_test.emplace(name);
+      }
+      if (name_test.size() != port_name_list.size()) {
+        throw std::invalid_argument("Duplicate port alias.");
+      }
       if constexpr (SUPP) {
         self.add_supp_impl(node_name, port_name_list);
       } else {
         self.add_root_impl(node_name, port_name_list);
       }
-
       self.store.emplace(node_name, std::move(node));
 
       return self;
@@ -255,7 +290,7 @@ public:
   template <typename Node, typename... Ts>
   auto add(key_type const &name, Ts &&...args) {
     check_name(name);
-    return add_delegate<false>(*this, name, std::make_shared<Node>(std::forward<Ts>(args)...));
+    return add_delegate(*this, name, std::make_shared<Node>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Node, typename... Ts>
@@ -267,8 +302,11 @@ public:
 
   template <typename Aux, typename... Ts>
   auto aux(key_type const &name, Ts &&...args) {
+    if (!aux_name.empty()) {
+      throw std::invalid_argument("Auxiliary node already exists in graph.");
+    }
     check_name(name);
-    return add_delegate<true>(*this, name, std::make_shared<Aux>(std::forward<Ts>(args)...));
+    return aux_delegate(*this, name, std::make_shared<Aux>(std::forward<Ts>(args)...));
   }
 
   template <template <typename> typename Aux, typename... Ts>
@@ -284,6 +322,9 @@ public:
 
   template <typename Root, typename... Ts>
   auto root(key_type const &name, Ts &&...args) {
+    if (!root_name.empty()) {
+      throw std::invalid_argument("Root node already exists in graph.");
+    }
     check_name(name);
     return root_delegate<false>(*this, name, std::make_shared<Root>(std::forward<Ts>(args)...));
   }
@@ -299,6 +340,9 @@ public:
 
   template <typename Supp, typename... Ts>
   auto supp_root(key_type const &name, Ts &&...args) {
+    if (!supp_name.empty()) {
+      throw std::invalid_argument("Supplementary root node already exists in graph.");
+    }
     check_name(name);
     return root_delegate<true>(*this, name, std::make_shared<Supp>(std::forward<Ts>(args)...));
   }
@@ -313,9 +357,9 @@ public:
   shared_node_ptr supp_root() const { return store.contains(supp_name) ? store.at(supp_name) : nullptr; }
 
   template <typename... Ts>
-  graph_named &supp_link(key_type const &node, Ts &&...preds) {
+  graph_named &supp_link(key_type const &node, Ts &&...supp_ports_or_alias) {
     std::vector<u32> ports{};
-    supp_link_impl(ports, node, std::forward<Ts>(preds)...);
+    supp_link_impl(ports, node, std::forward<Ts>(supp_ports_or_alias)...);
     return *this;
   }
 
@@ -359,8 +403,6 @@ public:
     supp_pmap.clear();
     supp_links.clear();
   }
-
-  // this does not check aux and supp
 
   bool contains(key_type const &name) const noexcept { return predecessor.contains(name); }
 
@@ -434,6 +476,22 @@ public:
         return false; // Inconsistent: output node missing in store
       }
     }
+    if (!aux_name.empty() && !store.contains(aux_name)) {
+      return false; // Inconsistent: aux node missing in store
+    }
+    if (!root_name.empty() && !store.contains(root_name)) {
+      return false; // Inconsistent: root node missing in store
+    }
+    if (!supp_name.empty()) {
+      if (!store.contains(supp_name)) {
+        return false; // Inconsistent: supp node missing in store
+      }
+      for (auto const &[name, _] : supp_links) {
+        if (!store.contains(name)) {
+          return false; // Inconsistent: supp link node missing in store
+        }
+      }
+    }
     return true;
   }
 
@@ -457,11 +515,8 @@ private:
     if (store.contains(name)) {
       throw std::invalid_argument("Node already exists.");
     }
-    if (root_pmap.contains(name)) {
-      throw std::invalid_argument("Node name conflicts with existing root port name.");
-    }
-    if (supp_pmap.contains(name)) {
-      throw std::invalid_argument("Node name conflicts with existing supp port name.");
+    if (root_pmap.contains(name) || supp_pmap.contains(name)) {
+      throw std::invalid_argument("Node name conflicts with existing root port aliases.");
     }
   }
 
@@ -477,46 +532,40 @@ private:
     }
   }
 
-  template <detail::string_like T0>
-  u32 parse_supp(T0 &&desc) const {
-    auto s = key_type(std::forward<T0>(desc));
-    if (supp_pmap.contains(s)) {
-      return supp_pmap.at(s);
-    } else {
-      auto e = edge_type(s);
-      if (e.name != supp_name) {
-        throw std::invalid_argument("Supplementary link can only depend on supplementary root node.");
-      }
-      return e.port;
-    }
-  }
-
   // supp link
 
   template <detail::string_like T0, typename... Ts>
   void supp_link_impl(std::vector<u32> &ports, key_type const &node, T0 &&port_name, Ts &&...args) {
-    ports.emplace_back(parse_supp(std::forward<T0>(port_name)));
+    if (auto it = supp_pmap.find(port_name); it != supp_pmap.end()) {
+      ports.emplace_back(it->second);
+    } else {
+      throw std::invalid_argument("Invalid supplementary root port alias.");
+    }
     supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
 
   template <range_of<str_view> R, typename... Ts>
   void supp_link_impl(std::vector<u32> &ports, key_type const &node, R &&port_names_range, Ts &&...args) {
     for (auto const &port_name : port_names_range) {
-      ports.emplace_back(parse_supp(port_name));
+      if (auto it = supp_pmap.find(port_name); it != supp_pmap.end()) {
+        ports.emplace_back(it->second);
+      } else {
+        throw std::invalid_argument("Invalid supplementary root port alias.");
+      }
     }
     supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
 
-  template <typename... Ts>
-  void supp_link_impl(std::vector<u32> &ports, key_type const &node, edge_type edge, Ts &&...args) {
-    ports.emplace_back(edge.port);
+  template <std::integral T0, typename... Ts>
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node, T0 &&port, Ts &&...args) {
+    ports.emplace_back(port);
     supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
 
-  template <range_of<edge_type> R, typename... Ts>
-  void supp_link_impl(std::vector<u32> &ports, key_type const &node, R &&edges, Ts &&...args) {
-    for (auto const &edge : edges) {
-      ports.emplace_back(edge.port);
+  template <range_idx R, typename... Ts>
+  void supp_link_impl(std::vector<u32> &ports, key_type const &node, R &&port_range, Ts &&...args) {
+    for (auto const &port : port_range) {
+      ports.emplace_back(port);
     }
     supp_link_impl(ports, node, std::forward<Ts>(args)...);
   }
@@ -529,14 +578,14 @@ private:
 
   template <detail::string_like T0, typename... Ts>
   void add_output_impl(T0 &&edge_desc, Ts &&...args) {
-    out.emplace_back(std::forward<T0>(edge_desc));
+    out.emplace_back(parse_edge(std::forward<T0>(edge_desc)));
     add_output_impl(std::forward<Ts>(args)...);
   }
 
   template <range_of<str_view> R, typename... Ts>
   void add_output_impl(R &&edges, Ts &&...args) {
     for (auto const &edge_desc : edges) {
-      out.emplace_back(edge_desc);
+      out.emplace_back(parse_edge(edge_desc));
     }
     add_output_impl(std::forward<Ts>(args)...);
   }
@@ -569,11 +618,9 @@ private:
     }
   }
 
-  void add_aux_impl(key_type const &name, args_set const &edge_list) {
+  void add_aux_impl(key_type const &name, port_set const &port_list) {
     aux_name = name;
-    for (auto const &edge : edge_list) {
-      aux_argmap.emplace_back(edge.port);
-    }
+    aux_argmap = port_list;
   }
 
   void add_root_impl(key_type const &name, std::vector<key_type> const &port_names) {
@@ -589,16 +636,6 @@ private:
     supp_pmap.clear();
     for (u32 port = 0; port < port_names.size(); ++port)
       supp_pmap.emplace(port_names[port], port);
-  }
-
-  void cleanup_adj(key_type const &name, key_type const &pred) {
-    auto const &args = argmap[name];
-    bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &arg) { return arg.name == pred; });
-    if (!has_conn) {
-      // If no other connections exist, remove old predecessor from adjacency maps
-      predecessor[name].erase(pred);
-      successor[pred].erase(name);
-    }
   }
 
 protected:
