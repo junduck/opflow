@@ -96,12 +96,12 @@ class graph_named {
   using str_view = std::string_view;
 
 public:
+  using node_type = T;
+  using shared_node_ptr = std::shared_ptr<T>;
+
   using key_type = std::string;
   using key_hash = detail::str_hash;
   using edge_type = detail::graph_named_edge;
-
-  using node_type = T;
-  using shared_node_ptr = std::shared_ptr<T>;
 
   using key_set = std::unordered_set<key_type, key_hash, Equal>;
   using args_set = std::vector<edge_type>;
@@ -484,6 +484,9 @@ private:
       return supp_pmap.at(s);
     } else {
       auto e = edge_type(s);
+      if (e.name != supp_name) {
+        throw std::invalid_argument("Supplementary link can only depend on supplementary root node.");
+      }
       return e.port;
     }
   }
