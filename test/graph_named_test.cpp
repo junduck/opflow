@@ -80,12 +80,12 @@ TEST(GraphEdgeTest, DefaultPort) {
   detail::graph_named_edge edge("node");
   EXPECT_EQ(edge.name, "node");
   EXPECT_EQ(edge.port, 0u);
-  EXPECT_EQ(std::string(edge), "node");
+  EXPECT_EQ(std::string(edge), "node.0");
 
-  detail::graph_named_edge edge2("node.abc");
+  detail::graph_named_edge<'@'> edge2("node.abc");
   EXPECT_EQ(edge2.name, "node.abc");
   EXPECT_EQ(edge2.port, 0u);
-  EXPECT_EQ(std::string(edge2), "node.abc");
+  EXPECT_EQ(std::string(edge2), "node.abc@0");
 }
 
 TEST(GraphEdgeTest, ExplicitPort) {
@@ -247,7 +247,7 @@ TEST_F(GraphNodeNamedTest, AddNodeWithEdgeTypes) {
   graph.add<dummy_node>("input1", 1, "input1").depends();
   graph.add<dummy_node>("input2", 2, "input2").depends();
 
-  std::vector<detail::graph_named_edge> edge_deps = {make_edge("input1", 0), make_edge("input2", 5)};
+  std::vector<detail::graph_named_edge<>> edge_deps = {make_edge("input1", 0), make_edge("input2", 5)};
   graph.add<dummy_node>("processor", 3, "processor").depends(edge_deps);
 
   auto pred = graph.pred_of("processor");
@@ -278,7 +278,7 @@ TEST_F(GraphNodeNamedTest, AddNodeWithNonExistingPred) {
 
 // Root node operations
 TEST_F(GraphNodeNamedTest, AddRootNode) {
-  graph.root<root_node>("root", 5).ports("port0", "port1", "port2");
+  graph.root<root_node>("root", 5).alias("port0", "port1", "port2");
 
   EXPECT_TRUE(graph.contains("root"));
   EXPECT_TRUE(graph.is_root("root"));
@@ -291,7 +291,7 @@ TEST_F(GraphNodeNamedTest, AddRootNode) {
 }
 
 TEST_F(GraphNodeNamedTest, RootNodeWithNamedPorts) {
-  graph.root<root_node>("root", 3).ports("input_a", "input_b", "input_c");
+  graph.root<root_node>("root", 3).alias("input_a", "input_b", "input_c");
   graph.add<dummy_node>("node_a", 1, "node_a").depends("input_a");
   graph.add<dummy_node>("node_b", 2, "node_b").depends("input_b");
   graph.add<dummy_node>("node_c", 3, "node_c").depends("input_c");
@@ -430,7 +430,7 @@ TEST_F(GraphNodeNamedTest, ComplexGraphStructure) {
 
   // Build the graph
   graph.root<root_node>("Root", 3)
-      .ports() // unnamed ports
+      .alias() // unnamed ports
 
       .add<dummy_node>("A", 1, "A")
       .depends("Root.0")
@@ -514,8 +514,8 @@ TEST_F(GraphNodeNamedTest, ComplexGraphStructure) {
 // Test supp_root functionality
 TEST_F(GraphNodeNamedTest, SuppRootStructure) {
   // Build a simple graph with supplementary root
-  graph.root<root_node>("Root", 2).ports();
-  graph.supp_root<root_node>("SuppRoot", 4).ports("param0", "param1", "param2", "param3");
+  graph.root<root_node>("Root", 2).alias();
+  graph.supp_root<root_node>("SuppRoot", 4).alias("param0", "param1", "param2", "param3");
 
   graph.add<dummy_node>("A", 1, "A").depends("Root.0");
   graph.add<dummy_node>("B", 2, "B").depends("Root.1");
@@ -552,7 +552,7 @@ TEST_F(GraphNodeNamedTest, SuppRootStructure) {
 // Test auxiliary functionality
 TEST_F(GraphNodeNamedTest, AuxiliaryNode) {
   // Build a graph with auxiliary
-  graph_with_aux.root<root_node>("Root", 2).ports("input0", "input1");
+  graph_with_aux.root<root_node>("Root", 2).alias("input0", "input1");
   graph_with_aux.add<dummy_node>("A", 1, "A").depends("input0");
   graph_with_aux.add<dummy_node>("B", 2, "B").depends("input1");
 
