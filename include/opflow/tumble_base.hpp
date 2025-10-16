@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstddef>
+#include "cloneable.hpp"
 
 namespace opflow {
 template <typename T>
@@ -10,7 +10,7 @@ struct tumble_spec {
 };
 
 template <typename T>
-struct tumble_base {
+struct tumble_base : public cloneable {
   using data_type = T;
   using spec_type = tumble_spec<T>;
 
@@ -18,9 +18,5 @@ struct tumble_base {
   virtual spec_type emit() noexcept = 0;
 
   virtual tumble_base *clone_at(void *mem) const noexcept = 0;
-  virtual size_t clone_size() const noexcept = 0;
-  virtual size_t clone_align() const noexcept = 0;
-
-  virtual ~tumble_base() noexcept = default;
 };
 } // namespace opflow

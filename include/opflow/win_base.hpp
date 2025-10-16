@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "cloneable.hpp"
+
 namespace opflow {
 
 /**
@@ -47,7 +49,7 @@ struct win_spec {
  *
  */
 template <typename Data>
-struct win_base {
+struct win_base : public cloneable {
   using data_type = Data;
   using spec_type = win_spec<data_type>;
 
@@ -82,10 +84,6 @@ struct win_base {
   virtual spec_type emit() noexcept = 0;
 
   virtual win_base *clone_at(void *mem) const noexcept = 0;
-  virtual size_t clone_size() const noexcept = 0;
-  virtual size_t clone_align() const noexcept = 0;
-
-  virtual ~win_base() noexcept = default;
 };
 
 } // namespace opflow

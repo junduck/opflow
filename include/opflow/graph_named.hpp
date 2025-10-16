@@ -349,6 +349,13 @@ public:
     return *this;
   }
 
+  template <typename... Ts>
+  graph_named &set_output(Ts &&...outputs) {
+    output_.clear();
+    add_output_impl(std::forward<Ts>(outputs)...);
+    return *this;
+  }
+
   args_set const &output() const noexcept { return output_; }
 
   // Utilities

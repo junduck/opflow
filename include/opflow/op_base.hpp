@@ -4,6 +4,7 @@
 #include <tuple>
 #include <variant>
 
+#include "cloneable.hpp"
 #include "common.hpp"
 #include "def.hpp"
 #include "detail/utils.hpp"
@@ -41,6 +42,9 @@ constexpr inline time_mode_tag time_mode{};
  * - If operator is non-cumulative
  *    - static window: engine calls window_size() once on init to determine the window size.
  *    - dynamic window: engine calls on_data() -> window_size() -> on_evict() on every step.
+ * - Engine calls num_params() once on init to determine number of trainable parameters.
+ *    - If number of param > 0, engine may call on_param() to update parameters before on_data() as required by trainer.
+ *    - Operator should have no knowledge of training, it just accepts new parameters when on_param() is called.
  * - Refer to @see opflow::op::avg @see opflow::op::dynwin_avg for example implementations.
  * - Important checklist:
  *    - Implement on_evict() for non-cumulative operators.
@@ -49,12 +53,13 @@ constexpr inline time_mode_tag time_mode{};
  * @tparam T data type
  */
 template <typename T>
-struct op_base {
+struct op_base : public cloneable {
   using data_type = T;
 
   virtual void on_data(data_type const *in) noexcept = 0;
   virtual void on_evict(data_type const *rm) noexcept { std::ignore = rm; }
   virtual void value(data_type *out) const noexcept = 0;
+  virtual void on_param(data_type const *param) noexcept { std::ignore = param; }
 
   virtual win_mode window_mode() const noexcept { return win_mode::cumulative; }
   virtual size_t window_size(event_mode_tag) const noexcept { return 0; }
@@ -62,12 +67,9 @@ struct op_base {
 
   virtual size_t num_inputs() const noexcept = 0;
   virtual size_t num_outputs() const noexcept = 0;
+  virtual size_t num_params() const noexcept { return 0; }
 
   virtual op_base *clone_at(void *mem) const noexcept = 0;
-  virtual size_t clone_size() const noexcept = 0;
-  virtual size_t clone_align() const noexcept = 0;
-
-  virtual ~op_base() noexcept = default;
 };
 
 template <typename T>
@@ -80,6 +82,17 @@ public:
   explicit simple_rollop(I win_event) noexcept : win_size(static_cast<size_t>(win_event)) {}
 
   explicit simple_rollop(data_type win_time) noexcept : win_size(win_time) {}
+
+  explicit simple_rollop(event_mode_tag) noexcept : win_size(size_t{}) {}
+
+  explicit simple_rollop(time_mode_tag) noexcept : win_size(data_type{}) {}
+
+  void on_param(data_type const *param) noexcept override {
+    data_type p = param[0];
+    auto visitor =
+        detail::overload{[p](size_t &win) { win = static_cast<size_t>(p); }, [p](data_type &win) { win = p; }};
+    std::visit(visitor, win_size);
+  }
 
   win_mode window_mode() const noexcept override {
     auto visitor =
@@ -100,6 +113,8 @@ public:
     return std::get<data_type>(win_size);
   }
 
+  size_t num_params() const noexcept override { return 1; }
+
 protected:
   std::variant<size_t, data_type> win_size;
 };
@@ -113,6 +128,8 @@ public:
   using base = op_base<T>;
   using typename base::data_type;
 
+  mode_rollop() noexcept = default;
+
   explicit mode_rollop(size_t win_event) noexcept
     requires(MODE == win_mode::event)
       : win_event(win_event) {}
@@ -120,6 +137,16 @@ public:
   explicit mode_rollop(data_type win_time) noexcept
     requires(MODE == win_mode::time)
       : win_time(win_time) {}
+
+  void on_param(data_type const *param) noexcept override {
+    if constexpr (MODE == win_mode::event) {
+      size_t p = static_cast<size_t>(param[0]);
+      win_event = p;
+    } else {
+      data_type p = param[0];
+      win_time = p;
+    }
+  }
 
   win_mode window_mode() const noexcept override { return MODE; }
 
@@ -142,6 +169,8 @@ public:
       return {};
     }
   }
+
+  size_t num_params() const noexcept override { return 1; }
 
 protected:
   union {
