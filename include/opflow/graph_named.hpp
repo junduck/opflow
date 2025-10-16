@@ -94,7 +94,7 @@ public:
 
     template <typename... Ts>
     void add_args(edge_type edge, Ts &&...t) {
-      args.emplace_back(edge);
+      args.emplace_back(std::move(edge));
       add_args(std::forward<Ts>(t)...);
     }
 
@@ -450,7 +450,7 @@ public:
 private:
   void check_name(str_view name) const {
     if (name.empty()) {
-      throw std::invalid_argument("Name cannot be empty.");
+      throw std::invalid_argument("Empty name.");
     }
     // add() implicitly declares parent nodes if not exist
     // we only check for constructed nodes here
@@ -461,7 +461,7 @@ private:
 
   void check_name_declared(str_view name) const {
     if (name.empty()) {
-      throw std::invalid_argument("Name cannot be empty.");
+      throw std::invalid_argument("Empty name.");
     }
     // add() implicitly declares parent nodes if not exist
     // we check for all declared names here
@@ -622,7 +622,7 @@ protected:
   node_map succ_;   ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
   args_set output_; ///< Output [node:port]
   NodeStore store;  ///< Store for actual node instances
-  NameStore names;  ///< Set of all node names
+  NameStore names;  ///< Set of all declared names
 
   key_type root_name; ///< Name of the root node
   key_type aux_name;  ///< Name of the auxiliary node

@@ -166,7 +166,7 @@ TEST_F(GraphNodeTest, AddExistingNodePointer) {
 
 TEST_F(GraphNodeTest, AddNullNode) {
   std::shared_ptr<dummy_node> null_node = nullptr;
-  EXPECT_THROW(graph.add(null_node), std::invalid_argument);
+  EXPECT_THROW(graph.add(null_node).depends(), std::invalid_argument);
 }
 
 TEST_F(GraphNodeTest, AddNodeWithDependencies) {
@@ -287,7 +287,7 @@ TEST_F(GraphNodeTest, RootWithDefaultDataType) {
 // Auxiliary node operations
 TEST_F(GraphNodeTest, AddAuxiliaryNode) {
   auto root = graph.root<root_node>(2);
-  auto aux = graph.aux<aux_node>("clock_config").depends(root | 0);
+  auto aux = graph.aux<aux_node>("clock_config").depends(0);
 
   EXPECT_EQ(graph.aux(), aux);
 
@@ -302,7 +302,7 @@ TEST_F(GraphNodeTest, AddAuxiliaryNode) {
 
 TEST_F(GraphNodeTest, AuxiliaryWithMultiplePorts) {
   auto root = graph.root<root_node>(4);
-  auto aux = graph.aux<aux_node>("multi_config").depends(root | 0, root | 2, root | 3);
+  auto aux = graph.aux<aux_node>("multi_config").depends(0, 2, 3);
 
   auto aux_args = graph.aux_args();
   EXPECT_EQ(aux_args.size(), 3u);
@@ -323,16 +323,9 @@ TEST_F(GraphNodeTest, AuxiliaryWithPortRange) {
   EXPECT_EQ(aux_args[2], 2u);
 }
 
-TEST_F(GraphNodeTest, AuxiliaryDependsOnNonRoot) {
-  auto root = graph.root<root_node>(2);
-  auto other = graph.add<dummy_node>(1, "other").depends();
-
-  EXPECT_THROW(graph.aux<aux_node>("bad_config").depends(other | 0), std::invalid_argument);
-}
-
 TEST_F(GraphNodeTest, AddNullAuxiliaryNode) {
   std::shared_ptr<aux_node> null_aux = nullptr;
-  EXPECT_THROW(graph.aux(null_aux), std::invalid_argument);
+  EXPECT_THROW(graph.aux(null_aux).depends(), std::invalid_argument);
 }
 
 // Supplementary root operations
@@ -368,18 +361,18 @@ TEST_F(GraphNodeTest, SuppLinkOperations) {
   graph.supp_link(node1, 0u, 1u);
   graph.supp_link(node2, 2u);
 
-  auto supp_args1 = graph.supp_args(node1);
+  auto supp_args1 = graph.supp_link_of(node1);
   EXPECT_EQ(supp_args1.size(), 2u);
   EXPECT_EQ(supp_args1[0], 0u);
   EXPECT_EQ(supp_args1[1], 1u);
 
-  auto supp_args2 = graph.supp_args(node2);
+  auto supp_args2 = graph.supp_link_of(node2);
   EXPECT_EQ(supp_args2.size(), 1u);
   EXPECT_EQ(supp_args2[0], 2u);
 
   // Test non-linked node
   auto node3 = graph.add<dummy_node>(3, "node3").depends();
-  auto supp_args3 = graph.supp_args(node3);
+  auto supp_args3 = graph.supp_link_of(node3);
   EXPECT_TRUE(supp_args3.empty());
 }
 
@@ -390,7 +383,7 @@ TEST_F(GraphNodeTest, SuppLinkWithPortRange) {
   std::vector<u32> ports = {0, 2, 4};
   graph.supp_link(node, ports);
 
-  auto supp_args = graph.supp_args(node);
+  auto supp_args = graph.supp_link_of(node);
   EXPECT_EQ(supp_args.size(), 3u);
   EXPECT_EQ(supp_args[0], 0u);
   EXPECT_EQ(supp_args[1], 2u);
@@ -401,26 +394,12 @@ TEST_F(GraphNodeTest, SuppLinkWithEdges) {
   auto supp = graph.supp_root<supp_node>("params");
   auto node = graph.add<dummy_node>(1, "node").depends();
 
-  graph.supp_link(node, supp | 1, supp | 3);
+  graph.supp_link(node, 1, 3);
 
-  auto supp_args = graph.supp_args(node);
+  auto supp_args = graph.supp_link_of(node);
   EXPECT_EQ(supp_args.size(), 2u);
   EXPECT_EQ(supp_args[0], 1u);
   EXPECT_EQ(supp_args[1], 3u);
-}
-
-TEST_F(GraphNodeTest, SuppLinkWithoutSuppRoot) {
-  auto node = graph.add<dummy_node>(1, "node").depends();
-
-  EXPECT_THROW(graph.supp_link(node, 0u), std::invalid_argument);
-}
-
-TEST_F(GraphNodeTest, SuppLinkWithWrongNode) {
-  auto supp = graph.supp_root<supp_node>("params");
-  auto other = graph.add<dummy_node>(1, "other").depends();
-  auto node = graph.add<dummy_node>(2, "node").depends();
-
-  EXPECT_THROW(graph.supp_link(node, other | 0), std::invalid_argument);
 }
 
 // Output operations
@@ -546,7 +525,7 @@ TEST_F(GraphNodeTest, ValidateSimpleGraph) {
 
 TEST_F(GraphNodeTest, ValidateWithAuxiliary) {
   auto root = graph.root<root_node>(2);
-  auto aux = graph.aux<aux_node>("config").depends(root | 1);
+  auto aux = graph.aux<aux_node>("config").depends(1);
   auto node = graph.add<dummy_node>(1, "node").depends(root);
 
   EXPECT_TRUE(graph.validate());
@@ -592,7 +571,7 @@ TEST_F(GraphNodeTest, ComplexGraphStructure) {
   graph.add_output(e, f, g, h);
 
   // Add auxiliary node
-  auto aux = graph.aux<aux_node>("clock").depends(root | 0);
+  auto aux = graph.aux<aux_node>("clock").depends(0);
 
   // Add supplementary root and links
   auto supp = graph.supp_root<supp_node>("params");
@@ -645,11 +624,11 @@ TEST_F(GraphNodeTest, ComplexGraphStructure) {
 
   // Verify supplementary links
   EXPECT_EQ(graph.supp_root(), supp);
-  auto a_supp = graph.supp_args(a);
+  auto a_supp = graph.supp_link_of(a);
   EXPECT_EQ(a_supp.size(), 1u);
   EXPECT_EQ(a_supp[0], 0u);
 
-  auto d_supp = graph.supp_args(d);
+  auto d_supp = graph.supp_link_of(d);
   EXPECT_EQ(d_supp.size(), 1u);
   EXPECT_EQ(d_supp[0], 1u);
 
@@ -713,7 +692,7 @@ TEST_F(GraphNodeTest, GetNonexistentNodeData) {
   auto args = graph.args_of(non_existing);
   EXPECT_EQ(args.size(), 0u);
 
-  auto supp_args = graph.supp_args(non_existing);
+  auto supp_args = graph.supp_link_of(non_existing);
   EXPECT_EQ(supp_args.size(), 0u);
 }
 
