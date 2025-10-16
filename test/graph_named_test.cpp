@@ -105,10 +105,7 @@ TEST(GraphEdgeTest, ConstructorWithNameAndPort) {
   EXPECT_EQ(edge.port, 42u);
   EXPECT_EQ(std::string(edge), "test_node.42");
 
-  detail::graph_named_edge edge2("test.node.42");
-  EXPECT_EQ(edge2.name, "test.node");
-  EXPECT_EQ(edge2.port, 42u);
-  EXPECT_EQ(std::string(edge2), "test.node.42");
+  EXPECT_THROW(detail::graph_named_edge edge2("test.node.42"), std::invalid_argument);
 }
 
 TEST(GraphEdgeTest, Equality) {

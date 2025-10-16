@@ -22,6 +22,9 @@ struct graph_named_edge {
 
   graph_named_edge(std::string_view desc) {
     auto const dot_pos = desc.find_last_of(Delim);
+    if (desc.find_first_of(Delim) != dot_pos) {
+      throw std::invalid_argument("Multiple delimiters found in edge descriptor.");
+    }
     if (dot_pos == std::string_view::npos) {
       name = desc;
       port = 0;
