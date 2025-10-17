@@ -249,6 +249,12 @@ public:
 
   template <typename... Ts>
   void supp_link(key_type const &node, Ts &&...ports) {
+    if (!node || !pred_.contains(node)) {
+      throw std::invalid_argument("Node does not exist in graph.");
+    }
+    if (node == aux_node || node == supp_node) {
+      throw std::invalid_argument("Invalid supplementary link target.");
+    }
     port_set port_list{};
     supp_link_impl(port_list, node, std::forward<Ts>(ports)...);
   }

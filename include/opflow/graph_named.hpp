@@ -330,6 +330,12 @@ public:
 
   template <typename... Ts>
   graph_named &supp_link(str_view node, Ts &&...supp_ports_or_alias) {
+    if (!store.contains(node)) {
+      throw std::invalid_argument("Node does not exist in graph.");
+    }
+    if (node == aux_name || node == supp_name) {
+      throw std::invalid_argument("Invalid supplementary link target.");
+    }
     port_set ports;
     supp_link_impl(ports, node, std::forward<Ts>(supp_ports_or_alias)...);
     return *this;
