@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstddef>
-
+#include "cloneable.hpp"
 #include "common.hpp"
 #include "def.hpp"
 
@@ -27,20 +26,18 @@ namespace opflow {
  * @tparam T data type
  */
 template <typename T>
-struct fn_base {
+struct fn_base : public cloneable {
   using data_type = T;
 
   virtual void on_data(data_type const *in, data_type *out) noexcept = 0;
+  virtual void on_param(data_type const *param) noexcept { std::ignore = param; }
   virtual void reset() noexcept {}
 
   virtual size_t num_inputs() const noexcept = 0;
   virtual size_t num_outputs() const noexcept = 0;
+  virtual size_t num_params() const noexcept { return 0; }
 
   virtual fn_base *clone_at(void *mem) const noexcept = 0;
-  virtual size_t clone_size() const noexcept = 0;
-  virtual size_t clone_align() const noexcept = 0;
-
-  virtual ~fn_base() noexcept = default;
 };
 
 template <typename T>

@@ -21,14 +21,17 @@ public:
       : // DAG
         ngrp(num_groups), dag(g, ngrp, alloc),
         // data
-        history(dag.record_size, ngrp, alloc),
+        history(dag.record_size, ngrp, alloc), param_history(dag.param_size, ngrp, alloc),
         // tmp
-        curr_args(0, ngrp, alloc) {
-    size_t max_inputs = 0;
+        tmp_args(0, ngrp, alloc) {
+    size_t tmp_size_required = 0;
     for (size_t i = 0; i < dag.size(); ++i) {
-      max_inputs = std::max(max_inputs, dag.input_offset.size(i));
+      tmp_size_required = std::max(tmp_size_required, dag.input_offset.size(i));
     }
-    curr_args.ensure_group_capacity(max_inputs);
+    for (size_t i = 0; i < dag.param_node.size(); ++i) {
+      tmp_size_required = std::max(tmp_size_required, dag.param_port.size(i));
+    }
+    tmp_args.ensure_group_capacity(tmp_size_required);
   }
 
   std::optional<data_type> on_data(data_type timestamp,            //
@@ -39,8 +42,8 @@ public:
     auto nodes = dag[igrp];
     auto const &win = dag.window(igrp);
 
-    root_type *root = static_cast<root_type *>(nodes[0].get());
-    root->on_data(in, out_ptr(record, 0));
+    // call root node
+    nodes[0]->on_data(in, out_ptr(record, 0));
 
     bool should_emit = win->on_data(timestamp, in_ptr(record, 0, igrp));
     if (!should_emit) {
@@ -71,39 +74,51 @@ public:
     return spec.timestamp;
   }
 
-  void flush(data_type *OPFLOW_RESTRICT out, size_t igrp) noexcept {
-    auto record = history[igrp];
-    for (size_t i = 0; i < dag.size(); ++i) {
-      out[i] = record[dag.output_offset[i]];
+  void op_param(data_type const *in, size_t igrp) noexcept {
+    auto record = param_history[igrp];
+    auto nodes = dag[igrp];
+
+    // call param root node
+    dag.param(igrp)->on_data(in, record.data());
+
+    auto tmp = tmp_args[igrp];
+    for (auto node_id : dag.param_node) {
+      auto offsets = dag.param_port[node_id];
+      for (size_t i = 0; i < dag.param_port.size(node_id); ++i) {
+        tmp[i] = record[offsets[i]];
+      }
+      nodes[node_id]->on_param(tmp.data());
     }
   }
 
-  size_t num_inputs() const noexcept {
-    auto nodes = dag[0];
-    root_type const *root = static_cast<root_type const *>(nodes[0].get());
-    return root->input_size;
+  void flush(data_type *OPFLOW_RESTRICT out, size_t igrp) noexcept {
+    auto record = history[igrp];
+    size_t i = 0;
+    for (auto idx : dag.output_offset) {
+      out[i++] = record[idx];
+    }
   }
 
+  size_t num_inputs() const noexcept { return dag[0][0]->num_inputs(); }
   size_t num_outputs() const noexcept { return dag.output_offset.size(); }
-
   size_t num_groups() const noexcept { return ngrp; }
 
 private:
   data_type *out_ptr(auto record, size_t node_id) noexcept { return record.data() + dag.record_offset[node_id]; }
 
   data_type const *in_ptr(auto record, size_t node_id, size_t grp_id) noexcept {
-    auto args = curr_args[grp_id];
+    auto tmp = tmp_args[grp_id];
     auto offsets = dag.input_offset[node_id];
     for (size_t i = 0; i < offsets.size(); ++i) {
-      args[i] = record[offsets[i]];
+      tmp[i] = record[offsets[i]];
     }
-    return args.data();
+    return tmp.data();
   }
 
   size_t const ngrp;
   detail::graph_store<fn_type, tumble_type, Alloc> const dag;
   detail::vector_store<data_type, Alloc> history;
-
-  detail::vector_store<data_type, Alloc> curr_args;
+  detail::vector_store<data_type, Alloc> param_history;
+  detail::vector_store<data_type, Alloc> tmp_args;
 };
 } // namespace opflow

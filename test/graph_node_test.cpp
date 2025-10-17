@@ -1,816 +1,749 @@
 #include <gtest/gtest.h>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "opflow/graph_node.hpp"
 
-#include <algorithm>
-#include <memory>
-
 using namespace opflow;
 
-struct dummy_node {
+// Base class for all test nodes to make them polymorphic
+struct base_node {
   using data_type = double;
-
-  dummy_node() = default;
-  dummy_node(int val) : value(val) {}
-  dummy_node(std::string name) : name(std::move(name)) {}
-  dummy_node(std::string name, int val) : name(std::move(name)), value(val) {}
-
-  void clone_at(void *) const {};
-  size_t clone_size() const noexcept { return sizeof(dummy_node); };
-  size_t clone_align() const noexcept { return alignof(dummy_node); }
-
-  size_t num_inputs() const noexcept { return 0; }  // No inputs
-  size_t num_outputs() const noexcept { return 0; } // No outputs
-
-  std::string name;
-  int value = 0;
-
-  bool operator==(dummy_node const &other) const { return name == other.name && value == other.value; }
+  virtual ~base_node() = default;
 };
 
-static_assert(dag_node_base<dummy_node>);
-static_assert(dag_node_ptr<std::shared_ptr<dummy_node>>);
-static_assert(dag_node_ptr<dummy_node const *>);
+// Test fixture nodes
+struct dummy_node : public base_node {
+  dummy_node(int id, std::string const &name) : id(id), name(name) {}
+
+  int id = 0;
+  std::string name;
+
+  bool operator==(dummy_node const &other) const noexcept { return id == other.id && name == other.name; }
+};
+
+// Root node for testing
+struct root_node : public base_node {
+  root_node(size_t input_size) : input_size(input_size) {}
+
+  size_t input_size = 0;
+
+  bool operator==(root_node const &other) const noexcept { return input_size == other.input_size; }
+};
+
+// Template node for testing template instantiation
+template <typename T>
+struct template_node : public base_node {
+  using data_type = T;
+
+  template_node(T value) : value(value) {}
+
+  T value;
+
+  bool operator==(template_node const &other) const noexcept { return value == other.value; }
+};
+
+// Auxiliary node for testing
+struct aux_node : public base_node {
+  aux_node(std::string const &config) : config(config) {}
+
+  std::string config;
+
+  bool operator==(aux_node const &other) const noexcept { return config == other.config; }
+};
+
+// Supplementary node for testing
+struct supp_node : public base_node {
+  supp_node(std::string const &type) : type(type) {}
+
+  std::string type;
+
+  bool operator==(supp_node const &other) const noexcept { return type == other.type; }
+};
 
 class GraphNodeTest : public ::testing::Test {
 protected:
-  void SetUp() override { g.clear(); }
-
-  graph_node<dummy_node> g;
-
-  // Helper function to create a dummy node
-  auto make_node(std::string name = "", int value = 0) { return std::make_shared<dummy_node>(std::move(name), value); }
-
-  // Helper function to verify node exists and has expected content
-  void verify_node(std::shared_ptr<dummy_node> const &node, std::string const &expected_name, int expected_value = 0) {
-    ASSERT_TRUE(node != nullptr);
-    EXPECT_EQ(node->name, expected_name);
-    EXPECT_EQ(node->value, expected_value);
+  void SetUp() override {
+    graph.clear();
+    graph_int.clear();
+    graph_with_default.clear();
   }
+
+  graph_node<base_node> graph;
+  graph_node<int> graph_int;
+  graph_node<base_node, double> graph_with_default;
 };
 
-// Basic functionality tests
-TEST_F(GraphNodeTest, BasicConstruction) {
-  EXPECT_TRUE(g.empty());
-  EXPECT_EQ(g.size(), 0);
+// Test graph_node_edge functionality
+TEST(GraphNodeEdgeTest, DefaultPort) {
+  auto node = std::make_shared<dummy_node>(1, "test");
+  detail::graph_node_edge edge(node);
+
+  EXPECT_EQ(edge.node, node);
+  EXPECT_EQ(edge.port, 0u);
+}
+
+TEST(GraphNodeEdgeTest, ExplicitPort) {
+  auto node = std::make_shared<dummy_node>(1, "test");
+  detail::graph_node_edge edge(node, 5);
+
+  EXPECT_EQ(edge.node, node);
+  EXPECT_EQ(edge.port, 5u);
+}
+
+TEST(GraphNodeEdgeTest, PipeOperator) {
+  auto node = std::make_shared<dummy_node>(1, "test");
+  auto edge = node | 3;
+
+  EXPECT_EQ(edge.node, node);
+  EXPECT_EQ(edge.port, 3u);
+}
+
+TEST(GraphNodeEdgeTest, MakeEdgeFunction) {
+  auto node = std::make_shared<dummy_node>(1, "test");
+  auto edge1 = make_edge(node);
+  auto edge2 = make_edge(node, 7);
+
+  EXPECT_EQ(edge1.node, node);
+  EXPECT_EQ(edge1.port, 0u);
+  EXPECT_EQ(edge2.node, node);
+  EXPECT_EQ(edge2.port, 7u);
+}
+
+TEST(GraphNodeEdgeTest, Equality) {
+  auto node1 = std::make_shared<dummy_node>(1, "test1");
+  auto node2 = std::make_shared<dummy_node>(2, "test2");
+
+  detail::graph_node_edge<std::shared_ptr<dummy_node>> edge1(node1, 5);
+  detail::graph_node_edge<std::shared_ptr<dummy_node>> edge2(node1, 5);
+  detail::graph_node_edge<std::shared_ptr<dummy_node>> edge3(node1, 6);
+  detail::graph_node_edge<std::shared_ptr<dummy_node>> edge4(node2, 5);
+
+  EXPECT_EQ(edge1, edge2);
+  EXPECT_NE(edge1, edge3);
+  EXPECT_NE(edge1, edge4);
+}
+
+// Basic graph operations
+TEST_F(GraphNodeTest, EmptyGraph) {
+  EXPECT_TRUE(graph.empty());
+  EXPECT_EQ(graph.size(), 0u);
 }
 
 TEST_F(GraphNodeTest, AddSingleNode) {
-  auto nodeA = make_node("A");
-  g.add(nodeA);
+  auto node = graph.add<dummy_node>(1, "test").depends();
 
-  EXPECT_FALSE(g.empty());
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_TRUE(g.contains(nodeA));
-  EXPECT_TRUE(g.is_root(nodeA));
-  EXPECT_TRUE(g.is_leaf(nodeA));
+  EXPECT_FALSE(graph.empty());
+  EXPECT_EQ(graph.size(), 1u);
+  EXPECT_TRUE(graph.contains(node));
+
+  auto dummy_ptr = std::dynamic_pointer_cast<dummy_node>(node);
+  ASSERT_NE(dummy_ptr, nullptr);
+  EXPECT_EQ(dummy_ptr->id, 1);
+  EXPECT_EQ(dummy_ptr->name, "test");
 }
 
-TEST_F(GraphNodeTest, AddNodeWithSinglePredecessor) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, AddMultipleNodes) {
+  auto node1 = graph.add<dummy_node>(1, "test1").depends();
+  auto node2 = graph.add<dummy_node>(2, "test2").depends();
+  auto node3 = graph.add<dummy_node>(3, "test3").depends();
 
-  g.add(nodeB, nodeA);
+  EXPECT_EQ(graph.size(), 3u);
+  EXPECT_TRUE(graph.contains(node1));
+  EXPECT_TRUE(graph.contains(node2));
+  EXPECT_TRUE(graph.contains(node3));
+}
 
-  EXPECT_EQ(g.size(), 2);
-  EXPECT_TRUE(g.contains(nodeA));
-  EXPECT_TRUE(g.contains(nodeB));
+TEST_F(GraphNodeTest, AddExistingNodePointer) {
+  auto node = std::make_shared<dummy_node>(1, "test");
+  auto added_node = graph.add(node).depends();
+
+  EXPECT_EQ(added_node, node);
+  EXPECT_EQ(graph.size(), 1u);
+  EXPECT_TRUE(graph.contains(node));
+}
+
+TEST_F(GraphNodeTest, AddNullNode) {
+  std::shared_ptr<dummy_node> null_node = nullptr;
+  EXPECT_THROW(graph.add(null_node).depends(), std::invalid_argument);
+}
+
+TEST_F(GraphNodeTest, AddNodeWithDependencies) {
+  auto root = graph.add<dummy_node>(0, "root").depends();
+  auto child = graph.add<dummy_node>(1, "child").depends(root);
+
+  EXPECT_EQ(graph.size(), 2u);
 
   // Check adjacency
-  auto const &pred_B = g.pred_of(nodeB);
-  EXPECT_EQ(pred_B.size(), 1);
-  EXPECT_TRUE(pred_B.count(nodeA));
+  auto pred = graph.pred_of(child);
+  EXPECT_EQ(pred.size(), 1u);
+  EXPECT_TRUE(pred.contains(root));
 
-  auto const &succ_A = g.succ_of(nodeA);
-  EXPECT_EQ(succ_A.size(), 1);
-  EXPECT_TRUE(succ_A.count(nodeB));
+  auto succ = graph.succ_of(root);
+  EXPECT_EQ(succ.size(), 1u);
+  EXPECT_TRUE(succ.contains(child));
 
-  // Check arguments
-  auto const &args_B = g.args_of(nodeB);
-  EXPECT_EQ(args_B.size(), 1);
-  EXPECT_EQ(args_B[0].node, nodeA);
-  EXPECT_EQ(args_B[0].port, 0);
-
-  // Check root/leaf status
-  EXPECT_TRUE(g.is_root(nodeA));
-  EXPECT_FALSE(g.is_root(nodeB));
-  EXPECT_FALSE(g.is_leaf(nodeA));
-  EXPECT_TRUE(g.is_leaf(nodeB));
+  // Check args
+  auto args = graph.args_of(child);
+  EXPECT_EQ(args.size(), 1u);
+  EXPECT_EQ(args[0].node, root);
+  EXPECT_EQ(args[0].port, 0u);
 }
 
-TEST_F(GraphNodeTest, AddNodeWithMultiplePredecessors) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
+TEST_F(GraphNodeTest, AddNodeWithMultipleDependencies) {
+  auto input1 = graph.add<dummy_node>(1, "input1").depends();
+  auto input2 = graph.add<dummy_node>(2, "input2").depends();
+  auto processor = graph.add<dummy_node>(3, "processor").depends(input1, input2 | 3);
 
-  g.add(nodeC, nodeA, nodeB);
+  auto pred = graph.pred_of(processor);
+  EXPECT_EQ(pred.size(), 2u);
+  EXPECT_TRUE(pred.contains(input1));
+  EXPECT_TRUE(pred.contains(input2));
 
-  EXPECT_EQ(g.size(), 3);
-
-  auto const &pred_C = g.pred_of(nodeC);
-  EXPECT_EQ(pred_C.size(), 2);
-  EXPECT_TRUE(pred_C.count(nodeA));
-  EXPECT_TRUE(pred_C.count(nodeB));
-
-  auto const &args_C = g.args_of(nodeC);
-  EXPECT_EQ(args_C.size(), 2);
-  // Arguments should preserve order
-  EXPECT_EQ(args_C[0].node, nodeA);
-  EXPECT_EQ(args_C[0].port, 0);
-  EXPECT_EQ(args_C[1].node, nodeB);
-  EXPECT_EQ(args_C[1].port, 0);
+  auto args = graph.args_of(processor);
+  EXPECT_EQ(args.size(), 2u);
+  EXPECT_EQ(args[0].node, input1);
+  EXPECT_EQ(args[0].port, 0u);
+  EXPECT_EQ(args[1].node, input2);
+  EXPECT_EQ(args[1].port, 3u);
 }
 
-TEST_F(GraphNodeTest, AddNodeWithPortSpecification) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
+TEST_F(GraphNodeTest, AddNodeWithRangeDependencies) {
+  auto input1 = graph.add<dummy_node>(1, "input1").depends();
+  auto input2 = graph.add<dummy_node>(2, "input2").depends();
 
-  g.add(nodeC, nodeA | 0, nodeB | 1);
+  std::vector<graph_node<base_node>::shared_node_ptr> deps = {input1, input2};
+  auto processor = graph.add<dummy_node>(3, "processor").depends(deps);
 
-  auto const &args_C = g.args_of(nodeC);
-  EXPECT_EQ(args_C.size(), 2);
-  EXPECT_EQ(args_C[0].node, nodeA);
-  EXPECT_EQ(args_C[0].port, 0);
-  EXPECT_EQ(args_C[1].node, nodeB);
-  EXPECT_EQ(args_C[1].port, 1);
+  auto pred = graph.pred_of(processor);
+  EXPECT_EQ(pred.size(), 2u);
+  EXPECT_TRUE(pred.contains(input1));
+  EXPECT_TRUE(pred.contains(input2));
+
+  auto args = graph.args_of(processor);
+  EXPECT_EQ(args.size(), 2u);
+  EXPECT_EQ(args[0].node, input1);
+  EXPECT_EQ(args[0].port, 0u);
+  EXPECT_EQ(args[1].node, input2);
+  EXPECT_EQ(args[1].port, 0u);
 }
 
-TEST_F(GraphNodeTest, AddNodeWithMakeEdge) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
+TEST_F(GraphNodeTest, AddNodeWithEdgeTypes) {
+  auto input1 = graph.add<dummy_node>(1, "input1").depends();
+  auto input2 = graph.add<dummy_node>(2, "input2").depends();
 
-  g.add(nodeC, make_edge(nodeA, 2), make_edge(nodeB, 3));
+  std::vector<graph_node<base_node>::edge_type> edge_deps = {make_edge(input1, 0), make_edge(input2, 5)};
+  auto processor = graph.add<dummy_node>(3, "processor").depends(edge_deps);
 
-  auto const &args_C = g.args_of(nodeC);
-  EXPECT_EQ(args_C.size(), 2);
-  EXPECT_EQ(args_C[0].node, nodeA);
-  EXPECT_EQ(args_C[0].port, 2);
-  EXPECT_EQ(args_C[1].node, nodeB);
-  EXPECT_EQ(args_C[1].port, 3);
+  auto pred = graph.pred_of(processor);
+  EXPECT_EQ(pred.size(), 2u);
+  EXPECT_TRUE(pred.contains(input1));
+  EXPECT_TRUE(pred.contains(input2));
+
+  auto args = graph.args_of(processor);
+  EXPECT_EQ(args.size(), 2u);
+  EXPECT_EQ(args[0].node, input1);
+  EXPECT_EQ(args[0].port, 0u);
+  EXPECT_EQ(args[1].node, input2);
+  EXPECT_EQ(args[1].port, 5u);
 }
 
-// In-place construction tests
-TEST_F(GraphNodeTest, InPlaceConstructionWithPredecessors) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+// Root node operations
+TEST_F(GraphNodeTest, SetRootNode) {
+  auto root = graph.root<root_node>(5);
 
-  auto nodeC = g.add<dummy_node>(nodeA, nodeB, "C", 42);
+  EXPECT_TRUE(graph.contains(root));
+  EXPECT_EQ(graph.root(), root);
+  EXPECT_TRUE(graph.is_root(root));
 
-  EXPECT_EQ(g.size(), 3);
-  verify_node(nodeC, "C", 42);
-
-  auto const &pred_C = g.pred_of(nodeC);
-  EXPECT_EQ(pred_C.size(), 2);
-  EXPECT_TRUE(pred_C.count(nodeA));
-  EXPECT_TRUE(pred_C.count(nodeB));
+  auto root_ptr = std::dynamic_pointer_cast<root_node>(root);
+  ASSERT_NE(root_ptr, nullptr);
+  EXPECT_EQ(root_ptr->input_size, 5u);
 }
 
-TEST_F(GraphNodeTest, InPlaceConstructionWithInitializerList) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, SetRootNodeFromExisting) {
+  auto node = std::make_shared<root_node>(3);
+  auto root = graph.root(node);
 
-  auto nodeC = g.add<dummy_node>(nodeA, nodeB, "C", 99);
-
-  verify_node(nodeC, "C", 99);
-  EXPECT_EQ(g.size(), 3);
+  EXPECT_EQ(root, node);
+  EXPECT_EQ(graph.root(), node);
+  EXPECT_TRUE(graph.contains(node));
 }
 
-TEST_F(GraphNodeTest, InPlaceConstructionWithSinglePredecessor) {
-  auto nodeA = make_node("A");
-
-  auto nodeB = g.add<dummy_node>(nodeA, "B", 123);
-
-  verify_node(nodeB, "B", 123);
-  EXPECT_EQ(g.size(), 2);
-
-  auto const &pred_B = g.pred_of(nodeB);
-  EXPECT_EQ(pred_B.size(), 1);
-  EXPECT_TRUE(pred_B.count(nodeA));
+TEST_F(GraphNodeTest, SetNullRootNode) {
+  std::shared_ptr<root_node> null_node = nullptr;
+  EXPECT_THROW(graph.root(null_node), std::invalid_argument);
 }
 
-TEST_F(GraphNodeTest, InPlaceConstructionWithEdgeType) {
-  auto nodeA = make_node("A");
+TEST_F(GraphNodeTest, RootWithDefaultDataType) {
+  auto root = graph_with_default.root<template_node>(3.14);
 
-  auto nodeB = g.add<dummy_node>(nodeA | 5, "B", 456);
-
-  verify_node(nodeB, "B", 456);
-
-  auto const &args_B = g.args_of(nodeB);
-  EXPECT_EQ(args_B.size(), 1);
-  EXPECT_EQ(args_B[0].node, nodeA);
-  EXPECT_EQ(args_B[0].port, 5);
+  auto template_ptr = std::dynamic_pointer_cast<template_node<double>>(root);
+  ASSERT_NE(template_ptr, nullptr);
+  EXPECT_EQ(template_ptr->value, 3.14);
 }
 
-TEST_F(GraphNodeTest, RootNodeConstruction) {
-  auto nodeA = g.root<dummy_node>("A", 777);
+// Auxiliary node operations
+TEST_F(GraphNodeTest, AddAuxiliaryNode) {
+  auto root = graph.root<root_node>(2);
+  auto aux = graph.aux<aux_node>("clock_config").depends(0);
 
-  verify_node(nodeA, "A", 777);
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_TRUE(g.is_root(nodeA));
-  EXPECT_TRUE(g.is_leaf(nodeA));
+  EXPECT_EQ(graph.aux(), aux);
+
+  auto aux_ptr = std::dynamic_pointer_cast<aux_node>(aux);
+  ASSERT_NE(aux_ptr, nullptr);
+  EXPECT_EQ(aux_ptr->config, "clock_config");
+
+  auto aux_args = graph.aux_args();
+  EXPECT_EQ(aux_args.size(), 1u);
+  EXPECT_EQ(aux_args[0], 0u);
 }
 
-// Edge case tests
-TEST_F(GraphNodeTest, SelfLoops) {
-  auto nodeA = make_node("A");
-  g.add(nodeA, nodeA); // Self-loop
+TEST_F(GraphNodeTest, AuxiliaryWithMultiplePorts) {
+  auto root = graph.root<root_node>(4);
+  auto aux = graph.aux<aux_node>("multi_config").depends(0, 2, 3);
 
-  EXPECT_EQ(g.size(), 1);
-
-  auto const &pred_A = g.pred_of(nodeA);
-  EXPECT_EQ(pred_A.size(), 1);
-  EXPECT_TRUE(pred_A.count(nodeA));
-
-  auto const &succ_A = g.succ_of(nodeA);
-  EXPECT_EQ(succ_A.size(), 1);
-  EXPECT_TRUE(succ_A.count(nodeA));
-
-  EXPECT_FALSE(g.is_root(nodeA)); // Has predecessor (itself)
-  EXPECT_FALSE(g.is_leaf(nodeA)); // Has successor (itself)
+  auto aux_args = graph.aux_args();
+  EXPECT_EQ(aux_args.size(), 3u);
+  EXPECT_EQ(aux_args[0], 0u);
+  EXPECT_EQ(aux_args[1], 2u);
+  EXPECT_EQ(aux_args[2], 3u);
 }
 
-TEST_F(GraphNodeTest, DuplicateEdges) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, AuxiliaryWithPortRange) {
+  auto root = graph.root<root_node>(3);
+  std::vector<u32> ports = {0, 1, 2};
+  auto aux = graph.aux<aux_node>("range_config").depends(ports);
 
-  // Add multiple edges from B to A with different ports
-  g.add(nodeB, nodeA | 0, nodeA | 1, nodeA | 0);
-
-  auto const &pred_B = g.pred_of(nodeB);
-  EXPECT_EQ(pred_B.size(), 1); // Only one unique predecessor
-  EXPECT_TRUE(pred_B.count(nodeA));
-
-  auto const &args_B = g.args_of(nodeB);
-  EXPECT_EQ(args_B.size(), 3); // But three arguments (duplicates allowed)
-  EXPECT_EQ(args_B[0].node, nodeA);
-  EXPECT_EQ(args_B[0].port, 0);
-  EXPECT_EQ(args_B[1].node, nodeA);
-  EXPECT_EQ(args_B[1].port, 1);
-  EXPECT_EQ(args_B[2].node, nodeA);
-  EXPECT_EQ(args_B[2].port, 0);
+  auto aux_args = graph.aux_args();
+  EXPECT_EQ(aux_args.size(), 3u);
+  EXPECT_EQ(aux_args[0], 0u);
+  EXPECT_EQ(aux_args[1], 1u);
+  EXPECT_EQ(aux_args[2], 2u);
 }
 
-// Replace node tests
-TEST_F(GraphNodeTest, ReplaceNode) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-  auto nodeD = make_node("D");
-  auto nodeE = make_node("E");
-  auto nodeX = make_node("X");
-
-  g.add(nodeC, nodeA, nodeB);
-  g.add(nodeD, nodeC);
-  g.add(nodeE, nodeC);
-
-  g.replace(nodeX, nodeC);
-
-  EXPECT_FALSE(g.contains(nodeC));
-  EXPECT_TRUE(g.contains(nodeX));
-
-  // X should have A and B as predecessors
-  auto const &pred_X = g.pred_of(nodeX);
-  EXPECT_EQ(pred_X.size(), 2);
-  EXPECT_TRUE(pred_X.count(nodeA));
-  EXPECT_TRUE(pred_X.count(nodeB));
-
-  // D and E should have X as predecessor
-  auto const &pred_D = g.pred_of(nodeD);
-  auto const &pred_E = g.pred_of(nodeE);
-  EXPECT_EQ(pred_D.size(), 1);
-  EXPECT_EQ(pred_E.size(), 1);
-  EXPECT_TRUE(pred_D.count(nodeX));
-  EXPECT_TRUE(pred_E.count(nodeX));
-
-  // Arguments should be updated
-  auto const &args_D = g.args_of(nodeD);
-  auto const &args_E = g.args_of(nodeE);
-  EXPECT_EQ(args_D[0].node, nodeX);
-  EXPECT_EQ(args_E[0].node, nodeX);
+TEST_F(GraphNodeTest, AddNullAuxiliaryNode) {
+  std::shared_ptr<aux_node> null_aux = nullptr;
+  EXPECT_THROW(graph.aux(null_aux).depends(), std::invalid_argument);
 }
 
-TEST_F(GraphNodeTest, ReplaceNonExistentNode) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
+// Supplementary root operations
+TEST_F(GraphNodeTest, SetSuppRootNode) {
+  auto supp = graph.supp_root<supp_node>("params");
 
-  g.add(nodeA);
-  g.replace(nodeC, nodeB); // Replace non-existent node
+  EXPECT_EQ(graph.supp_root(), supp);
 
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_TRUE(g.contains(nodeA));
-  EXPECT_FALSE(g.contains(nodeB));
-  EXPECT_FALSE(g.contains(nodeC));
+  auto supp_ptr = std::dynamic_pointer_cast<supp_node>(supp);
+  ASSERT_NE(supp_ptr, nullptr);
+  EXPECT_EQ(supp_ptr->type, "params");
 }
 
-TEST_F(GraphNodeTest, ReplaceWithExistingNode) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, SetSuppRootFromExisting) {
+  auto node = std::make_shared<supp_node>("signals");
+  auto supp = graph.supp_root(node);
 
-  g.add(nodeA);
-  g.add(nodeB);
-  g.replace(nodeB, nodeA); // Replace with existing node
-
-  EXPECT_EQ(g.size(), 2);
-  EXPECT_TRUE(g.contains(nodeA));
-  EXPECT_TRUE(g.contains(nodeB));
+  EXPECT_EQ(supp, node);
+  EXPECT_EQ(graph.supp_root(), node);
 }
 
-TEST_F(GraphNodeTest, ReplaceNodeWithItself) {
-  auto nodeA = make_node("A");
-
-  g.add(nodeA);
-  g.replace(nodeA, nodeA); // Replace with itself
-
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_TRUE(g.contains(nodeA));
+TEST_F(GraphNodeTest, SetNullSuppRootNode) {
+  std::shared_ptr<supp_node> null_node = nullptr;
+  EXPECT_THROW(graph.supp_root(null_node), std::invalid_argument);
 }
 
-// Replace edge tests
-TEST_F(GraphNodeTest, ReplaceEdge) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-  auto nodeX = make_node("X");
+TEST_F(GraphNodeTest, SuppLinkOperations) {
+  auto supp = graph.supp_root<supp_node>("params");
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends();
 
-  g.add(nodeC, nodeA | 0, nodeB | 1);
+  // Link nodes to supplementary root ports
+  graph.supp_link(node1, 0u, 1u);
+  graph.supp_link(node2, 2u);
 
-  g.replace(nodeC, nodeA | 0, nodeX | 2);
+  auto supp_args1 = graph.supp_link_of(node1);
+  EXPECT_EQ(supp_args1.size(), 2u);
+  EXPECT_EQ(supp_args1[0], 0u);
+  EXPECT_EQ(supp_args1[1], 1u);
 
-  auto const &args_C = g.args_of(nodeC);
-  EXPECT_EQ(args_C.size(), 2);
-  EXPECT_EQ(args_C[0].node, nodeX);
-  EXPECT_EQ(args_C[0].port, 2);
-  EXPECT_EQ(args_C[1].node, nodeB);
-  EXPECT_EQ(args_C[1].port, 1);
+  auto supp_args2 = graph.supp_link_of(node2);
+  EXPECT_EQ(supp_args2.size(), 1u);
+  EXPECT_EQ(supp_args2[0], 2u);
 
-  // Check adjacency updates
-  auto const &pred_C = g.pred_of(nodeC);
-  EXPECT_EQ(pred_C.size(), 2);
-  EXPECT_TRUE(pred_C.count(nodeX));
-  EXPECT_TRUE(pred_C.count(nodeB));
-  EXPECT_FALSE(pred_C.count(nodeA));
+  // Test non-linked node
+  auto node3 = graph.add<dummy_node>(3, "node3").depends();
+  auto supp_args3 = graph.supp_link_of(node3);
+  EXPECT_TRUE(supp_args3.empty());
 }
 
-TEST_F(GraphNodeTest, ReplaceEdgeWithItself) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, SuppLinkWithPortRange) {
+  auto supp = graph.supp_root<supp_node>("params");
+  auto node = graph.add<dummy_node>(1, "node").depends();
 
-  g.add(nodeB, nodeA | 0);
+  std::vector<u32> ports = {0, 2, 4};
+  graph.supp_link(node, ports);
 
-  g.replace(nodeB, nodeA | 0, nodeA | 0); // Replace with itself
-
-  auto const &args_B = g.args_of(nodeB);
-  EXPECT_EQ(args_B.size(), 1);
-  EXPECT_EQ(args_B[0].node, nodeA);
-  EXPECT_EQ(args_B[0].port, 0);
+  auto supp_args = graph.supp_link_of(node);
+  EXPECT_EQ(supp_args.size(), 3u);
+  EXPECT_EQ(supp_args[0], 0u);
+  EXPECT_EQ(supp_args[1], 2u);
+  EXPECT_EQ(supp_args[2], 4u);
 }
 
-TEST_F(GraphNodeTest, ReplaceNonExistentEdge) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-  auto nodeD = make_node("D");
+TEST_F(GraphNodeTest, SuppLinkWithEdges) {
+  auto supp = graph.supp_root<supp_node>("params");
+  auto node = graph.add<dummy_node>(1, "node").depends();
 
-  g.add(nodeB, nodeA);
-  g.replace(nodeB, nodeC | 0, nodeD | 1); // Replace non-existent edge
+  graph.supp_link(node, 1, 3);
 
-  auto const &pred_B = g.pred_of(nodeB);
-  EXPECT_EQ(pred_B.size(), 1);
-  EXPECT_TRUE(pred_B.count(nodeA));
+  auto supp_args = graph.supp_link_of(node);
+  EXPECT_EQ(supp_args.size(), 2u);
+  EXPECT_EQ(supp_args[0], 1u);
+  EXPECT_EQ(supp_args[1], 3u);
 }
 
-// Graph merging tests
-TEST_F(GraphNodeTest, MergeDisjointGraphs) {
-  graph_node<dummy_node> g2;
+// Output operations
+TEST_F(GraphNodeTest, AddSingleOutput) {
+  auto node = graph.add<dummy_node>(1, "node").depends();
+  graph.add_output(node);
 
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-  auto nodeD = make_node("D");
-
-  g.add(nodeA);
-  g.add(nodeB, nodeA);
-
-  g2.add(nodeC);
-  g2.add(nodeD, nodeC);
-
-  g.merge(g2);
-
-  EXPECT_EQ(g.size(), 4);
-  EXPECT_TRUE(g.contains(nodeA));
-  EXPECT_TRUE(g.contains(nodeB));
-  EXPECT_TRUE(g.contains(nodeC));
-  EXPECT_TRUE(g.contains(nodeD));
-
-  // Check that relationships are preserved
-  auto const &pred_B = g.pred_of(nodeB);
-  auto const &pred_D = g.pred_of(nodeD);
-  EXPECT_TRUE(pred_B.count(nodeA));
-  EXPECT_TRUE(pred_D.count(nodeC));
+  auto output = graph.output();
+  EXPECT_EQ(output.size(), 1u);
+  EXPECT_EQ(output[0].node, node);
+  EXPECT_EQ(output[0].port, 0u);
 }
 
-TEST_F(GraphNodeTest, MergeOperatorPlus) {
-  graph_node<dummy_node> g2;
+TEST_F(GraphNodeTest, AddMultipleOutputs) {
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends();
+  auto node3 = graph.add<dummy_node>(3, "node3").depends();
 
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+  graph.add_output(node1, node2 | 2, node3);
 
-  g.add(nodeA);
-  g2.add(nodeB);
-
-  auto g3 = g + g2;
-
-  EXPECT_EQ(g3.size(), 2);
-  EXPECT_TRUE(g3.contains(nodeA));
-  EXPECT_TRUE(g3.contains(nodeB));
-
-  // Original graphs should be unchanged
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_EQ(g2.size(), 1);
+  auto output = graph.output();
+  EXPECT_EQ(output.size(), 3u);
+  EXPECT_EQ(output[0].node, node1);
+  EXPECT_EQ(output[0].port, 0u);
+  EXPECT_EQ(output[1].node, node2);
+  EXPECT_EQ(output[1].port, 2u);
+  EXPECT_EQ(output[2].node, node3);
+  EXPECT_EQ(output[2].port, 0u);
 }
 
-TEST_F(GraphNodeTest, MergeOperatorPlusEqual) {
-  graph_node<dummy_node> g2;
+TEST_F(GraphNodeTest, AddOutputRange) {
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends();
 
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+  std::vector<graph_node<base_node>::shared_node_ptr> outputs = {node1, node2};
+  graph.add_output(outputs);
 
-  g.add(nodeA);
-  g2.add(nodeB);
-
-  g += g2;
-
-  EXPECT_EQ(g.size(), 2);
-  EXPECT_TRUE(g.contains(nodeA));
-  EXPECT_TRUE(g.contains(nodeB));
+  auto output = graph.output();
+  EXPECT_EQ(output.size(), 2u);
+  EXPECT_EQ(output[0].node, node1);
+  EXPECT_EQ(output[1].node, node2);
 }
 
-// Complex graph tests
-TEST_F(GraphNodeTest, ComplexDAG) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-  auto nodeD = make_node("D");
-  auto nodeE = make_node("E");
+TEST_F(GraphNodeTest, AddOutputEdges) {
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends();
 
-  g.add(nodeA);
-  g.add(nodeB);
-  g.add(nodeC, nodeA, nodeB);
-  g.add(nodeD, nodeA);
-  g.add(nodeE, nodeC, nodeD);
+  std::vector<graph_node<base_node>::edge_type> edge_outputs = {make_edge(node1, 1), make_edge(node2, 3)};
+  graph.add_output(edge_outputs);
 
-  // Check roots and leaves
-  auto roots = g.roots();
-  auto leaves = g.leaves();
-
-  EXPECT_EQ(roots.size(), 2);
-  EXPECT_TRUE(std::find(roots.begin(), roots.end(), nodeA) != roots.end());
-  EXPECT_TRUE(std::find(roots.begin(), roots.end(), nodeB) != roots.end());
-
-  EXPECT_EQ(leaves.size(), 1);
-  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), nodeE) != leaves.end());
+  auto output = graph.output();
+  EXPECT_EQ(output.size(), 2u);
+  EXPECT_EQ(output[0].node, node1);
+  EXPECT_EQ(output[0].port, 1u);
+  EXPECT_EQ(output[1].node, node2);
+  EXPECT_EQ(output[1].port, 3u);
 }
 
-TEST_F(GraphNodeTest, ClearGraph) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+// Graph utilities
+TEST_F(GraphNodeTest, FindRootsAndLeaves) {
+  auto root1 = graph.add<dummy_node>(1, "root1").depends();
+  auto root2 = graph.add<dummy_node>(2, "root2").depends();
+  auto middle = graph.add<dummy_node>(3, "middle").depends(root1, root2);
+  auto leaf1 = graph.add<dummy_node>(4, "leaf1").depends(middle);
+  auto leaf2 = graph.add<dummy_node>(5, "leaf2").depends(middle);
 
-  g.add(nodeA);
-  g.add(nodeB, nodeA);
+  auto roots = graph.roots();
+  EXPECT_EQ(roots.size(), 2u);
+  EXPECT_TRUE(std::find(roots.begin(), roots.end(), root1) != roots.end());
+  EXPECT_TRUE(std::find(roots.begin(), roots.end(), root2) != roots.end());
 
-  EXPECT_FALSE(g.empty());
+  auto leaves = graph.leaves();
+  EXPECT_EQ(leaves.size(), 2u);
+  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), leaf1) != leaves.end());
+  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), leaf2) != leaves.end());
 
-  g.clear();
+  EXPECT_TRUE(graph.is_root(root1));
+  EXPECT_TRUE(graph.is_root(root2));
+  EXPECT_FALSE(graph.is_root(middle));
 
-  EXPECT_TRUE(g.empty());
-  EXPECT_EQ(g.size(), 0);
-  EXPECT_FALSE(g.contains(nodeA));
-  EXPECT_FALSE(g.contains(nodeB));
+  EXPECT_TRUE(graph.is_leaf(leaf1));
+  EXPECT_TRUE(graph.is_leaf(leaf2));
+  EXPECT_FALSE(graph.is_leaf(middle));
 }
 
-// Additional edge case tests
-TEST_F(GraphNodeTest, SelfLoopWithMultiplePorts) {
-  auto nodeA = make_node("A");
+TEST_F(GraphNodeTest, Clear) {
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends(node1);
+  graph.add_output(node2);
 
-  // Node depends on itself through multiple ports
-  g.add(nodeA, nodeA | 0, nodeA | 1, nodeA | 2);
+  EXPECT_FALSE(graph.empty());
 
-  auto const &pred_A = g.pred_of(nodeA);
-  auto const &args_A = g.args_of(nodeA);
+  graph.clear();
 
-  EXPECT_EQ(pred_A.size(), 1);
-  EXPECT_TRUE(pred_A.count(nodeA));
-  EXPECT_EQ(args_A.size(), 3);
-
-  // Check all three self-references with different ports
-  EXPECT_EQ(args_A[0].node, nodeA);
-  EXPECT_EQ(args_A[0].port, 0);
-  EXPECT_EQ(args_A[1].node, nodeA);
-  EXPECT_EQ(args_A[1].port, 1);
-  EXPECT_EQ(args_A[2].node, nodeA);
-  EXPECT_EQ(args_A[2].port, 2);
+  EXPECT_TRUE(graph.empty());
+  EXPECT_EQ(graph.size(), 0u);
+  EXPECT_EQ(graph.output().size(), 0u);
 }
 
-TEST_F(GraphNodeTest, LargePortNumbers) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, NodeRetrieval) {
+  auto node1 = graph.add<dummy_node>(1, "test1").depends();
+  auto node2 = graph.add<dummy_node>(2, "test2").depends();
 
-  g.add(nodeB, nodeA | 4294967295u); // Max uint32_t
+  // Test that node() returns the same pointer for existing nodes
+  EXPECT_EQ(graph.node(node1), node1);
+  EXPECT_EQ(graph.node(node2), node2);
 
-  auto const &args = g.args_of(nodeB);
-  EXPECT_EQ(args.size(), 1);
-  EXPECT_EQ(args[0].port, 4294967295u);
+  // Test that node() returns nullptr for non-existing nodes
+  auto non_existing = std::make_shared<dummy_node>(99, "non_existing");
+  EXPECT_EQ(graph.node(non_existing), nullptr);
 }
 
-TEST_F(GraphNodeTest, ManyDuplicateEdgesWithDifferentPorts) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+// Validation
+TEST_F(GraphNodeTest, ValidateEmptyGraph) { EXPECT_TRUE(graph.validate()); }
 
-  // Add many edges from B to A with sequential ports
-  std::vector<graph_node<dummy_node>::edge_type> edges;
-  for (uint32_t i = 0; i < 100; ++i) {
-    edges.emplace_back(nodeA, i);
-  }
-  g.add(nodeB, edges);
+TEST_F(GraphNodeTest, ValidateSimpleGraph) {
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends(node1);
+  graph.add_output(node2);
 
-  auto const &pred_B = g.pred_of(nodeB);
-  auto const &args_B = g.args_of(nodeB);
-
-  EXPECT_EQ(pred_B.size(), 1); // Only one unique predecessor
-  EXPECT_TRUE(pred_B.count(nodeA));
-  EXPECT_EQ(args_B.size(), 100); // But 100 arguments
-
-  // Check that ports are in order
-  for (uint32_t i = 0; i < 100; ++i) {
-    EXPECT_EQ(args_B[i].node, nodeA);
-    EXPECT_EQ(args_B[i].port, i);
-  }
+  EXPECT_TRUE(graph.validate());
 }
 
-TEST_F(GraphNodeTest, ArgumentOrderPreservation) {
-  std::vector<std::shared_ptr<dummy_node>> nodes;
-  for (char c : {'Z', 'Y', 'X', 'W', 'V'}) {
-    nodes.push_back(make_node(std::string(1, c)));
-  }
+TEST_F(GraphNodeTest, ValidateWithAuxiliary) {
+  auto root = graph.root<root_node>(2);
+  auto aux = graph.aux<aux_node>("config").depends(1);
+  auto node = graph.add<dummy_node>(1, "node").depends(root);
 
-  auto target = make_node("target");
-  g.add(target, nodes);
-
-  auto const &args = g.args_of(target);
-  EXPECT_EQ(args.size(), 5);
-
-  for (size_t i = 0; i < nodes.size(); ++i) {
-    EXPECT_EQ(args[i].node, nodes[i]) << "Argument order not preserved at index " << i;
-    EXPECT_EQ(args[i].port, 0);
-  }
+  EXPECT_TRUE(graph.validate());
 }
 
-TEST_F(GraphNodeTest, CyclicGraphDetection) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
+// Template node testing
+TEST_F(GraphNodeTest, TemplateNodes) {
+  graph_node<base_node, int> template_graph;
 
-  // Create a cycle: A -> B -> C -> A
-  g.add(nodeB, nodeA);
-  g.add(nodeC, nodeB);
-  g.add(nodeA, nodeC); // This creates a cycle
+  auto int_node = template_graph.add<template_node>(42).depends();
 
-  EXPECT_EQ(g.size(), 3);
-
-  // Each node should have exactly one predecessor and one successor
-  for (const auto &node : {nodeA, nodeB, nodeC}) {
-    EXPECT_EQ(g.pred_of(node).size(), 1);
-    EXPECT_EQ(g.succ_of(node).size(), 1);
-  }
-
-  // Verify the cycle
-  EXPECT_TRUE(g.pred_of(nodeA).count(nodeC));
-  EXPECT_TRUE(g.pred_of(nodeB).count(nodeA));
-  EXPECT_TRUE(g.pred_of(nodeC).count(nodeB));
-
-  EXPECT_TRUE(g.succ_of(nodeA).count(nodeB));
-  EXPECT_TRUE(g.succ_of(nodeB).count(nodeC));
-  EXPECT_TRUE(g.succ_of(nodeC).count(nodeA));
+  auto template_ptr = std::dynamic_pointer_cast<template_node<int>>(int_node);
+  ASSERT_NE(template_ptr, nullptr);
+  EXPECT_EQ(template_ptr->value, 42);
 }
 
-TEST_F(GraphNodeTest, TemplateBasedInPlaceConstruction) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+// Complex graph structure test
+TEST_F(GraphNodeTest, ComplexGraphStructure) {
+  /*
+  Build a complex graph:
+      Root ──┬── A ──┬── D ── H
+             │       └── E
+             ├── B ── F
+             └── C ── G
 
-  // Test template-based construction using the data_type
-  auto nodeC = g.add<dummy_node>(nodeA, nodeB, "C", 42);
+      Output: E, F, G, H
+      Aux: connected to Root
+      Supp: connected to A, D, F, G
+  */
 
-  EXPECT_EQ(g.size(), 3);
-  verify_node(nodeC, "C", 42);
+  // Build the main graph
+  auto root = graph.root<root_node>(3);
+  auto a = graph.add<dummy_node>(1, "A").depends(root | 0);
+  auto b = graph.add<dummy_node>(2, "B").depends(root | 1);
+  auto c = graph.add<dummy_node>(3, "C").depends(root | 2);
 
-  auto const &pred_C = g.pred_of(nodeC);
-  EXPECT_EQ(pred_C.size(), 2);
-  EXPECT_TRUE(pred_C.count(nodeA));
-  EXPECT_TRUE(pred_C.count(nodeB));
+  auto d = graph.add<dummy_node>(4, "D").depends(a);
+  auto e = graph.add<dummy_node>(5, "E").depends(a);
+  auto f = graph.add<dummy_node>(6, "F").depends(b);
+  auto g = graph.add<dummy_node>(7, "G").depends(c);
+  auto h = graph.add<dummy_node>(8, "H").depends(d);
+
+  graph.add_output(e, f, g, h);
+
+  // Add auxiliary node
+  auto aux = graph.aux<aux_node>("clock").depends(0);
+
+  // Add supplementary root and links
+  auto supp = graph.supp_root<supp_node>("params");
+  graph.supp_link(a, 0u);
+  graph.supp_link(d, 1u);
+  graph.supp_link(f, 2u);
+  graph.supp_link(g, 3u);
+
+  // Verify the structure
+  EXPECT_EQ(graph.size(), 9u); // Root + A, B, C, D, E, F, G, H
+
+  // Verify Root node
+  EXPECT_TRUE(graph.is_root(root));
+  auto root_succs = graph.succ_of(root);
+  EXPECT_EQ(root_succs.size(), 3u);
+  EXPECT_TRUE(root_succs.contains(a));
+  EXPECT_TRUE(root_succs.contains(b));
+  EXPECT_TRUE(root_succs.contains(c));
+
+  // Verify A's dependencies and successors
+  auto a_preds = graph.pred_of(a);
+  EXPECT_EQ(a_preds.size(), 1u);
+  EXPECT_TRUE(a_preds.contains(root));
+  auto a_succs = graph.succ_of(a);
+  EXPECT_EQ(a_succs.size(), 2u);
+  EXPECT_TRUE(a_succs.contains(d));
+  EXPECT_TRUE(a_succs.contains(e));
+
+  // Verify port specifications
+  auto a_args = graph.args_of(a);
+  EXPECT_EQ(a_args.size(), 1u);
+  EXPECT_EQ(a_args[0].node, root);
+  EXPECT_EQ(a_args[0].port, 0u);
+
+  // Verify output nodes are leaves
+  EXPECT_TRUE(graph.is_leaf(e));
+  EXPECT_TRUE(graph.is_leaf(f));
+  EXPECT_TRUE(graph.is_leaf(g));
+  EXPECT_TRUE(graph.is_leaf(h));
+
+  // Verify outputs
+  auto outputs = graph.output();
+  EXPECT_EQ(outputs.size(), 4u);
+
+  // Verify auxiliary
+  EXPECT_EQ(graph.aux(), aux);
+  auto aux_args = graph.aux_args();
+  EXPECT_EQ(aux_args.size(), 1u);
+  EXPECT_EQ(aux_args[0], 0u);
+
+  // Verify supplementary links
+  EXPECT_EQ(graph.supp_root(), supp);
+  auto a_supp = graph.supp_link_of(a);
+  EXPECT_EQ(a_supp.size(), 1u);
+  EXPECT_EQ(a_supp[0], 0u);
+
+  auto d_supp = graph.supp_link_of(d);
+  EXPECT_EQ(d_supp.size(), 1u);
+  EXPECT_EQ(d_supp[0], 1u);
+
+  // Verify validation passes
+  EXPECT_TRUE(graph.validate());
 }
 
-TEST_F(GraphNodeTest, LargeGraph) {
-  // Create a larger graph to test performance and correctness
-  const size_t N = 100;
-  std::vector<std::shared_ptr<dummy_node>> nodes;
+// Test generic nature of graph_node with primitive types
+TEST_F(GraphNodeTest, GenericWithPrimitiveTypes) {
+  // Test that graph_node can work with primitive types like int
+  auto value1 = graph_int.add<int>(42).depends();
+  auto value2 = graph_int.add<int>(100).depends();
+  auto sum = graph_int.add<int>(142).depends(value1, value2);
 
-  // Create nodes
-  for (size_t i = 0; i < N; ++i) {
-    nodes.push_back(make_node(std::to_string(i), static_cast<int>(i)));
-  }
+  EXPECT_EQ(graph_int.size(), 3u);
+  EXPECT_TRUE(graph_int.contains(value1));
+  EXPECT_TRUE(graph_int.contains(value2));
+  EXPECT_TRUE(graph_int.contains(sum));
 
-  // Create chain: 0 -> 1 -> 2 -> ... -> N-1
-  g.add(nodes[0]);
-  for (size_t i = 1; i < N; ++i) {
-    g.add(nodes[i], nodes[i - 1]);
-  }
+  // Check that sum depends on both values
+  auto pred = graph_int.pred_of(sum);
+  EXPECT_EQ(pred.size(), 2u);
+  EXPECT_TRUE(pred.contains(value1));
+  EXPECT_TRUE(pred.contains(value2));
 
-  EXPECT_EQ(g.size(), N);
+  // Check the stored values
+  ASSERT_NE(value1, nullptr);
+  ASSERT_NE(value2, nullptr);
+  ASSERT_NE(sum, nullptr);
 
-  // Check chain structure
-  EXPECT_TRUE(g.is_root(nodes[0]));
-  EXPECT_TRUE(g.is_leaf(nodes[N - 1]));
+  EXPECT_EQ(*value1, 42);
+  EXPECT_EQ(*value2, 100);
+  EXPECT_EQ(*sum, 142);
 
-  for (size_t i = 1; i < N - 1; ++i) {
-    EXPECT_FALSE(g.is_root(nodes[i]));
-    EXPECT_FALSE(g.is_leaf(nodes[i]));
-  }
+  // Test graph operations work with primitive types
+  auto roots = graph_int.roots();
+  EXPECT_EQ(roots.size(), 2u);
+  EXPECT_TRUE(std::find(roots.begin(), roots.end(), value1) != roots.end());
+  EXPECT_TRUE(std::find(roots.begin(), roots.end(), value2) != roots.end());
 
-  // Check that each node has exactly one predecessor (except root)
-  for (size_t i = 1; i < N; ++i) {
-    auto const &preds = g.pred_of(nodes[i]);
-    EXPECT_EQ(preds.size(), 1);
-    EXPECT_TRUE(preds.count(nodes[i - 1]));
-  }
+  auto leaves = graph_int.leaves();
+  EXPECT_EQ(leaves.size(), 1u);
+  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), sum) != leaves.end());
+
+  EXPECT_TRUE(graph_int.is_root(value1));
+  EXPECT_TRUE(graph_int.is_root(value2));
+  EXPECT_TRUE(graph_int.is_leaf(sum));
+  EXPECT_FALSE(graph_int.is_root(sum));
 }
 
-// Additional comprehensive edge case tests
-TEST_F(GraphNodeTest, EmptyPredecessorLists) {
-  auto nodeA = make_node("A");
+// Edge cases and error handling
+TEST_F(GraphNodeTest, GetNonexistentNodeData) {
+  auto non_existing = std::make_shared<dummy_node>(99, "non_existing");
 
-  // Test with empty vector
-  std::vector<std::shared_ptr<dummy_node>> empty_preds;
-  g.add(nodeA, empty_preds);
+  auto pred = graph.pred_of(non_existing);
+  EXPECT_EQ(pred.size(), 0u);
 
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_TRUE(g.is_root(nodeA));
-  EXPECT_TRUE(g.is_leaf(nodeA));
+  auto succ = graph.succ_of(non_existing);
+  EXPECT_EQ(succ.size(), 0u);
+
+  auto args = graph.args_of(non_existing);
+  EXPECT_EQ(args.size(), 0u);
+
+  auto supp_args = graph.supp_link_of(non_existing);
+  EXPECT_EQ(supp_args.size(), 0u);
 }
 
-TEST_F(GraphNodeTest, EmptyEdgeList) {
-  auto nodeA = make_node("A");
+TEST_F(GraphNodeTest, SuppLinkAccessMap) {
+  auto supp = graph.supp_root<supp_node>("params");
+  auto node1 = graph.add<dummy_node>(1, "node1").depends();
+  auto node2 = graph.add<dummy_node>(2, "node2").depends();
 
-  // Test with empty edge vector
-  std::vector<graph_node<dummy_node>::edge_type> empty_edges;
-  g.add(nodeA, empty_edges);
+  graph.supp_link(node1, 0u, 1u);
+  graph.supp_link(node2, 2u);
 
-  EXPECT_EQ(g.size(), 1);
-  EXPECT_TRUE(g.is_root(nodeA));
-  EXPECT_TRUE(g.is_leaf(nodeA));
+  auto supp_link_map = graph.supp_link();
+  EXPECT_EQ(supp_link_map.size(), 2u);
+  EXPECT_TRUE(supp_link_map.contains(node1));
+  EXPECT_TRUE(supp_link_map.contains(node2));
+
+  auto &node1_ports = supp_link_map.at(node1);
+  EXPECT_EQ(node1_ports.size(), 2u);
+  EXPECT_EQ(node1_ports[0], 0u);
+  EXPECT_EQ(node1_ports[1], 1u);
+
+  auto &node2_ports = supp_link_map.at(node2);
+  EXPECT_EQ(node2_ports.size(), 1u);
+  EXPECT_EQ(node2_ports[0], 2u);
 }
 
-TEST_F(GraphNodeTest, ZeroPortEdges) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
+TEST_F(GraphNodeTest, AccessInternalMaps) {
+  auto root = graph.add<dummy_node>(0, "root").depends();
+  auto child1 = graph.add<dummy_node>(1, "child1").depends(root);
+  auto child2 = graph.add<dummy_node>(2, "child2").depends(root | 1);
 
-  g.add(nodeB, nodeA | 0);
+  // Test predecessor map
+  auto pred_map = graph.pred();
+  EXPECT_EQ(pred_map.size(), 3u);
+  EXPECT_TRUE(pred_map.contains(root));
+  EXPECT_TRUE(pred_map.contains(child1));
+  EXPECT_TRUE(pred_map.contains(child2));
 
-  auto const &args = g.args_of(nodeB);
-  EXPECT_EQ(args.size(), 1);
-  EXPECT_EQ(args[0].port, 0);
-}
+  // Test successor map
+  auto succ_map = graph.succ();
+  EXPECT_EQ(succ_map.size(), 3u);
+  auto root_succs = succ_map.at(root);
+  EXPECT_EQ(root_succs.size(), 2u);
+  EXPECT_TRUE(root_succs.contains(child1));
+  EXPECT_TRUE(root_succs.contains(child2));
 
-TEST_F(GraphNodeTest, AddNodeTwiceWithDifferentPredecessors) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-
-  // Add nodeC first with nodeA as predecessor
-  g.add(nodeC, nodeA);
-  EXPECT_EQ(g.pred_of(nodeC).size(), 1);
-  EXPECT_TRUE(g.pred_of(nodeC).count(nodeA));
-
-  // Add nodeC again with nodeB as predecessor (should add to existing predecessors)
-  g.add(nodeC, nodeB);
-  EXPECT_EQ(g.pred_of(nodeC).size(), 2);
-  EXPECT_TRUE(g.pred_of(nodeC).count(nodeA));
-  EXPECT_TRUE(g.pred_of(nodeC).count(nodeB));
-}
-
-TEST_F(GraphNodeTest, ComplexPortMapping) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-
-  // Create complex port mapping
-  g.add(nodeC, nodeA | 100, nodeB | 200, nodeA | 150, nodeB | 250);
-
-  auto const &args = g.args_of(nodeC);
-  EXPECT_EQ(args.size(), 4);
-  EXPECT_EQ(args[0].node, nodeA);
-  EXPECT_EQ(args[0].port, 100);
-  EXPECT_EQ(args[1].node, nodeB);
-  EXPECT_EQ(args[1].port, 200);
-  EXPECT_EQ(args[2].node, nodeA);
-  EXPECT_EQ(args[2].port, 150);
-  EXPECT_EQ(args[3].node, nodeB);
-  EXPECT_EQ(args[3].port, 250);
-
-  // Should have only 2 unique predecessors
-  auto const &preds = g.pred_of(nodeC);
-  EXPECT_EQ(preds.size(), 2);
-  EXPECT_TRUE(preds.count(nodeA));
-  EXPECT_TRUE(preds.count(nodeB));
-}
-
-TEST_F(GraphNodeTest, ReplaceEdgeComplexCase) {
-  auto nodeA = make_node("A");
-  auto nodeB = make_node("B");
-  auto nodeC = make_node("C");
-  auto nodeX = make_node("X");
-
-  // Setup: C depends on A through multiple ports and B once
-  g.add(nodeC, nodeA | 1, nodeA | 2, nodeB | 3, nodeA | 4);
-
-  // Replace one of the A edges
-  g.replace(nodeC, nodeA | 2, nodeX | 5);
-
-  auto const &args = g.args_of(nodeC);
-  EXPECT_EQ(args.size(), 4);
-  EXPECT_EQ(args[0].node, nodeA);
-  EXPECT_EQ(args[0].port, 1);
-  EXPECT_EQ(args[1].node, nodeX); // Replaced
-  EXPECT_EQ(args[1].port, 5);
-  EXPECT_EQ(args[2].node, nodeB);
-  EXPECT_EQ(args[2].port, 3);
-  EXPECT_EQ(args[3].node, nodeA);
-  EXPECT_EQ(args[3].port, 4);
-
-  // Predecessors should include A, B, and X
-  auto const &preds = g.pred_of(nodeC);
-  EXPECT_EQ(preds.size(), 3);
-  EXPECT_TRUE(preds.count(nodeA));
-  EXPECT_TRUE(preds.count(nodeB));
-  EXPECT_TRUE(preds.count(nodeX));
-}
-
-TEST_F(GraphNodeTest, NodeIdentityConsistency) {
-  auto nodeA = make_node("A", 42);
-  auto nodeB = make_node("B", 99);
-
-  g.add(nodeA);
-  g.add(nodeB, nodeA);
-
-  // Verify node identity is preserved
-  EXPECT_EQ(nodeA->name, "A");
-  EXPECT_EQ(nodeA->value, 42);
-  EXPECT_EQ(nodeB->name, "B");
-  EXPECT_EQ(nodeB->value, 99);
-
-  // Verify the same shared_ptr is used
-  auto const &preds = g.pred_of(nodeB);
-  auto found_pred = *preds.begin();
-  EXPECT_EQ(found_pred.get(), nodeA.get());
-  EXPECT_EQ(found_pred->name, "A");
-  EXPECT_EQ(found_pred->value, 42);
-}
-
-TEST_F(GraphNodeTest, MultipleDisconnectedComponents) {
-  // Create two separate DAGs
-  auto nodeA1 = make_node("A1");
-  auto nodeB1 = make_node("B1");
-  auto nodeC1 = make_node("C1");
-
-  auto nodeA2 = make_node("A2");
-  auto nodeB2 = make_node("B2");
-  auto nodeC2 = make_node("C2");
-
-  // First component: A1 -> B1 -> C1
-  g.add(nodeB1, nodeA1);
-  g.add(nodeC1, nodeB1);
-
-  // Second component: A2 -> B2 -> C2
-  g.add(nodeB2, nodeA2);
-  g.add(nodeC2, nodeB2);
-
-  EXPECT_EQ(g.size(), 6);
-
-  // Check roots and leaves
-  auto roots = g.roots();
-  auto leaves = g.leaves();
-
-  EXPECT_EQ(roots.size(), 2);
-  EXPECT_TRUE(std::find(roots.begin(), roots.end(), nodeA1) != roots.end());
-  EXPECT_TRUE(std::find(roots.begin(), roots.end(), nodeA2) != roots.end());
-
-  EXPECT_EQ(leaves.size(), 2);
-  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), nodeC1) != leaves.end());
-  EXPECT_TRUE(std::find(leaves.begin(), leaves.end(), nodeC2) != leaves.end());
-
-  // Verify no cross-connections
-  EXPECT_FALSE(g.pred_of(nodeB1).count(nodeA2));
-  EXPECT_FALSE(g.pred_of(nodeB2).count(nodeA1));
+  // Test args map
+  auto args_map = graph.args();
+  EXPECT_EQ(args_map.size(), 3u);
+  auto child2_args = args_map.at(child2);
+  EXPECT_EQ(child2_args.size(), 1u);
+  EXPECT_EQ(child2_args[0].node, root);
+  EXPECT_EQ(child2_args[0].port, 1u);
 }

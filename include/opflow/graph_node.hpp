@@ -13,10 +13,10 @@ namespace detail {
 template <typename T>
 struct graph_node_edge {
   T node;
-  uint32_t port;
+  u32 port;
 
-  graph_node_edge(T const &node, uint32_t port) : node(node), port(port) {}
-  graph_node_edge(T &&node, uint32_t port) : node(std::move(node)), port(port) {}
+  graph_node_edge(T const &node, u32 port) : node(node), port(port) {}
+  graph_node_edge(T &&node, u32 port) : node(std::move(node)), port(port) {}
 
   explicit graph_node_edge(T const &node) : node(node), port(0) {}
   explicit graph_node_edge(T &&node) : node(std::move(node)), port(0) {}
@@ -26,545 +26,453 @@ struct graph_node_edge {
 } // namespace detail
 
 template <typename T>
-auto operator|(std::shared_ptr<T> const &node, uint32_t pos) {
-  return detail::graph_node_edge<std::shared_ptr<T>>{node, pos};
+auto operator|(std::shared_ptr<T> const &node, u32 port) {
+  return detail::graph_node_edge<std::shared_ptr<T>>{node, port};
 }
 
 template <typename T>
-auto make_edge(std::shared_ptr<T> const &node, uint32_t pos = 0) {
-  return detail::graph_node_edge<std::shared_ptr<T>>{node, pos};
+auto make_edge(T const &node, u32 port = 0) {
+  return detail::graph_node_edge<T>{node, port};
 }
 
-template <typename T, typename AUX = void>
+template <typename T, typename DefaultDT = void>
 class graph_node {
   using Equal = std::equal_to<>; ///< transparent equality for pointer to T
 
 public:
-  using key_type = std::shared_ptr<T>;  ///< key type, shared_ptr to T
-  using key_hash = detail::ptr_hash<T>; ///< transparent hashing for pointer to T
-
   using node_type = T;
   using shared_node_ptr = std::shared_ptr<T>; ///< node type, shared_ptr to T
 
-  using aux_type = AUX;
-  using shared_aux_ptr = std::shared_ptr<AUX>;
+  using key_type = shared_node_ptr;                           ///< key type, shared_ptr to T
+  using key_hash = detail::ptr_hash<T>;                       ///< transparent hashing for pointer to T
+  using edge_type = detail::graph_node_edge<shared_node_ptr>; ///< edge type, represents an arg passed to node
 
-  using edge_type = detail::graph_node_edge<shared_node_ptr>;           ///< edge type, represents an arg passed to node
-  using NodeSet = std::unordered_set<shared_node_ptr, key_hash, Equal>; ///< set of nodes
-  using NodeArgsSet = std::vector<edge_type>;                           ///< set of node arguments
-  using NodeMap = std::unordered_map<shared_node_ptr, NodeSet, key_hash, Equal>;         ///< node -> adjacent nodes
-  using NodeArgsMap = std::unordered_map<shared_node_ptr, NodeArgsSet, key_hash, Equal>; ///< node -> call arguments
+  using key_set = std::unordered_set<shared_node_ptr, key_hash, Equal>; ///< set of nodes
+  using args_set = std::vector<edge_type>;                              ///< set of node arguments
+  using port_set = std::vector<u32>;
 
-  // Add
+  using node_map = std::unordered_map<key_type, key_set, key_hash, Equal>;  ///< node -> adjacent nodes
+  using args_map = std::unordered_map<key_type, args_set, key_hash, Equal>; ///< node -> call arguments
+  using supp_map = std::unordered_map<key_type, port_set, key_hash, Equal>; ///< node -> supp ports
+
+  class add_delegate {
+    friend class graph_node;
+
+    graph_node &self;
+
+    shared_node_ptr node;
+    args_set args;
+
+    add_delegate(graph_node &self, shared_node_ptr node) : self(self), node(std::move(node)), args() {}
+
+    template <typename... Ts>
+    void add_args(shared_node_ptr pred, Ts &&...t) {
+      args.emplace_back(std::move(pred), 0); // Add with default port 0
+      add_args(std::forward<Ts>(t)...);
+    }
+
+    template <range_of<shared_node_ptr> R, typename... Ts>
+    void add_args(R &&preds, Ts &&...t) {
+      for (auto const &pred : preds) {
+        args.emplace_back(pred, 0); // Add with default port 0
+      }
+      add_args(std::forward<Ts>(t)...);
+    }
+
+    template <typename... Ts>
+    void add_args(edge_type edge, Ts &&...t) {
+      args.emplace_back(std::move(edge));
+      add_args(std::forward<Ts>(t)...);
+    }
+
+    template <range_of<edge_type> R, typename... Ts>
+    void add_args(R &&edges, Ts &&...t) {
+      for (auto const &edge : edges) {
+        args.emplace_back(edge);
+      }
+      add_args(std::forward<Ts>(t)...);
+    }
+
+    void add_args() {} // base case
+
+    void check() const {
+      for (auto const &arg : args) {
+        if (arg.node == self.aux_node) {
+          throw std::invalid_argument("Cannot depend on auxiliary node.");
+        }
+        if (arg.node == self.supp_node) {
+          throw std::invalid_argument("Cannot depend on supplementary root node.");
+        }
+      }
+      self.check_node(node);
+    }
+
+  public:
+    template <typename... Ts>
+    shared_node_ptr depends(Ts &&...pred) && {
+      add_args(std::forward<Ts>(pred)...);
+
+      check();
+      self.add_edge_impl(node, args);
+      return node;
+    }
+  };
+
+  class aux_delegate {
+    friend class graph_node;
+
+    graph_node &self;
+
+    shared_node_ptr node;
+    port_set args;
+
+    aux_delegate(graph_node &self, shared_node_ptr node) : self(self), node(std::move(node)), args() {}
+
+    template <std::integral T0, typename... Ts>
+    void add_ports(T0 &&port, Ts &&...t) {
+      args.emplace_back(port);
+      add_ports(std::forward<Ts>(t)...);
+    }
+
+    template <range_of<u32> R, typename... Ts>
+    void add_ports(R &&ports, Ts &&...t) {
+      for (auto const &port : ports) {
+        args.emplace_back(port);
+      }
+      add_ports(std::forward<Ts>(t)...);
+    }
+
+    void add_ports() {} // base case
+
+    void check() const { self.check_node(node); }
+
+  public:
+    template <typename... Ts>
+    shared_node_ptr depends(Ts &&...pred_ports) && {
+      add_ports(std::forward<Ts>(pred_ports)...);
+
+      check();
+      self.add_aux_impl(node, std::move(args));
+      return node;
+    }
+  };
+
+  // Constructed nodes are used as key_type so we can't provide fluent interface
+
+  auto add(shared_node_ptr const &node) { return add_delegate(*this, node); }
+
+  template <typename Node, typename... Ts>
+  auto add(Ts &&...args) {
+    return add(std::make_shared<Node>(std::forward<Ts>(args)...));
+  }
+
+  template <template <typename> typename Node, typename... Ts>
+  auto add(Ts &&...args)
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
+  {
+    return add<Node<DefaultDT>>(std::forward<Ts>(args)...);
+  }
+
+  shared_node_ptr node(key_type const &node) const { return contains(node) ? node : nullptr; }
+
+  auto aux(shared_node_ptr const &node) {
+    if (aux_node) {
+      throw std::invalid_argument("Auxiliary node already exists in graph.");
+    }
+    return aux_delegate(*this, node);
+  }
+
+  template <typename Aux, typename... Ts>
+  auto aux(Ts &&...args) {
+    return aux(std::make_shared<Aux>(std::forward<Ts>(args)...));
+  }
+
+  template <template <typename> typename Aux, typename... Ts>
+  auto aux(Ts &&...args)
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
+  {
+    return aux<Aux<DefaultDT>>(std::forward<Ts>(args)...);
+  }
+
+  shared_node_ptr aux() const noexcept { return aux_node; }
+
+  port_set const &aux_args() const noexcept { return aux_args_; }
+
+  shared_node_ptr root(shared_node_ptr const &node) {
+    if (root_node) {
+      throw std::invalid_argument("Root node already exists in graph.");
+    }
+    check_node(node);
+    ensure_node(node);
+    root_node = node;
+    return node;
+  }
+
+  template <typename Root, typename... Ts>
+  shared_node_ptr root(Ts &&...args) {
+    shared_node_ptr node = std::make_shared<Root>(std::forward<Ts>(args)...);
+    return root(node);
+  }
+
+  template <template <typename> typename Root, typename... Ts>
+  shared_node_ptr root(Ts &&...args)
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
+  {
+    return root<Root<DefaultDT>>(std::forward<Ts>(args)...);
+  }
+
+  shared_node_ptr root() const noexcept { return root_node; }
+
+  shared_node_ptr supp_root(shared_node_ptr const &node) {
+    if (supp_node) {
+      throw std::invalid_argument("Supplementary root node already exists in graph.");
+    }
+    check_node(node);
+    supp_node = node;
+    return node;
+  }
+
+  template <typename Supp, typename... Ts>
+  shared_node_ptr supp_root(Ts &&...args) {
+    shared_node_ptr node = std::make_shared<Supp>(std::forward<Ts>(args)...);
+    return supp_root(node);
+  }
+
+  template <template <typename> typename Supp, typename... Ts>
+  shared_node_ptr supp_root(Ts &&...args)
+    requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default
+  {
+    return supp_root<Supp<DefaultDT>>(std::forward<Ts>(args)...);
+  }
+
+  shared_node_ptr supp_root() const noexcept { return supp_node; }
 
   template <typename... Ts>
-  void add(shared_node_ptr const &node, Ts &&...preds) {
-    if (!node)
-      return;
-
-    std::vector<edge_type> preds_list{};
-    preds_list.reserve(sizeof...(preds));
-    add_impl(preds_list, node, std::forward<Ts>(preds)...);
+  void supp_link(key_type const &node, Ts &&...ports) {
+    if (!node || !pred_.contains(node)) {
+      throw std::invalid_argument("Node does not exist in graph.");
+    }
+    if (node == aux_node || node == supp_node) {
+      throw std::invalid_argument("Invalid supplementary link target.");
+    }
+    port_set port_list{};
+    supp_link_impl(port_list, node, std::forward<Ts>(ports)...);
   }
 
-  // In-place construction
+  supp_map const &supp_link() const noexcept { return supp_link_; }
 
-  template <typename U, typename... Args>
-  shared_node_ptr add(Args &&...preds_and_args) {
-    std::vector<edge_type> preds_list{};
-    preds_list.reserve(sizeof...(preds_and_args));
-    return add_inplace_impl<U>(preds_list, std::forward<Args>(preds_and_args)...);
-  }
-
-  template <template <typename> typename U, typename... Args>
-  shared_node_ptr add(Args &&...preds_and_args)
-    requires(detail::has_data_type<T>)
-  {
-    using UT = U<typename T::data_type>;
-    std::vector<edge_type> preds_list{};
-    preds_list.reserve(sizeof...(preds_and_args));
-    return add_inplace_impl<UT>(preds_list, std::forward<Args>(preds_and_args)...);
-  }
-
-  shared_node_ptr root(size_t root_input_size)
-    requires(dag_node_base<T>)
-  {
-    shared_node_ptr node = std::make_shared<dag_root_type<T>>(root_input_size);
-    add(node);
-    return node;
-  }
-
-  template <typename U, typename... Args>
-  shared_node_ptr root(Args &&...args) {
-    shared_node_ptr node = std::make_shared<U>(std::forward<Args>(args)...);
-    add(node);
-    return node;
-  }
-
-  template <template <typename> typename U, typename... Args>
-  shared_node_ptr root(Args &&...args)
-    requires(detail::has_data_type<T>)
-  {
-    using UT = U<typename T::data_type>;
-    shared_node_ptr node = std::make_shared<UT>(std::forward<Args>(args)...);
-    add(node);
-    return node;
+  port_set const &supp_link_of(key_type const &node) const noexcept {
+    static port_set const empty_set{};
+    auto it = supp_link_.find(node);
+    return (it != supp_link_.end()) ? it->second : empty_set;
   }
 
   // Output
 
   template <typename... Ts>
-  void add_output(Ts &&...outputs) {
+  graph_node &add_output(Ts &&...outputs) {
     add_output_impl(std::forward<Ts>(outputs)...);
-  }
-
-  template <typename... Ts>
-  void set_output(Ts &&...outputs) {
-    out.clear();
-    add_output_impl(std::forward<Ts>(outputs)...);
-  }
-
-  // Auxiliary data
-
-  template <typename A, typename... Ts>
-  void set_aux(Ts &&...preds_and_ctor_args)
-    requires(!std::is_void_v<AUX>)
-  {
-    auxiliary_args.clear();
-    set_aux_impl<A>(std::forward<Ts>(preds_and_ctor_args)...);
-  }
-
-  template <template <typename> typename A, typename... Ts>
-  void set_aux(Ts &&...preds_and_ctor_args)
-    requires(!std::is_void_v<AUX> && detail::has_data_type<T>) // CONVENIENT FN FOR OP DO NOT TEST
-  {
-    using aux_t = A<typename T::data_type>;
-    auxiliary_args.clear();
-    set_aux_impl<aux_t>(std::forward<Ts>(preds_and_ctor_args)...);
-  }
-
-  // Edge manipulation
-
-  template <range_of<shared_node_ptr> R>
-  void add_edge(shared_node_ptr const &node, R &&preds) {
-    for (auto const &pred : preds) {
-      add_edge_impl(node, pred, 0);
-    }
-  }
-
-  template <range_of<edge_type> R>
-  void add_edge(shared_node_ptr const &node, R &&preds) {
-    for (auto const &[pred, port] : preds) {
-      add_edge_impl(node, pred, port);
-    }
-  }
-
-  void add_edge(shared_node_ptr const &node, shared_node_ptr const &pred) { add_edge_impl(node, pred, 0); }
-
-  void add_edge(shared_node_ptr const &node, edge_type const &pred) { add_edge_impl(node, pred.node, pred.port); }
-
-  // Replacement
-
-  bool replace(shared_node_ptr const &new_node, shared_node_ptr const &old_node) {
-    if (predecessor.find(old_node) == predecessor.end()) {
-      return false; // Old node doesn't exist
-    }
-    if (predecessor.find(new_node) != predecessor.end()) {
-      return false; // Can't replace with an existing node
-    }
-    if (old_node == new_node) {
-      return true; // No change needed
-    }
-
-    // Copy all adjacency information from old_node to new_node
-    predecessor.emplace(new_node, std::move(predecessor[old_node]));
-    argmap.emplace(new_node, std::move(argmap[old_node]));
-    successor.emplace(new_node, std::move(successor[old_node]));
-
-    // Update all predecessors to point to new_node instead of old_node
-    for (auto const &pred : predecessor[new_node]) {
-      successor[pred].erase(old_node);
-      successor[pred].insert(new_node);
-    }
-
-    // Update all successors to depend on new_node instead of old_node
-    for (auto const &succ : successor[new_node]) {
-      predecessor[succ].erase(old_node);
-      predecessor[succ].insert(new_node);
-
-      // Update args to replace old_node with new_node
-      for (auto &arg : argmap[succ]) {
-        if (arg.node == old_node) {
-          arg.node = new_node;
-        }
-      }
-    }
-
-    // Update output
-    for (auto &o : out) {
-      if (o.node == old_node) {
-        o.node = new_node;
-      }
-    }
-
-    // Update auxiliary args
-    for (auto &edge : auxiliary_args) {
-      if (edge.node == old_node) {
-        edge.node = new_node;
-      }
-    }
-
-    // Remove old_node from all maps
-    predecessor.erase(old_node);
-    argmap.erase(old_node);
-    successor.erase(old_node);
-
-    return true;
-  }
-
-  bool replace(shared_node_ptr const &node, edge_type const &old_pred, edge_type const &new_pred) {
-    if (predecessor.find(node) == predecessor.end()) {
-      return false; // Node doesn't exist
-    }
-    if (old_pred == new_pred) {
-      return true; // No change needed
-    }
-
-    auto &args = argmap[node];
-
-    if (std::find(args.begin(), args.end(), old_pred) == args.end()) {
-      return false; // Old edge doesn't exist, nothing to replace
-    }
-
-    // Ensure new predecessor node exists
-    ensure_node(new_pred.node);
-
-    // Update adjacency maps
-    predecessor[node].emplace(new_pred.node);
-    successor[new_pred.node].emplace(node);
-
-    // Replace old_pred with new_pred in argmap
-    for (auto &arg : args) {
-      if (arg == old_pred) {
-        arg = new_pred;
-      }
-    }
-
-    // Check if old_pred is still needed
-    cleanup_adj(node, old_pred.node);
-
-    return true;
-  }
-
-  // Utilities
-
-  size_t size() const noexcept { return predecessor.size(); }
-
-  bool empty() const noexcept { return predecessor.empty(); }
-
-  void clear() noexcept {
-    predecessor.clear();
-    argmap.clear();
-    successor.clear();
-    out.clear();
-  }
-
-  bool contains(shared_node_ptr const &node) const noexcept { return predecessor.find(node) != predecessor.end(); }
-
-  NodeSet const &pred_of(shared_node_ptr const &node) const {
-    static NodeSet const empty_set{};
-    auto it = predecessor.find(node);
-    return (it != predecessor.end()) ? it->second : empty_set;
-  }
-
-  NodeMap const &pred() const noexcept { return predecessor; }
-
-  NodeArgsSet const &args_of(shared_node_ptr const &node) const {
-    static NodeArgsSet const empty_set{};
-    auto it = argmap.find(node);
-    return (it != argmap.end()) ? it->second : empty_set;
-  }
-
-  NodeArgsMap const &args() const noexcept { return argmap; }
-
-  NodeSet const &succ_of(shared_node_ptr const &node) const {
-    static NodeSet const empty_set{};
-    auto it = successor.find(node);
-    return (it != successor.end()) ? it->second : empty_set;
-  }
-
-  NodeMap const &succ() const noexcept { return successor; }
-
-  NodeArgsSet const &output() const noexcept { return out; }
-
-  shared_aux_ptr aux() const noexcept { return auxiliary; }
-
-  NodeArgsSet const &aux_args() const noexcept { return auxiliary_args; }
-
-  shared_node_ptr node(key_type const &node) const {
-    if (predecessor.find(node) == predecessor.end()) {
-      return nullptr; // Node doesn't exist
-    }
-    return node;
-  }
-
-  bool is_root(shared_node_ptr const &node) const {
-    auto it = predecessor.find(node);
-    return (it != predecessor.end() && it->second.empty());
-  }
-
-  bool is_leaf(shared_node_ptr const &node) const {
-    auto it = successor.find(node);
-    return (it != successor.end() && it->second.empty());
-  }
-
-  auto roots() const {
-    std::vector<shared_node_ptr> roots;
-    for (auto [node, preds] : predecessor) {
-      if (preds.empty()) {
-        roots.push_back(node);
-      }
-    }
-    return roots;
-  }
-
-  auto leaves() const {
-    std::vector<shared_node_ptr> leaves;
-    for (auto [node, succs] : successor) {
-      if (succs.empty()) {
-        leaves.push_back(node);
-      }
-    }
-    return leaves;
-  }
-
-  bool validate() const noexcept {
-    for (auto const &o : out) {
-      if (predecessor.find(o.node) == predecessor.end()) {
-        return false; // Inconsistent: output node missing in predecessor map
-      }
-    }
-    if constexpr (!std::is_void_v<AUX>) {
-      for (auto const &edge : auxiliary_args) {
-        if (predecessor.find(edge.node) == predecessor.end()) {
-          return false; // Inconsistent: aux arg node missing in predecessor map
-        }
-      }
-    }
-    return true;
-  }
-
-  void merge(graph_node const &other) {
-    // Collect new nodes to add
-    NodeSet nodes_to_add{};
-    for (auto const &[other_node, _] : other.predecessor) {
-      if (!contains(other_node)) {
-        nodes_to_add.emplace(other_node);
-      }
-    }
-
-    // Add all new nodes to the graph
-    for (auto const &new_node : nodes_to_add) {
-      add(new_node, other.args_of(new_node));
-    }
-  }
-
-  graph_node &operator+=(graph_node const &rhs) {
-    merge(rhs);
     return *this;
   }
 
-  friend graph_node operator+(graph_node const &lhs, graph_node const &rhs) {
-    graph_node result(lhs);
-    result.merge(rhs);
-    return result;
+  template <typename... Ts>
+  graph_node &set_output(Ts &&...outputs) {
+    soutput_.clear();
+    add_output_impl(std::forward<Ts>(outputs)...);
+    return *this;
+  }
+
+  args_set const &output() const noexcept { return soutput_; }
+
+  // Utilities
+
+  size_t size() const noexcept { return pred_.size(); }
+  bool empty() const noexcept { return pred_.empty(); }
+  bool contains(key_type const &node) const noexcept { return pred_.contains(node); }
+
+  void clear() noexcept {
+    pred_.clear();
+    args_.clear();
+    succ_.clear();
+    soutput_.clear();
+
+    root_node.reset();
+    aux_node.reset();
+    supp_node.reset();
+
+    aux_args_.clear();
+    supp_link_.clear();
+  }
+
+  key_set const &pred_of(shared_node_ptr const &node) const {
+    static key_set const empty_set{};
+    auto it = pred_.find(node);
+    return (it != pred_.end()) ? it->second : empty_set;
+  }
+
+  key_set const &succ_of(shared_node_ptr const &node) const {
+    static key_set const empty_set{};
+    auto it = succ_.find(node);
+    return (it != succ_.end()) ? it->second : empty_set;
+  }
+
+  args_set const &args_of(shared_node_ptr const &node) const {
+    static args_set const empty_set{};
+    auto it = args_.find(node);
+    return (it != args_.end()) ? it->second : empty_set;
+  }
+
+  node_map const &pred() const noexcept { return pred_; }
+  node_map const &succ() const noexcept { return succ_; }
+  args_map const &args() const noexcept { return args_; }
+
+  bool is_root(shared_node_ptr const &node) const {
+    auto it = pred_.find(node);
+    return (it != pred_.end() && it->second.empty());
+  }
+
+  bool is_leaf(shared_node_ptr const &node) const {
+    auto it = succ_.find(node);
+    return (it != succ_.end() && it->second.empty());
+  }
+
+  auto roots() const {
+    std::vector<shared_node_ptr> r;
+    for (auto [node, preds] : pred_) {
+      if (preds.empty()) {
+        r.push_back(node);
+      }
+    }
+    return r;
+  }
+
+  auto leaves() const {
+    std::vector<shared_node_ptr> l;
+    for (auto [node, succs] : succ_) {
+      if (succs.empty()) {
+        l.push_back(node);
+      }
+    }
+    return l;
+  }
+
+  bool validate() const noexcept {
+    for (auto const &o : soutput_) {
+      if (pred_.find(o.node) == pred_.end()) {
+        return false; // Inconsistent: output node missing in predecessor map
+      }
+    }
+    for (auto const &[node, _] : supp_link_) {
+      if (pred_.find(node) == pred_.end()) {
+        return false; // Inconsistent: supp link node missing in predecessor map
+      }
+    }
+    return true;
   }
 
 private:
   // add slot for node
-  void ensure_node(shared_node_ptr const &node) {
-    if (predecessor.find(node) == predecessor.end()) {
-      predecessor.emplace(node, NodeSet{});
+  void ensure_node(key_type const &node) {
+    if (!pred_.contains(node)) {
+      pred_.emplace(node, key_set{});
     }
-    if (argmap.find(node) == argmap.end()) {
-      argmap.emplace(node, NodeArgsSet{});
+    if (!args_.contains(node)) {
+      args_.emplace(node, args_set{});
     }
-    if (successor.find(node) == successor.end()) {
-      successor.emplace(node, NodeSet{});
+    if (!succ_.contains(node)) {
+      succ_.emplace(node, key_set{});
     }
   }
 
-  // add
-
-  template <typename... Ts, range_of<edge_type> R>
-  void add_impl(std::vector<edge_type> &preds_list, shared_node_ptr const &node, R &&preds, Ts &&...args) {
-    preds_list.insert(preds_list.end(), std::ranges::begin(preds), std::ranges::end(preds));
-    add_impl(preds_list, node, std::forward<Ts>(args)...);
-  }
-
-  template <typename... Ts, range_of<shared_node_ptr> R>
-  void add_impl(std::vector<edge_type> &preds_list, shared_node_ptr const &node, R &&preds, Ts &&...args) {
-    for (auto const &pred : preds) {
-      preds_list.emplace_back(pred, 0); // Add with default port 0
+  void check_node(key_type const &node) {
+    if (!node) {
+      throw std::invalid_argument("Null node.");
     }
-    add_impl(preds_list, node, std::forward<Ts>(args)...);
+    if (pred_.contains(node) || node == supp_node || node == aux_node) {
+      throw std::invalid_argument("Node already exists.");
+    }
   }
 
-  template <typename... Ts>
-  void add_impl(std::vector<edge_type> &preds_list, shared_node_ptr const &node, Ts &&...preds) {
-    (preds_list.emplace_back(std::forward<Ts>(preds)), ...);
+  // edge
 
+  void add_edge_impl(key_type const &node, args_set const &edges) {
     ensure_node(node);
-    for (auto const &pred : preds_list) {
-      ensure_node(pred.node);
-      add_edge_impl(node, pred);
+    for (auto const &edge : edges) {
+      ensure_node(edge.node);
+      pred_[node].emplace(edge.node);
+      args_[node].emplace_back(edge);
+      succ_[edge.node].emplace(node);
     }
   }
 
-  // add inplace - edge
-
-  template <typename U, typename... Ts>
-  shared_node_ptr add_inplace_impl(std::vector<edge_type> &preds_list, edge_type pred, Ts &&...args) {
-    preds_list.emplace_back(pred);
-    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+  void add_aux_impl(key_type const &node, port_set port_list) {
+    aux_node = node;
+    aux_args_ = std::move(port_list);
   }
 
-  template <typename U, typename... Ts>
-  shared_node_ptr add_inplace_impl(std::vector<edge_type> &preds_list, shared_node_ptr pred, Ts &&...args) {
-    preds_list.emplace_back(pred, 0); // Add with default port 0
-    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+  // supp link
+
+  template <std::integral T0, typename... Ts>
+  void supp_link_impl(port_set &port_list, key_type const &node, T0 &&port, Ts &&...args) {
+    port_list.emplace_back(port);
+    supp_link_impl(port_list, node, std::forward<Ts>(args)...);
   }
 
-  template <typename U, range_of<edge_type> R, typename... Ts>
-  shared_node_ptr add_inplace_impl(std::vector<edge_type> &preds_list, R &&preds, Ts &&...args) {
-    preds_list.insert(preds_list.end(), std::ranges::begin(preds), std::ranges::end(preds));
-    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
-  }
-
-  template <typename U, range_of<shared_node_ptr> R, typename... Ts>
-  shared_node_ptr add_inplace_impl(std::vector<edge_type> &preds_list, R &&preds, Ts &&...args) {
-    for (auto const &pred : preds) {
-      preds_list.emplace_back(pred, 0); // Add with default port 0
+  template <range_of<u32> R, typename... Ts>
+  void supp_link_impl(port_set &port_list, key_type const &node, R &&ports, Ts &&...args) {
+    for (auto const &port : ports) {
+      port_list.emplace_back(port);
     }
-    return add_inplace_impl<U>(preds_list, std::forward<Ts>(args)...);
+    supp_link_impl(port_list, node, std::forward<Ts>(args)...);
   }
 
-  // add inplace - ctor
-
-  template <typename U, typename... Ts>
-  shared_node_ptr add_inplace_impl(std::vector<edge_type> &preds_list, Ts &&...args) {
-    auto node = std::make_shared<U>(std::forward<Ts>(args)...);
-    add_impl(preds_list, node);
-    return node;
-  }
-
-  template <typename U, typename... Ts>
-  shared_node_ptr add_inplace_impl(std::vector<edge_type> &preds_list, ctor_args_tag, Ts &&...args) {
-    auto node = std::make_shared<U>(std::forward<Ts>(args)...);
-    add_impl(preds_list, node);
-    return node;
+  void supp_link_impl(port_set &port_list, key_type const &node) {
+    supp_link_.insert_or_assign(node, std::move(port_list));
   }
 
   // output
 
   template <typename... Ts>
-  void add_output_impl(edge_type output, Ts &&...args) {
-    out.emplace_back(output);
+  void add_output_impl(key_type output, Ts &&...args) {
+    soutput_.emplace_back(std::move(output), 0);
+    add_output_impl(std::forward<Ts>(args)...);
+  }
+
+  template <range_of<key_type> R, typename... Ts>
+  void add_output_impl(R &&outputs, Ts &&...args) {
+    for (auto const &output : outputs) {
+      soutput_.emplace_back(output, 0);
+    }
     add_output_impl(std::forward<Ts>(args)...);
   }
 
   template <typename... Ts>
-  void add_output_impl(shared_node_ptr output, Ts &&...args) {
-    out.emplace_back(output, 0);
+  void add_output_impl(edge_type output, Ts &&...args) {
+    soutput_.emplace_back(output);
     add_output_impl(std::forward<Ts>(args)...);
   }
 
   template <range_of<edge_type> R, typename... Ts>
   void add_output_impl(R &&outputs, Ts &&...args) {
     for (auto const &edge : outputs) {
-      out.emplace_back(edge);
+      soutput_.emplace_back(edge);
     }
     add_output_impl(std::forward<Ts>(args)...);
   }
 
-  template <range_of<shared_node_ptr> R, typename... Ts>
-  void add_output_impl(R &&outputs, Ts &&...args) {
-    for (auto const &output : outputs) {
-      out.emplace_back(output, 0);
-    }
-    add_output_impl(std::forward<Ts>(args)...);
-  }
-
-  template <typename... Ts>
-  void add_output_impl() {} // base case
-
-  // set_aux - edge
-
-  template <typename A, typename... Ts>
-  void set_aux_impl(edge_type edge, Ts &&...args) {
-    auxiliary_args.emplace_back(edge);
-    set_aux_impl<A>(std::forward<Ts>(args)...);
-  }
-
-  template <typename A, typename... Ts>
-  void set_aux_impl(shared_node_ptr const &node, Ts &&...args) {
-    auto edge = detail::graph_node_edge(node);
-    auxiliary_args.emplace_back(edge);
-    set_aux_impl<A>(std::forward<Ts>(args)...);
-  }
-
-  template <typename A, range_of<edge_type> R, typename... Ts>
-  void set_aux_impl(R &&edges, Ts &&...args) {
-    for (auto const &edge : edges) {
-      auxiliary_args.emplace_back(edge);
-    }
-    set_aux_impl<A>(std::forward<Ts>(args)...);
-  }
-
-  template <typename A, range_of<shared_node_ptr> R, typename... Ts>
-  void set_aux_impl(R &&nodes, Ts &&...args) {
-    for (auto const &node : nodes) {
-      auto edge = detail::graph_node_edge(node);
-      auxiliary_args.emplace_back(edge);
-    }
-    set_aux_impl<A>(std::forward<Ts>(args)...);
-  }
-
-  // set_aux - ctor
-
-  template <typename A, typename... Ts>
-  void set_aux_impl(Ts &&...args) {
-    auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
-  }
-
-  template <typename A, typename... Ts>
-  void set_aux_impl(ctor_args_tag, Ts &&...args) {
-    auxiliary = std::make_shared<A>(std::forward<Ts>(args)...);
-  }
-
-  // add edge node -> [pred:port]
-  void add_edge_impl(shared_node_ptr const &node, edge_type const &pred) {
-    predecessor[node].emplace(pred.node);
-    argmap[node].emplace_back(pred);
-    successor[pred.node].emplace(node);
-  }
-
-  void cleanup_adj(shared_node_ptr const &node, shared_node_ptr const &pred) {
-    auto const &args = argmap[node];
-    bool has_conn = std::any_of(args.begin(), args.end(), [&](auto const &arg) { return arg.node == pred; });
-    if (!has_conn) {
-      // If no other connections exist, remove old predecessor from adjacency maps
-      predecessor[node].erase(pred);
-      successor[pred].erase(node);
-    }
-  }
+  void add_output_impl() {}
 
 protected:
-  NodeMap predecessor;        ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
-  NodeArgsMap argmap;         ///< node -> [pred:port] i.e. args for calling this op node, order preserved
-  NodeMap successor;          ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
-  NodeArgsSet out;            ///< Output [node:port]
-  shared_aux_ptr auxiliary;   ///< Auxiliary data
-  NodeArgsSet auxiliary_args; ///< Auxiliary args
+  node_map pred_;    ///< Adjacency list: node -> [pred] i.e. set of nodes that it depends on
+  args_map args_;    ///< node -> [pred:port] i.e. args for calling this op node, order preserved
+  node_map succ_;    ///< Reverse adjacency list: node -> [succ] i.e. set of nodes that depend on it
+  args_set soutput_; ///< Output [node:port]
+
+  shared_node_ptr root_node; ///< Root node
+  shared_node_ptr aux_node;  ///< Auxiliary node
+  shared_node_ptr supp_node; ///< Supplementary root node
+
+  port_set aux_args_;  ///< Auxiliary args [root:port]
+  supp_map supp_link_; ///< node -> [supp:port]
 };
 } // namespace opflow
