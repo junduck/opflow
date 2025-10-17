@@ -180,7 +180,7 @@ public:
         param_node.push_back(idx[key]);
         param_port.push_back(ports);
       }
-      param_size = supp->num_outputs();
+      param_size = static_cast<u32>(supp->num_outputs());
     }
 
     output_offset.reserve(g.output().size());
