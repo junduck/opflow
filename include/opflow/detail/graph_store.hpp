@@ -69,7 +69,7 @@ public:
         // data
         n_grp(n_group), n_nodes(g.size()), win_ptrs(), param_ptrs(), node_ptrs(),
         // topo
-        record_size(), record_offset(alloc), input_offset(alloc), output_offset(alloc), param_node(alloc),
+        record_size(), param_size(), record_offset(alloc), input_offset(alloc), output_offset(alloc), param_node(alloc),
         param_port(alloc) {
     if (n_grp == 0) {
       throw std::invalid_argument("Number of groups must be greater than 0.");
@@ -180,6 +180,7 @@ public:
         param_node.push_back(idx[key]);
         param_port.push_back(ports);
       }
+      param_size = supp->num_outputs();
     }
 
     output_offset.reserve(g.output().size());
@@ -196,6 +197,7 @@ public:
   }
 
   bool has_window() const noexcept { return !win_ptrs.empty(); }
+  bool has_param() const noexcept { return !param_ptrs.empty(); }
 
   unique_aux_ptr const &window(size_t igrp) const noexcept { return win_ptrs[igrp]; }
   unique_node_ptr const &param(size_t igrp) const noexcept { return param_ptrs[igrp]; }
@@ -217,7 +219,7 @@ private:
         if (root_found) {
           throw std::invalid_argument("Multiple root nodes detected in graph.");
         }
-        auto root = std::dynamic_pointer_cast<dag_root_type<node_type>>(g.node(key));
+        auto root = std::dynamic_pointer_cast<node_type>(g.node(key));
         if (g.aux()) {
           auto root_size = root->num_outputs();
           for (auto port : g.aux_args()) {
@@ -272,31 +274,30 @@ private:
     size_t node_ptrs_size = heap_alloc_size(node_ptrs, n_grp * n_nodes);
     arena_size += aligned_size(win_ptrs_size + param_ptrs_size + node_ptrs_size, cacheline_size);
 
-    size_t align;
     size_t max_align = cacheline_size;
 
     size_t win_size = 0;
     if constexpr (!std::is_void_v<aux_type>)
       if (win) {
-        align = win->clone_align();
+        auto align = win->clone_align();
         max_align = std::max(max_align, align);
         win_size = aligned_size(win->clone_size(), align);
       }
 
-    size_t param_size = 0;
+    size_t par_size = 0;
     if (param) {
-      align = param->clone_align();
+      auto align = param->clone_align();
       max_align = std::max(max_align, align);
-      param_size = aligned_size(param->clone_size(), align);
+      par_size = aligned_size(param->clone_size(), align);
     }
 
     size_t node_size = 0;
     for (auto const &node : nodes) {
-      align = node->clone_align();
+      auto align = node->clone_align();
       max_align = std::max(max_align, align);
       node_size += aligned_size(node->clone_size(), align);
     }
-    size_t node_grp_size = aligned_size(win_size + param_size + node_size, max_align);
+    size_t node_grp_size = aligned_size(win_size + par_size + node_size, max_align);
 
     arena_size += n_grp * node_grp_size;
     // add extra max_align to ensure space fits
@@ -335,13 +336,13 @@ private:
           win_ptrs.emplace_back(win->clone_at(mem));
         }
       if (param) {
-        auto param_size = param->clone_size();
-        auto param_align = param->clone_align();
+        auto par_size = param->clone_size();
+        auto par_align = param->clone_align();
         if (!grp_aligned) {
-          param_align = std::max(cacheline_size, param_align);
+          par_align = std::max(cacheline_size, par_align);
           grp_aligned = true;
         }
-        mem = arena.allocate(param_size, param_align);
+        mem = arena.allocate(par_size, par_align);
         param_ptrs.emplace_back(param->clone_at(mem));
       }
       for (size_t i = 0; i < nodes.size(); ++i) {
@@ -367,6 +368,7 @@ private:
 
 public:
   u32 record_size;                                  // total size of record
+  u32 param_size;                                   // total size of param record
   std::vector<u32, u32_alloc> record_offset;        // i-th node -> write offset in rec
   flat_multivect<u32, u32, u32_alloc> input_offset; // i-th node -> [read offset in rec], 0-th is aux args if exists
   std::vector<u32, u32_alloc> output_offset;        // i-th output -> offset in rec
