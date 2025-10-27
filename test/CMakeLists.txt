@@ -70,6 +70,10 @@ target_link_libraries(test_column_store GTest::gtest_main opflow::headers)
 add_executable(test_graph_named graph_named_test.cpp)
 target_link_libraries(test_graph_named GTest::gtest_main opflow::headers)
 
+# pipeline tests
+add_executable(test_pipeline pipeline_test.cpp)
+target_link_libraries(test_pipeline GTest::gtest_main opflow::headers)
+
 include(GoogleTest)
 gtest_discover_tests(test_main)
 gtest_discover_tests(test_vector_store)
@@ -90,3 +94,4 @@ gtest_discover_tests(test_op_exec)
 gtest_discover_tests(test_sorted_vect)
 gtest_discover_tests(test_functor)
 gtest_discover_tests(test_ringbuf_vect)
+gtest_discover_tests(test_pipeline)

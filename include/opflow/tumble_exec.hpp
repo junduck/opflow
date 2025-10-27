@@ -59,7 +59,7 @@ public:
       // update -> flush -> reset
       for (size_t i = 1; i < nodes.size(); ++i) {
         nodes[i]->on_data(in_ptr(record, i, igrp), out_ptr(record, i));
-        nodes[i]->reset();
+        nodes[i]->reset(); // equivalent to placing reset after flush
       }
       flush(out, igrp);
     } else {

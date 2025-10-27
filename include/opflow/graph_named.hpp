@@ -230,7 +230,7 @@ public:
     void add_aliases() {}
 
     void check() const {
-      key_set name_test{};
+      std::unordered_set<str_view, key_hash, Equal> name_test{};
       for (auto const &a : aliases) {
         // For port alias, we need to check declared names so port alias won't conflict with nodes not constructed yet
         self.check_name_declared(a);
@@ -270,6 +270,11 @@ public:
     return add<Node<DefaultDT>>(name, std::forward<Ts>(args)...);
   }
 
+  template <std::derived_from<T> Node>
+  auto add(str_view name, std::shared_ptr<Node> node) {
+    return add_delegate(*this, name, std::move(node));
+  }
+
   shared_node_ptr node(str_view name) const {
     auto it = store.find(name);
     return it != store.end() ? it->second : nullptr;
@@ -288,6 +293,14 @@ public:
     requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
   {
     return aux<Aux<DefaultDT>>(name, std::forward<Ts>(args)...);
+  }
+
+  template <std::derived_from<T> Aux>
+  auto aux(str_view name, std::shared_ptr<Aux> node) {
+    if (!aux_name.empty()) {
+      throw std::invalid_argument("Auxiliary node already exists in graph.");
+    }
+    return aux_delegate(*this, name, std::move(node));
   }
 
   shared_node_ptr aux() const noexcept { return store.contains(aux_name) ? store.at(aux_name) : nullptr; }
@@ -309,6 +322,14 @@ public:
     return root<Root<DefaultDT>>(name, std::forward<Ts>(args)...);
   }
 
+  template <std::derived_from<T> Root>
+  auto root(str_view name, std::shared_ptr<Root> node) {
+    if (!root_name.empty()) {
+      throw std::invalid_argument("Root node already exists in graph.");
+    }
+    return root_delegate<false>(*this, name, std::move(node));
+  }
+
   shared_node_ptr root() const { return store.contains(root_name) ? store.at(root_name) : nullptr; }
 
   template <typename Supp, typename... Ts>
@@ -324,6 +345,14 @@ public:
     requires(!std::is_void_v<DefaultDT>) // Template shorthand for ops with default data type
   {
     return supp_root<Supp<DefaultDT>>(name, std::forward<Ts>(args)...);
+  }
+
+  template <std::derived_from<T> Supp>
+  auto supp_root(str_view name, std::shared_ptr<Supp> node) {
+    if (!supp_name.empty()) {
+      throw std::invalid_argument("Supplementary root node already exists in graph.");
+    }
+    return root_delegate<true>(*this, name, std::move(node));
   }
 
   shared_node_ptr supp_root() const { return store.contains(supp_name) ? store.at(supp_name) : nullptr; }
